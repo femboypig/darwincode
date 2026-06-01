@@ -1,4 +1,3 @@
-use std::fs;
 use anyhow::{Result, bail};
 use sha2::{Sha256, Digest};
 use aes_gcm::{
@@ -15,9 +14,9 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
 
     #[cfg(target_os = "linux")]
     {
-        if let Ok(id) = fs::read_to_string("/etc/machine-id") {
+        if let Ok(id) = std::fs::read_to_string("/etc/machine-id") {
             machine_id = id.trim().to_owned();
-        } else if let Ok(id) = fs::read_to_string("/var/lib/dbus/machine-id") {
+        } else if let Ok(id) = std::fs::read_to_string("/var/lib/dbus/machine-id") {
             machine_id = id.trim().to_owned();
         }
     }
