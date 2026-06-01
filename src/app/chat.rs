@@ -250,6 +250,7 @@ pub struct MessageLine {
     pub shell_success: bool,
     pub shell_cmd: String,
     pub is_tool: bool,
+    pub cached_wrapped: std::cell::RefCell<Option<(usize, Vec<ratatui::text::Line<'static>>)>>,
 }
 
 impl MessageLine {
@@ -262,6 +263,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             is_tool: false,
+            cached_wrapped: std::cell::RefCell::new(None),
         }
     }
 
@@ -274,6 +276,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             is_tool: false,
+            cached_wrapped: std::cell::RefCell::new(None),
         }
     }
 
@@ -286,6 +289,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             is_tool: false,
+            cached_wrapped: std::cell::RefCell::new(None),
         }
     }
 
@@ -298,6 +302,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             is_tool: false,
+            cached_wrapped: std::cell::RefCell::new(None),
         }
     }
 
@@ -310,6 +315,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             is_tool: true,
+            cached_wrapped: std::cell::RefCell::new(None),
         }
     }
 
@@ -322,6 +328,7 @@ impl MessageLine {
             shell_success: success,
             shell_cmd: cmd,
             is_tool: false,
+            cached_wrapped: std::cell::RefCell::new(None),
         }
     }
 
@@ -334,6 +341,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             is_tool: false,
+            cached_wrapped: std::cell::RefCell::new(None),
         }
     }
 }
