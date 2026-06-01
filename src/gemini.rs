@@ -98,6 +98,7 @@ impl GeminiClient {
     pub fn generate_stream(
         &self,
         history: &[ChatMessage],
+        cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
         mut on_chunk: impl FnMut(GeminiResponse) -> Result<()>,
     ) -> Result<()> {
         let model = self.config.model.trim_start_matches("models/");
@@ -192,6 +193,55 @@ impl GeminiClient {
                     "required": ["path", "content"]
                 })),
             });
+            declarations.push(FunctionDeclaration {
+                name: "read_files".to_owned(),
+                description: "Read the contents of multiple files at once.".to_owned(),
+                parameters: Some(serde_json::json!({
+                    "type": "OBJECT",
+                    "properties": {
+                        "paths": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "STRING"
+                            },
+                            "description": "Array of file paths to read"
+                        }
+                    },
+                    "required": ["paths"]
+                })),
+            });
+            declarations.push(FunctionDeclaration {
+                name: "edit_files".to_owned(),
+                description: "Atomically edit multiple files at once. Applies replacements in memory, validates them, and writes all modifications together. If any edit fails, all changes are rolled back.".to_owned(),
+                parameters: Some(serde_json::json!({
+                    "type": "OBJECT",
+                    "properties": {
+                        "edits": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "path": {
+                                         "type": "STRING",
+                                         "description": "Path to the file to edit"
+                                    },
+                                    "old_string": {
+                                         "type": "STRING",
+                                         "description": "The exact old string to replace"
+                                    },
+                                    "new_string": {
+                                         "type": "STRING",
+                                         "description": "The new string to replace it with"
+                                    }
+                                },
+                                "required": ["path", "old_string", "new_string"]
+                            },
+                            "description": "Array of edits to apply atomically"
+                        }
+                    },
+                    "required": ["edits"]
+                })),
+            });
         }
         
         if self.config.enable_bash_tools {
@@ -214,7 +264,7 @@ impl GeminiClient {
         let system_instruction = Some(Content {
             role: "system".to_owned(),
             parts: vec![serde_json::json!({
-                "text": "You are darwincode, an expert agentic AI coding assistant operating inside a terminal TUI.\n\n## CORE OBJECTIVE\nDeliver highly precise, robust, and compile-checked solutions to the user's coding requests. Work efficiently, minimize conversational fluff, and keep responses concise and focused.\n\n## TOOL USAGE DIRECTIVES\nYou are equipped with specialized native tools to interact with the environment. You must use them strictly as defined below:\n\n1. **Reading & Exploring Workspace**:\n   - Use `list_directory` to examine directories.\n   - Use `search_files` to find files matching a name/pattern.\n   - Use `read_file` to read the contents of a file.\n   - *CRITICAL*: Never use generic shell commands (e.g. `ls`, `find`, `grep`, `cat`) via bash to read or explore the workspace.\n\n2. **Writing & Modifying Files**:\n   - `edit_file`: This is your primary tool for modifying existing files. Use it to replace specific contiguous blocks of text.\n   - `write_file`: Use this ONLY to create entirely new files. NEVER use `write_file` to edit or overwrite existing files unless you are performing a complete rewrite of more than 80% of the file's content. Rewriting files unnecessarily is forbidden.\n   - *CRITICAL*: Never use shell redirection, `echo`, `sed`, `awk`, or editor commands via bash to edit files.\n\n3. **Shell Commands**:\n   - Use `run_bash_command` exclusively for running compilers, executing test suites, executing build scripts, or launching compiled binaries. Do not use it for file management.\n\n## BEHAVIORAL PROTOCOLS\n- **No Fluff**: Keep your explanations very brief and concise. The user is in a terminal TUI where screen space is highly valuable. Do not summarize tool outputs or write lengthy intros.\n- **Action-Oriented**: If you need information, immediately call the appropriate tool. Do not ask for permission to read files or search the workspace.\n- **Verification**: Always verify that your changes compile and pass tests by running the appropriate compile/test commands (e.g. `cargo check`, `cargo test`) using `run_bash_command` before concluding your turn."
+                "text": "You are darwincode, an expert agentic AI coding assistant operating inside a terminal TUI.\n\n## CORE OBJECTIVE\nDeliver highly precise, robust, and compile-checked solutions to the user's coding requests. Work efficiently, minimize conversational fluff, and keep responses concise and focused.\n\n## TOOL USAGE DIRECTIVES\nYou are equipped with specialized native tools to interact with the environment. You must use them strictly as defined below:\n\n1. **Reading & Exploring Workspace**:\n   - Use `list_directory` to examine directories.\n   - Use `search_files` to find files matching a name/pattern.\n   - Use `read_file` to read the contents of a file, or `read_files` to read multiple files simultaneously.\n   - *CRITICAL*: Never use generic shell commands (e.g. `ls`, `find`, `grep`, `cat`) via bash to read or explore the workspace.\n\n2. **Writing & Modifying Files**:\n   - `edit_file`: Replace specific contiguous blocks of text in a single file.\n   - `edit_files`: Atomically edit multiple files simultaneously. Highly recommended when modifying multiple interdependent files.\n   - `write_file`: Use this ONLY to create entirely new files. NEVER use `write_file` to edit or overwrite existing files unless you are performing a complete rewrite of more than 80% of the file's content. Rewriting files unnecessarily is forbidden.\n   - *CRITICAL*: Never use shell redirection, `echo`, `sed`, `awk`, or editor commands via bash to edit files.\n\n3. **Shell Commands**:\n   - Use `run_bash_command` exclusively for running compilers, executing test suites, executing build scripts, or launching compiled binaries. Do not use it for file management.\n\n## BEHAVIORAL PROTOCOLS\n- **No Fluff**: Keep your explanations very brief and concise. The user is in a terminal TUI where screen space is highly valuable. Do not summarize tool outputs or write lengthy intros.\n- **Action-Oriented**: If you need information, immediately call the appropriate tool. Do not ask for permission to read files or search the workspace.\n- **Verification**: Always verify that your changes compile and pass tests by running the appropriate compile/test commands (e.g. `cargo check`, `cargo test`) using `run_bash_command` before concluding your turn."
             })],
         });
 
@@ -372,6 +422,10 @@ impl GeminiClient {
                 request.as_object_mut().unwrap().insert("tools".to_owned(), serde_json::json!(openai_tools));
             }
 
+            if cancel_token.load(std::sync::atomic::Ordering::Relaxed) {
+                anyhow::bail!("Stream cancelled");
+            }
+
             let url = format!("{}/chat/completions", self.config.base_url);
             let response = self
                 .agent
@@ -391,6 +445,9 @@ impl GeminiClient {
             let reader = std::io::BufReader::new(response.into_reader());
 
             for line in reader.lines() {
+                if cancel_token.load(std::sync::atomic::Ordering::Relaxed) {
+                    anyhow::bail!("Stream cancelled");
+                }
                 let line = line.context("failed to read stream line")?;
                 if let Some(stripped) = line.strip_prefix("data: ") {
                     let json_str = stripped.trim();
@@ -466,6 +523,10 @@ impl GeminiClient {
                 tools: if tools.is_empty() { None } else { Some(tools) },
             };
 
+            if cancel_token.load(std::sync::atomic::Ordering::Relaxed) {
+                anyhow::bail!("Stream cancelled");
+            }
+
             let url = format!("{}/models/{model}:streamGenerateContent", self.config.base_url);
             let response = self
                 .agent
@@ -477,6 +538,9 @@ impl GeminiClient {
 
             let reader = std::io::BufReader::new(response.into_reader());
             for line in reader.lines() {
+                if cancel_token.load(std::sync::atomic::Ordering::Relaxed) {
+                    anyhow::bail!("Stream cancelled");
+                }
                 let line = line.context("failed to read stream line")?;
                 if let Some(json_str) = line.strip_prefix("data: ") {
                     let chunk: GenerateContentResponse = serde_json::from_str(json_str)
