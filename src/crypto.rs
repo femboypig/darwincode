@@ -10,15 +10,52 @@ use aes_gcm::{
 pub fn derive_hardware_key() -> Result<[u8; 32]> {
     let mut hasher = Sha256::new();
     
-    // Read local machine-id
-    let machine_id = if let Ok(id) = fs::read_to_string("/etc/machine-id") {
-        id.trim().to_owned()
-    } else if let Ok(id) = fs::read_to_string("/var/lib/dbus/machine-id") {
-        id.trim().to_owned()
-    } else {
+    // Read local machine-id in a robust cross-platform manner
+    let mut machine_id = String::new();
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(id) = fs::read_to_string("/etc/machine-id") {
+            machine_id = id.trim().to_owned();
+        } else if let Ok(id) = fs::read_to_string("/var/lib/dbus/machine-id") {
+            machine_id = id.trim().to_owned();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(output) = std::process::Command::new("reg")
+            .args(&["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(guid_line) = stdout.lines().find(|l| l.contains("MachineGuid")) {
+                if let Some(guid) = guid_line.split_whitespace().last() {
+                    machine_id = guid.trim().to_owned();
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = std::process::Command::new("ioreg")
+            .args(&["-rd1", "-c", "IOPlatformExpertDevice"])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(uuid_line) = stdout.lines().find(|l| l.contains("IOPlatformUUID")) {
+                if let Some(uuid) = uuid_line.split('=').last() {
+                    machine_id = uuid.replace('"', "").trim().to_owned();
+                }
+            }
+        }
+    }
+
+    if machine_id.is_empty() {
         // Fallback to a stable default combined with home/user env
-        "stable-darwincode-fallback-key-998".to_owned()
-    };
+        machine_id = "stable-darwincode-fallback-key-998".to_owned();
+    }
     
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
