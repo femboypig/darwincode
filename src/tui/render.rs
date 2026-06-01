@@ -345,47 +345,10 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
             continue;
         }
 
-        if is_shell {
-            let icon = if message.shell_success { icons::SHELL_OK } else { icons::SHELL_ERR };
-            let title = format!("{icon} Shell {}", message.shell_cmd);
-            
-            if !all_lines.is_empty() {
-                push_margin(&mut all_lines);
-            }
-            all_lines.push(Line::from(Span::styled(format!("╭{}╮", "─".repeat(width as usize)), Style::default().fg(Color::DarkGray))));
-            
-            let title_len = title.chars().count();
-            let title_w = (width as usize).saturating_sub(1);
-            let title_pad = title_w.saturating_sub(title_len);
-            let padded_title = format!("{}{}", title, " ".repeat(title_pad));
-
-            all_lines.push(Line::from(vec![
-                Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-                Span::styled(padded_title, Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled("│", Style::default().fg(Color::DarkGray)),
-            ]));
-            
-            for line in content.lines() {
-                let line_len = line.chars().count();
-                let body_w = (width as usize).saturating_sub(2);
-                let body_pad = body_w.saturating_sub(line_len);
-                let padded_line = format!("{}{}", line, " ".repeat(body_pad));
-
-                all_lines.push(Line::from(vec![
-                    Span::styled("│  ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(padded_line, Style::default().fg(Color::DarkGray)),
-                    Span::styled("│", Style::default().fg(Color::DarkGray)),
-                ]));
-            }
-            all_lines.push(Line::from(Span::styled(format!("╰{}╯", "─".repeat(width as usize)), Style::default().fg(Color::DarkGray))));
-            prev_is_tool = false;
-            continue;
-        }
-
         let cached_ok = {
             let cache = message.cached_wrapped.borrow();
-            if let Some((w, ref cached_lines)) = *cache {
-                if w == width as usize {
+            if let Some((w, t, ref cached_lines)) = *cache {
+                if w == width as usize && t == get_theme(app) {
                     Some(cached_lines.clone())
                 } else {
                     None
@@ -395,96 +358,120 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
             }
         };
 
-        let wrapped_parsed_lines = if let Some(lines) = cached_ok {
+        let msg_lines = if let Some(lines) = cached_ok {
             lines
         } else {
-            let lines_count = content.lines().count();
-            let limit = 500;
-            let (display_content, is_truncated) = if lines_count > limit {
-                let truncated: String = content.lines().take(limit).collect::<Vec<&str>>().join("\n");
-                (truncated, true)
-            } else {
-                (content.clone(), false)
-            };
+            let mut msg_lines = Vec::new();
+            if is_shell {
+                let icon = if message.shell_success { icons::SHELL_OK } else { icons::SHELL_ERR };
+                let title = format!("{icon} Shell {}", message.shell_cmd);
+                
+                msg_lines.push(Line::from(Span::styled(format!("╭{}╮", "─".repeat(width as usize)), Style::default().fg(Color::DarkGray))));
+                
+                let title_len = title.chars().count();
+                let title_w = (width as usize).saturating_sub(1);
+                let title_pad = title_w.saturating_sub(title_len);
+                let padded_title = format!("{}{}", title, " ".repeat(title_pad));
 
-            let parsed_lines = parse_markdown_lines(&display_content);
-            let mut lines = wrap_lines(parsed_lines, width as usize);
-            if is_truncated {
-                lines.push(Line::from(Span::styled(
-                    format!("... [Message truncated: {} more lines. Use a paging tool or scroll inside editor to view full text.]", lines_count - limit),
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)
-                )));
+                msg_lines.push(Line::from(vec![
+                    Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(padded_title, Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled("│", Style::default().fg(Color::DarkGray)),
+                ]));
+                
+                for line in content.lines() {
+                    let line_len = line.chars().count();
+                    let body_w = (width as usize).saturating_sub(2);
+                    let body_pad = body_w.saturating_sub(line_len);
+                    let padded_line = format!("{}{}", line, " ".repeat(body_pad));
+
+                    msg_lines.push(Line::from(vec![
+                        Span::styled("│  ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(padded_line, Style::default().fg(Color::DarkGray)),
+                        Span::styled("│", Style::default().fg(Color::DarkGray)),
+                    ]));
+                }
+                msg_lines.push(Line::from(Span::styled(format!("╰{}╯", "─".repeat(width as usize)), Style::default().fg(Color::DarkGray))));
+            } else {
+                let lines_count = content.lines().count();
+                let limit = 500;
+                let (display_content, is_truncated) = if lines_count > limit {
+                    let truncated: String = content.lines().take(limit).collect::<Vec<&str>>().join("\n");
+                    (truncated, true)
+                } else {
+                    (content.clone(), false)
+                };
+
+                let parsed_lines = parse_markdown_lines(&display_content);
+                let mut wrapped_parsed_lines = wrap_lines(parsed_lines, width as usize);
+                if is_truncated {
+                    wrapped_parsed_lines.push(Line::from(Span::styled(
+                        format!("... [Message truncated: {} more lines. Use a paging tool or scroll inside editor to view full text.]", lines_count - limit),
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)
+                    )));
+                }
+
+                match message.author {
+                    "You" => {
+                        let theme = get_theme(app);
+                        let (user_bg, user_fg) = match theme {
+                            crate::config::Theme::Dark | crate::config::Theme::Auto => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
+                            crate::config::Theme::Light => (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)),
+                        };
+                        let user_style = Style::default().bg(user_bg).fg(user_fg);
+                        let block_width = area.width as usize;
+                        
+                        msg_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
+                        
+                        for line in wrapped_parsed_lines {
+                            let mut spans = vec![Span::styled("  ", user_style)];
+                            let line_text_width = line.width();
+                            for s in &line.spans {
+                                let style = s.style.patch(user_style);
+                                spans.push(s.clone().style(style));
+                            }
+                            
+                            let remaining = block_width.saturating_sub(line_text_width + 2);
+                            if remaining > 0 {
+                                spans.push(Span::styled(" ".repeat(remaining), user_style));
+                            }
+                            msg_lines.push(Line::from(spans));
+                        }
+                        
+                        msg_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
+                    }
+                    "System" => {
+                        msg_lines.push(Line::from(vec![Span::styled(
+                            "system error",
+                            Style::default().add_modifier(Modifier::BOLD).fg(Color::Red),
+                        )]));
+                        for line in wrapped_parsed_lines {
+                            let mut spans = Vec::new();
+                            for span in line.spans {
+                                spans.push(span.style(Style::default().fg(Color::Red)));
+                            }
+                            msg_lines.push(Line::from(spans));
+                        }
+                    }
+                    _ => {
+                        for line in wrapped_parsed_lines {
+                            let mut spans = vec![Span::raw("  ")];
+                            spans.extend(line.spans);
+                            msg_lines.push(Line::from(spans));
+                        }
+                    }
+                }
             }
-            *message.cached_wrapped.borrow_mut() = Some((width as usize, lines.clone()));
-            lines
+            *message.cached_wrapped.borrow_mut() = Some((width as usize, get_theme(app), msg_lines.clone()));
+            msg_lines
         };
 
-        match message.author {
-            "You" => {
-                let theme = get_theme(app);
-                let (user_bg, user_fg) = match theme {
-                    crate::config::Theme::Dark | crate::config::Theme::Auto => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
-                    crate::config::Theme::Light => (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)),
-                };
-                let user_style = Style::default().bg(user_bg).fg(user_fg);
-                let block_width = area.width as usize;
-                
-                if !all_lines.is_empty() {
-                    push_margin(&mut all_lines);
-                }
-                
-                // Top padding (with reversed style)
-                all_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
-                
-                for line in wrapped_parsed_lines {
-                    let mut spans = vec![Span::styled("  ", user_style)];
-                    let line_text_width = line.width();
-                    for s in &line.spans {
-                        let style = s.style.patch(user_style);
-                        spans.push(s.clone().style(style));
-                    }
-                    
-                    let remaining = block_width.saturating_sub(line_text_width + 2);
-                    if remaining > 0 {
-                        spans.push(Span::styled(" ".repeat(remaining), user_style));
-                    }
-                    all_lines.push(Line::from(spans));
-                }
-                
-                // Bottom padding (with reversed style)
-                all_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
-                prev_is_tool = false;
-            }
-            "System" => {
-                if !all_lines.is_empty() {
-                    push_margin(&mut all_lines);
-                }
-                all_lines.push(Line::from(vec![Span::styled(
-                    "system error",
-                    Style::default().add_modifier(Modifier::BOLD).fg(Color::Red),
-                )]));
-                for line in wrapped_parsed_lines {
-                    let mut spans = Vec::new();
-                    for span in line.spans {
-                        spans.push(span.style(Style::default().fg(Color::Red)));
-                    }
-                    all_lines.push(Line::from(spans));
-                }
-                prev_is_tool = false;
-            }
-            _ => {
-                // Assistant message
-                if !all_lines.is_empty() && (!is_tool || !prev_is_tool) {
-                    push_margin(&mut all_lines);
-                }
-                for line in wrapped_parsed_lines {
-                    let mut spans = vec![Span::raw("  ")];
-                    spans.extend(line.spans);
-                    all_lines.push(Line::from(spans));
-                }
-                prev_is_tool = is_tool;
-            }
+        if !all_lines.is_empty() && (is_shell || message.author == "You" || message.author == "System" || !is_tool || !prev_is_tool) {
+            push_margin(&mut all_lines);
         }
+
+        all_lines.extend(msg_lines);
+        prev_is_tool = is_tool;
     }
 
     // Line-by-line scrolling
@@ -493,11 +480,14 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     
     let max_scroll = total_lines.saturating_sub(viewport_height);
     let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
-    let scroll_y = max_scroll.saturating_sub(scroll_offset) as u16;
+    let scroll_y = max_scroll.saturating_sub(scroll_offset);
+
+    let start_idx = scroll_y;
+    let end_idx = (start_idx + viewport_height).min(total_lines);
+    let visible_lines = all_lines[start_idx..end_idx].to_vec();
 
     frame.render_widget(
-        Paragraph::new(all_lines)
-            .scroll((scroll_y, 0)),
+        Paragraph::new(visible_lines),
         area,
     );
 }
