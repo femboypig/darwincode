@@ -840,17 +840,7 @@ impl App {
             self.chat.messages.push(MessageLine::tool(summary));
         }
 
-        if response.get("error").is_some() {
-            self.chat.messages.push(MessageLine::error(format!("Tool `{name}` failed. Generation stopped.")));
-            self.chat.message_queue.clear();
-            self.pending = None;
-            self.status = "Ready".to_owned();
-            if self.chat.messages.last().is_some_and(|m| m.pending) {
-                self.chat.messages.pop();
-            }
-            let _ = crate::app::session::save_session(&self.chat);
-            return None;
-        }
+
 
         self.chat.messages.push(MessageLine::pending());
         self.pending = Some(PendingTask::Generating);
