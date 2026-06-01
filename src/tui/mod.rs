@@ -24,12 +24,12 @@ use crate::gemini::{GeminiClient, GeminiResponse};
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 pub(crate) enum WorkerEvent {
-    StreamChunk(GeminiResponse),
-    StreamDone,
-    StreamError(String),
+    StreamChunk(usize, GeminiResponse),
+    StreamDone(usize),
+    StreamError(usize, String),
     Models(Result<Vec<String>, String>),
     ToolResult(String, serde_json::Value),
-    ResetStream,
+    ResetStream(usize),
 }
 
 pub fn run(mut app: App) -> Result<()> {
@@ -71,7 +71,7 @@ fn run_loop(
             && let Some(action) = app.pop_and_start_next_queue_item() {
                 match action {
                     crate::app::SubmitAction::Generate(request) => {
-                        spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
+                        spawn_generation_worker(request.config, request.history, request.cancel_token, request.generation_id, sender.clone());
                     }
                     crate::app::SubmitAction::LoadModels(config) => {
                         spawn_models_worker(config, sender.clone());
@@ -106,25 +106,33 @@ fn run_loop(
 
 fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<WorkerEvent>) {
     match event {
-        WorkerEvent::StreamChunk(chunk) => {
-            app.handle_stream_chunk(chunk);
-        }
-        WorkerEvent::StreamDone => {
-            if let Some(action) = app.complete_stream() {
-                handle_function_action(action, sender);
+        WorkerEvent::StreamChunk(id, chunk) => {
+            if id == app.generation_id {
+                app.handle_stream_chunk(chunk);
             }
         }
-        WorkerEvent::StreamError(err) => {
-            app.handle_stream_error(err);
+        WorkerEvent::StreamDone(id) => {
+            if id == app.generation_id {
+                if let Some(action) = app.complete_stream() {
+                    handle_function_action(action, sender);
+                }
+            }
+        }
+        WorkerEvent::StreamError(id, err) => {
+            if id == app.generation_id {
+                app.handle_stream_error(err);
+            }
         }
         WorkerEvent::Models(result) => app.complete_load_models(result),
         WorkerEvent::ToolResult(name, response) => {
             if let Some(crate::app::FunctionAction::ResumeGeneration(request)) = app.complete_function_execution(name, response) {
-                spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
+                spawn_generation_worker(request.config, request.history, request.cancel_token, request.generation_id, sender.clone());
             }
         }
-        WorkerEvent::ResetStream => {
-            app.chat.streaming_parts.clear();
+        WorkerEvent::ResetStream(id) => {
+            if id == app.generation_id {
+                app.chat.streaming_parts.clear();
+            }
         }
     }
 }
@@ -420,7 +428,7 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
             });
         }
         crate::app::FunctionAction::ResumeGeneration(request) => {
-            spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
+            spawn_generation_worker(request.config, request.history, request.cancel_token, request.generation_id, sender.clone());
         }
     }
 }
@@ -429,6 +437,7 @@ pub(crate) fn spawn_generation_worker(
     config: StoredConfig,
     history: Vec<crate::gemini::ChatMessage>,
     cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    generation_id: usize,
     sender: Sender<WorkerEvent>,
 ) {
     thread::spawn(move || {
@@ -438,32 +447,32 @@ pub(crate) fn spawn_generation_worker(
         let mut retries = 0;
         loop {
             if cancel_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                let _ = sender.send(WorkerEvent::StreamError("Stream cancelled".to_owned()));
+                let _ = sender.send(WorkerEvent::StreamError(generation_id, "Stream cancelled".to_owned()));
                 return;
             }
             let sender_c = sender_clone.clone();
             let cancel_c = cancel_clone.clone();
             let history_c = history.clone();
             let result = GeminiClient::new(config.clone()).generate_stream(&history_c, cancel_c, move |chunk| {
-                let _ = sender_c.send(WorkerEvent::StreamChunk(chunk));
+                let _ = sender_c.send(WorkerEvent::StreamChunk(generation_id, chunk));
                 Ok(())
             });
             match result {
                 Ok(_) => {
-                    let _ = sender.send(WorkerEvent::StreamDone);
+                    let _ = sender.send(WorkerEvent::StreamDone(generation_id));
                     return;
                 }
                 Err(error) => {
                     if cancel_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                        let _ = sender.send(WorkerEvent::StreamError("Stream cancelled".to_owned()));
+                        let _ = sender.send(WorkerEvent::StreamError(generation_id, "Stream cancelled".to_owned()));
                         return;
                     }
                     retries += 1;
                     if retries < 3 {
-                        let _ = sender.send(WorkerEvent::ResetStream);
+                        let _ = sender.send(WorkerEvent::ResetStream(generation_id));
                         thread::sleep(Duration::from_millis(500));
                     } else {
-                        let _ = sender.send(WorkerEvent::StreamError(error.to_string()));
+                        let _ = sender.send(WorkerEvent::StreamError(generation_id, error.to_string()));
                         return;
                     }
                 }
