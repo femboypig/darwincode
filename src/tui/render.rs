@@ -384,8 +384,23 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
             continue;
         }
 
-        let parsed_lines = parse_markdown_lines(&content);
-        let wrapped_parsed_lines = wrap_lines(parsed_lines, width as usize);
+        let lines_count = content.lines().count();
+        let limit = 500;
+        let (display_content, is_truncated) = if lines_count > limit {
+            let truncated: String = content.lines().take(limit).collect::<Vec<&str>>().join("\n");
+            (truncated, true)
+        } else {
+            (content.clone(), false)
+        };
+
+        let parsed_lines = parse_markdown_lines(&display_content);
+        let mut wrapped_parsed_lines = wrap_lines(parsed_lines, width as usize);
+        if is_truncated {
+            wrapped_parsed_lines.push(Line::from(Span::styled(
+                format!("... [Message truncated: {} more lines. Use a paging tool or scroll inside editor to view full text.]", lines_count - limit),
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)
+            )));
+        }
 
         match message.author {
             "You" => {
