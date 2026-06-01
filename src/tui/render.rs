@@ -53,6 +53,14 @@ mod icons {
     pub const INACTIVE_MARKER: &str = "   ";
 }
 
+fn get_theme(app: &App) -> crate::config::Theme {
+    if app.screen == Screen::Setup {
+        app.setup.theme
+    } else {
+        app.chat.config.theme
+    }
+}
+
 pub(crate) fn render(frame: &mut Frame, app: &App) {
     match app.screen {
         Screen::Setup => render_setup(frame, app),
@@ -200,6 +208,13 @@ fn render_setup(frame: &mut Frame, app: &App) {
             if app.setup.show_thoughts { icons::CHECK_SHOW_FULL } else { icons::CROSS_LABEL_ONLY },
             app.setup.active_field == SetupField::ShowThoughts,
             Color::Rgb(6, 182, 212),
+        ),
+        Line::from(""),
+        draw_setup_field(
+            "Theme",
+            app.setup.theme.label(),
+            app.setup.active_field == SetupField::Theme,
+            Color::Rgb(251, 146, 60),
         ),
     ];
 
@@ -373,7 +388,12 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
         match message.author {
             "You" => {
-                let user_style = Style::default().add_modifier(Modifier::REVERSED);
+                let theme = get_theme(app);
+                let (user_bg, user_fg) = match theme {
+                    crate::config::Theme::Dark => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
+                    crate::config::Theme::Light => (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)),
+                };
+                let user_style = Style::default().bg(user_bg).fg(user_fg);
                 let block_width = area.width as usize;
                 
                 if !all_lines.is_empty() {
@@ -847,7 +867,12 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         ])
         .split(area);
 
-    let base_style = Style::default().add_modifier(Modifier::REVERSED);
+    let theme = get_theme(app);
+    let (bar_bg, bar_fg) = match theme {
+        crate::config::Theme::Dark => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
+        crate::config::Theme::Light => (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)),
+    };
+    let base_style = Style::default().bg(bar_bg).fg(bar_fg);
 
     // 1. Render left mode block (powerline capsule style)
     let mode_paragraph = Paragraph::new(mode_text)
@@ -869,7 +894,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
     let status_color = if is_busy { Color::Rgb(245, 158, 11) } else { Color::Rgb(34, 197, 94) }; // Amber vs Green
 
     let middle_spans = vec![
-        Span::styled(format!(" {status_icon} "), Style::default().bg(status_color)),
+        Span::styled(format!(" {status_icon} "), Style::default().fg(status_color)),
         Span::styled(format!("{} ", status_str), Style::default().add_modifier(Modifier::BOLD)),
     ];
 
