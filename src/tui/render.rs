@@ -26,6 +26,8 @@ mod icons {
     pub const CROSS_LABEL_ONLY: &str = "Label Only";
     pub const SHELL_OK: &str = "+";
     pub const SHELL_ERR: &str = "-";
+    pub const ACTIVE_MARKER: &str = " > ";
+    pub const INACTIVE_MARKER: &str = "   ";
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -47,6 +49,8 @@ mod icons {
     pub const CROSS_LABEL_ONLY: &str = "✗ Label Only";
     pub const SHELL_OK: &str = "✓";
     pub const SHELL_ERR: &str = "✗";
+    pub const ACTIVE_MARKER: &str = "  ";
+    pub const INACTIVE_MARKER: &str = "   ";
 }
 
 pub(crate) fn render(frame: &mut Frame, app: &App) {
@@ -77,7 +81,8 @@ fn render_setup(frame: &mut Frame, app: &App) {
     let api_key = if app.setup.api_key.is_empty() {
         "not set".to_owned()
     } else {
-        "*".repeat(app.setup.api_key.chars().count().min(24))
+        let count = app.setup.api_key.chars().count();
+        format!("{} ({} chars)", "*".repeat(count.min(12)), count)
     };
 
     // Split chunks[1] into fields area, tip area, and save button area
@@ -249,7 +254,7 @@ fn draw_setup_field(
     active: bool,
     color: Color,
 ) -> Line<'static> {
-    let marker = if active { "  " } else { "   " };
+    let marker = if active { icons::ACTIVE_MARKER } else { icons::INACTIVE_MARKER };
     let marker_style = if active {
         Style::default().fg(color).add_modifier(Modifier::BOLD)
     } else {
@@ -845,7 +850,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         ])
         .split(area);
 
-    let base_style = Style::default().bg(Color::Rgb(30, 30, 38));
+    let base_style = Style::default().add_modifier(Modifier::REVERSED);
 
     // 1. Render left mode block (powerline capsule style)
     let mode_paragraph = Paragraph::new(mode_text)
@@ -856,6 +861,9 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
     let is_busy = app.busy_label().is_some();
     let status_str = app.busy_label().unwrap_or_else(|| app.status.clone());
     let status_icon = if is_busy {
+        #[cfg(target_os = "windows")]
+        let spinner_frames = ["-", "\\", "|", "/"];
+        #[cfg(not(target_os = "windows"))]
         let spinner_frames = ["◐", "◓", "◑", "◒"];
         spinner_frames[(app.tick / 2) % spinner_frames.len()]
     } else {
@@ -865,7 +873,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
 
     let middle_spans = vec![
         Span::styled(format!(" {status_icon} "), Style::default().fg(status_color)),
-        Span::styled(format!("{} ", status_str), Style::default().fg(Color::Rgb(220, 220, 225)).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{} ", status_str), Style::default().add_modifier(Modifier::BOLD)),
     ];
 
     let middle_paragraph = Paragraph::new(Line::from(middle_spans)).style(base_style);
@@ -879,7 +887,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
     let right_text = format!(" {}{} ", icons::CPU, model_name);
     let right_paragraph = Paragraph::new(right_text)
         .alignment(Alignment::Right)
-        .style(base_style.fg(Color::Rgb(110, 168, 254)));
+        .style(base_style);
     frame.render_widget(right_paragraph, chunks[2]);
 }
 
@@ -897,7 +905,7 @@ fn logo_lines() -> Vec<Line<'static>> {
         .map(|line| {
             Line::from(Span::styled(
                 line,
-                Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD),
+                Style::default(),
             ))
         })
         .collect()
@@ -910,7 +918,7 @@ fn logo_lines_for_area(width: u16, max_height: u16) -> Vec<Line<'static>> {
     } else {
         vec![Line::from(Span::styled(
             "darwincode",
-            Style::default().add_modifier(Modifier::BOLD),
+            Style::default(),
         ))]
     }
 }
