@@ -224,24 +224,20 @@ impl GeminiClient {
             for decl in &declarations {
                 let mut params = decl.parameters.clone().unwrap_or(serde_json::json!({}));
                 if let Some(obj) = params.as_object_mut() {
-                    if let Some(t) = obj.get_mut("type") {
-                        if let Some(s) = t.as_str() {
+                    if let Some(t) = obj.get_mut("type")
+                        && let Some(s) = t.as_str() {
                             *t = serde_json::json!(s.to_lowercase());
                         }
-                    }
-                    if let Some(props) = obj.get_mut("properties") {
-                        if let Some(props_obj) = props.as_object_mut() {
+                    if let Some(props) = obj.get_mut("properties")
+                        && let Some(props_obj) = props.as_object_mut() {
                             for (_, prop_val) in props_obj {
-                                if let Some(prop_obj) = prop_val.as_object_mut() {
-                                    if let Some(t) = prop_obj.get_mut("type") {
-                                        if let Some(s) = t.as_str() {
+                                if let Some(prop_obj) = prop_val.as_object_mut()
+                                    && let Some(t) = prop_obj.get_mut("type")
+                                        && let Some(s) = t.as_str() {
                                             *t = serde_json::json!(s.to_lowercase());
                                         }
-                                    }
-                                }
                             }
                         }
-                    }
                 }
                 
                 openai_tools.push(serde_json::json!({
@@ -255,14 +251,13 @@ impl GeminiClient {
             }
 
             let mut openai_messages = Vec::new();
-            if let Some(sys) = &system_instruction {
-                if let Some(text) = sys.parts.first().and_then(|p| p.get("text")).and_then(|t| t.as_str()) {
+            if let Some(sys) = &system_instruction
+                && let Some(text) = sys.parts.first().and_then(|p| p.get("text")).and_then(|t| t.as_str()) {
                     openai_messages.push(serde_json::json!({
                         "role": "system",
                         "content": text
                     }));
                 }
-            }
             
             let mut call_counter = 0;
             let mut tool_call_ids: Vec<(String, String)> = Vec::new();
@@ -287,24 +282,22 @@ impl GeminiClient {
                         
                         // Lookahead to collect all responded tool names in the subsequent "function" message(s)
                         let mut responded_names = Vec::new();
-                        if let Some(next_msg) = history.get(i + 1) {
-                            if next_msg.role == "function" {
+                        if let Some(next_msg) = history.get(i + 1)
+                            && next_msg.role == "function" {
                                 for part in &next_msg.parts {
-                                    if let Some(resp) = part.get("functionResponse") {
-                                        if let Some(name) = resp.get("name").and_then(|v| v.as_str()) {
+                                    if let Some(resp) = part.get("functionResponse")
+                                        && let Some(name) = resp.get("name").and_then(|v| v.as_str()) {
                                             responded_names.push(name.to_owned());
                                         }
-                                    }
                                 }
                             }
-                        }
 
                         for part in &msg.parts {
                             if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
                                 content.push_str(text);
                             }
-                            if let Some(call) = part.get("functionCall") {
-                                if let Some(name) = call.get("name").and_then(|v| v.as_str()) {
+                            if let Some(call) = part.get("functionCall")
+                                && let Some(name) = call.get("name").and_then(|v| v.as_str()) {
                                     // Only include the tool call if it actually has a response
                                     let is_responded = if let Some(pos) = responded_names.iter().position(|n| n == name) {
                                         responded_names.remove(pos);
@@ -328,7 +321,6 @@ impl GeminiClient {
                                         }));
                                     }
                                 }
-                            }
                         }
                         if !tool_calls.is_empty() {
                             let mut msg_obj = serde_json::json!({
@@ -348,8 +340,8 @@ impl GeminiClient {
                     }
                     "function" => {
                         for part in &msg.parts {
-                            if let Some(resp) = part.get("functionResponse") {
-                                if let Some(name) = resp.get("name").and_then(|v| v.as_str()) {
+                            if let Some(resp) = part.get("functionResponse")
+                                && let Some(name) = resp.get("name").and_then(|v| v.as_str()) {
                                     let response = resp.get("response").cloned().unwrap_or(serde_json::json!({}));
                                     let call_id = if let Some(pos) = tool_call_ids.iter().position(|(n, _)| n == name) {
                                         let (_, cid) = tool_call_ids.remove(pos);
@@ -364,7 +356,6 @@ impl GeminiClient {
                                         "content": response.to_string()
                                     }));
                                 }
-                            }
                         }
                     }
                     _ => {}
@@ -401,8 +392,8 @@ impl GeminiClient {
 
             for line in reader.lines() {
                 let line = line.context("failed to read stream line")?;
-                if line.starts_with("data: ") {
-                    let json_str = line["data: ".len()..].trim();
+                if let Some(stripped) = line.strip_prefix("data: ") {
+                    let json_str = stripped.trim();
                     if json_str == "[DONE]" {
                         break;
                     }
@@ -413,16 +404,15 @@ impl GeminiClient {
                     let chunk: serde_json::Value = serde_json::from_str(json_str)
                         .context("failed to parse stream chunk JSON")?;
                     
-                    if let Some(choices) = chunk.get("choices").and_then(|v| v.as_array()) {
-                        if let Some(choice) = choices.first() {
-                            if let Some(delta) = choice.get("delta") {
-                                if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
-                                    if !content.is_empty() {
+                    if let Some(choices) = chunk.get("choices").and_then(|v| v.as_array())
+                        && let Some(choice) = choices.first()
+                            && let Some(delta) = choice.get("delta") {
+                                if let Some(content) = delta.get("content").and_then(|v| v.as_str())
+                                    && !content.is_empty() {
                                         on_chunk(GeminiResponse::Turn(vec![serde_json::json!({
                                             "text": content
                                         })]))?;
                                     }
-                                }
                                 
                                 if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                                     for tc in tool_calls {
@@ -445,8 +435,6 @@ impl GeminiClient {
                                     }
                                 }
                             }
-                        }
-                    }
                 }
             }
 
@@ -490,8 +478,7 @@ impl GeminiClient {
             let reader = std::io::BufReader::new(response.into_reader());
             for line in reader.lines() {
                 let line = line.context("failed to read stream line")?;
-                if line.starts_with("data: ") {
-                    let json_str = &line["data: ".len()..];
+                if let Some(json_str) = line.strip_prefix("data: ") {
                     let chunk: GenerateContentResponse = serde_json::from_str(json_str)
                         .context("failed to parse stream chunk JSON")?;
                     if let Some(gemini_response) = chunk.into_response() {
