@@ -7,6 +7,48 @@ use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Pa
 use crate::app::{App, Screen, SetupField, PendingTask};
 use crate::tui::syntax::{parse_markdown_lines, wrap_lines, wrap_text_to_lines};
 
+#[cfg(target_os = "windows")]
+mod icons {
+    pub const PROVIDER: &str = "";
+    pub const SECURITY: &str = "";
+    pub const TIP: &str = "TIP: ";
+    pub const SAVE: &str = "";
+    pub const CHAT_MODE: &str = " CHAT ";
+    pub const SETTINGS_MODE: &str = " SETTINGS ";
+    pub const MODELS_MODE: &str = " MODELS ";
+    pub const SECURITY_MODE: &str = " SECURITY ";
+    pub const SESSIONS_MODE: &str = " SESSIONS ";
+    pub const CPU: &str = "";
+    pub const IDLE: &str = "OK";
+    pub const CHECK_ENABLED: &str = "Enabled";
+    pub const CROSS_DISABLED: &str = "Disabled";
+    pub const CHECK_SHOW_FULL: &str = "Show Full";
+    pub const CROSS_LABEL_ONLY: &str = "Label Only";
+    pub const SHELL_OK: &str = "+";
+    pub const SHELL_ERR: &str = "-";
+}
+
+#[cfg(not(target_os = "windows"))]
+mod icons {
+    pub const PROVIDER: &str = "  ";
+    pub const SECURITY: &str = "  ";
+    pub const TIP: &str = "  TIP: ";
+    pub const SAVE: &str = "  ";
+    pub const CHAT_MODE: &str = " 󰍡 CHAT ";
+    pub const SETTINGS_MODE: &str = "  SETTINGS ";
+    pub const MODELS_MODE: &str = "  MODELS ";
+    pub const SECURITY_MODE: &str = "  SECURITY ";
+    pub const SESSIONS_MODE: &str = "  SESSIONS ";
+    pub const CPU: &str = " ";
+    pub const IDLE: &str = "";
+    pub const CHECK_ENABLED: &str = "✔ Enabled";
+    pub const CROSS_DISABLED: &str = "✗ Disabled";
+    pub const CHECK_SHOW_FULL: &str = "✔ Show Full";
+    pub const CROSS_LABEL_ONLY: &str = "✗ Label Only";
+    pub const SHELL_OK: &str = "✓";
+    pub const SHELL_ERR: &str = "✗";
+}
+
 pub(crate) fn render(frame: &mut Frame, app: &App) {
     match app.screen {
         Screen::Setup => render_setup(frame, app),
@@ -81,7 +123,7 @@ fn render_setup(frame: &mut Frame, app: &App) {
             Style::default().fg(Color::DarkGray)
         })
         .title(Span::styled(
-            "   Provider & Connection ",
+            format!(" {}Provider & Connection ", icons::PROVIDER),
             Style::default().add_modifier(Modifier::BOLD),
         ))
         .padding(Padding::new(1, 1, 1, 1));
@@ -121,7 +163,7 @@ fn render_setup(frame: &mut Frame, app: &App) {
             Style::default().fg(Color::DarkGray)
         })
         .title(Span::styled(
-            "   Security & Preferences ",
+            format!(" {}Security & Preferences ", icons::SECURITY),
             Style::default().add_modifier(Modifier::BOLD),
         ))
         .padding(Padding::new(1, 1, 1, 1));
@@ -129,14 +171,14 @@ fn render_setup(frame: &mut Frame, app: &App) {
     let right_fields = vec![
         draw_setup_field(
             "Codebase Tools",
-            if app.setup.enable_codebase_tools { "✔ Enabled" } else { "✗ Disabled" },
+            if app.setup.enable_codebase_tools { icons::CHECK_ENABLED } else { icons::CROSS_DISABLED },
             app.setup.active_field == SetupField::EnableCodebase,
             Color::Rgb(16, 185, 129),
         ),
         Line::from(""),
         draw_setup_field(
             "Bash Execution",
-            if app.setup.enable_bash_tools { "✔ Enabled" } else { "✗ Disabled" },
+            if app.setup.enable_bash_tools { icons::CHECK_ENABLED } else { icons::CROSS_DISABLED },
             app.setup.active_field == SetupField::EnableBash,
             Color::Rgb(245, 158, 11),
         ),
@@ -150,7 +192,7 @@ fn render_setup(frame: &mut Frame, app: &App) {
         Line::from(""),
         draw_setup_field(
             "Thoughts View",
-            if app.setup.show_thoughts { "✔ Show Full" } else { "✗ Label Only" },
+            if app.setup.show_thoughts { icons::CHECK_SHOW_FULL } else { icons::CROSS_LABEL_ONLY },
             app.setup.active_field == SetupField::ShowThoughts,
             Color::Rgb(6, 182, 212),
         ),
@@ -161,7 +203,7 @@ fn render_setup(frame: &mut Frame, app: &App) {
     // Render Tip Area if sk- key is active
     if has_tip {
         let tip_paragraph = Paragraph::new(Line::from(vec![
-            Span::styled("   TIP: ", Style::default().fg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD)),
+            Span::styled(icons::TIP, Style::default().fg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD)),
             Span::styled("OpenAI key detected. Press ", Style::default()),
             Span::styled("Ctrl+A", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
             Span::styled(" to auto-apply OmniRoute defaults.", Style::default()),
@@ -179,9 +221,9 @@ fn render_setup(frame: &mut Frame, app: &App) {
     };
     
     let save_text = if save_active {
-        "   SAVE AND START ASSISTANT "
+        format!(" {}SAVE AND START ASSISTANT ", icons::SAVE)
     } else {
-        "   Save and Start Assistant "
+        format!(" {}Save and Start Assistant ", icons::SAVE)
     };
 
     let save_block = Block::default()
@@ -285,7 +327,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         if is_shell {
-            let icon = if message.shell_success { "✓" } else { "✗" };
+            let icon = if message.shell_success { icons::SHELL_OK } else { icons::SHELL_ERR };
             let title = format!("{icon} Shell {}", message.shell_cmd);
             
             if !all_lines.is_empty() {
@@ -786,11 +828,11 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
     let (mode_text, mode_bg, mode_fg) = match app.screen {
-        Screen::Chat => (" 󰍡 CHAT ", Color::Rgb(59, 130, 246), Color::Black), // Vibrant blue
-        Screen::Setup => ("  SETTINGS ", Color::Rgb(236, 72, 153), Color::Black), // Magenta/Pink
-        Screen::Models => ("  MODELS ", Color::Rgb(168, 85, 247), Color::Black), // Purple
-        Screen::Permissions => ("  SECURITY ", Color::Rgb(245, 158, 11), Color::Black), // Amber/Yellow
-        Screen::Sessions => ("  SESSIONS ", Color::Rgb(16, 185, 129), Color::Black), // Emerald green
+        Screen::Chat => (icons::CHAT_MODE, Color::Rgb(59, 130, 246), Color::Black), // Vibrant blue
+        Screen::Setup => (icons::SETTINGS_MODE, Color::Rgb(236, 72, 153), Color::Black), // Magenta/Pink
+        Screen::Models => (icons::MODELS_MODE, Color::Rgb(168, 85, 247), Color::Black), // Purple
+        Screen::Permissions => (icons::SECURITY_MODE, Color::Rgb(245, 158, 11), Color::Black), // Amber/Yellow
+        Screen::Sessions => (icons::SESSIONS_MODE, Color::Rgb(16, 185, 129), Color::Black), // Emerald green
     };
 
     let mode_len = mode_text.chars().count() as u16;
@@ -817,7 +859,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         let spinner_frames = ["◐", "◓", "◑", "◒"];
         spinner_frames[(app.tick / 2) % spinner_frames.len()]
     } else {
-        ""
+        icons::IDLE
     };
     let status_color = if is_busy { Color::Rgb(245, 158, 11) } else { Color::Rgb(34, 197, 94) }; // Amber vs Green
 
@@ -834,7 +876,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         Screen::Setup => &app.setup.model,
         _ => &app.chat.config.model,
     };
-    let right_text = format!("  {} ", model_name);
+    let right_text = format!(" {}{} ", icons::CPU, model_name);
     let right_paragraph = Paragraph::new(right_text)
         .alignment(Alignment::Right)
         .style(base_style.fg(Color::Rgb(110, 168, 254)));
@@ -855,7 +897,7 @@ fn logo_lines() -> Vec<Line<'static>> {
         .map(|line| {
             Line::from(Span::styled(
                 line,
-                Style::default().add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD),
             ))
         })
         .collect()
