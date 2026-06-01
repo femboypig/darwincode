@@ -94,24 +94,22 @@ pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serd
             }
             "read_file" => {
                 let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-                res_parts.push(format!("`{path}` read successfully"));
                 if let Some(content) = response.get("content").and_then(|v| v.as_str()) {
-                    let ext = std::path::Path::new(path)
-                        .extension()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("");
-                    let lines: Vec<&str> = content.lines().collect();
-                    let limit = 100;
-                    let mut formatted = format!("\n```{ext}\n");
-                    for line in lines.iter().take(limit) {
-                        formatted.push_str(line);
-                        formatted.push('\n');
-                    }
-                    if lines.len() > limit {
-                        formatted.push_str(&format!("... and {} more lines\n", lines.len() - limit));
-                    }
-                    formatted.push_str("```");
-                    res_parts.push(formatted);
+                    let count = content.lines().count();
+                    res_parts.push(format!("`{path}` read successfully ({count} lines)"));
+                } else {
+                    res_parts.push(format!("`{path}` read successfully"));
+                }
+            }
+            "read_files" => {
+                let paths_len = args.get("paths").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                res_parts.push(format!("read {paths_len} files successfully"));
+            }
+            "edit_files" => {
+                let edits_len = args.get("edits").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                res_parts.push(format!("atomically edited {edits_len} files"));
+                if let Some(diff) = response.get("diff").and_then(|v| v.as_str()) {
+                    res_parts.push(format!("\n{diff}"));
                 }
             }
             "write_file" => {
