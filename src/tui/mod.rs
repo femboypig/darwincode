@@ -84,7 +84,11 @@ fn run_loop(
 
         if event::poll(Duration::from_millis(100))? {
             match event::read()? {
-                Event::Key(key) => events::handle_key(app, sender, key)?,
+                Event::Key(key) => {
+                    if key.kind != event::KeyEventKind::Release {
+                        events::handle_key(app, sender, key)?;
+                    }
+                }
                 Event::Paste(text) => events::handle_paste(app, text),
                 Event::Resize(_, _) => {
                     let _ = terminal.autoresize();
