@@ -361,6 +361,7 @@ pub enum ChatCommand {
     Clear,
     New,
     History,
+    Undo,
     Help,
     Unknown(String),
 }
@@ -394,6 +395,7 @@ impl ChatCommand {
             "/clear" => Self::Clear,
             "/new" => Self::New,
             "/history" => Self::History,
+            "/undo" => Self::Undo,
             "/help" => Self::Help,
             value => Self::Unknown(value.to_owned()),
         })
@@ -428,6 +430,10 @@ impl ChatCommand {
             CommandSuggestion {
                 name: "/history".to_owned(),
                 description: "List history in chat".to_owned(),
+            },
+            CommandSuggestion {
+                name: "/undo".to_owned(),
+                description: "Revert all file changes made in the last prompt".to_owned(),
             },
             CommandSuggestion {
                 name: "/help".to_owned(),
@@ -480,5 +486,14 @@ mod tests {
         chat.navigate_history_down();
         assert_eq!(chat.input, "current draft");
         assert_eq!(chat.sent_history_index, None);
+    }
+
+    #[test]
+    fn test_undo_command_parsing() {
+        let parsed = ChatCommand::parse("/undo");
+        assert!(matches!(parsed, Some(ChatCommand::Undo)));
+
+        let suggestions = ChatCommand::suggestions();
+        assert!(suggestions.iter().any(|s| s.name == "/undo"));
     }
 }
