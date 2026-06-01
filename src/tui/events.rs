@@ -123,6 +123,14 @@ fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key: KeyEvent)
             }
         }
         (KeyCode::Backspace, _) => app.setup.pop_char(),
+        (KeyCode::Delete, _) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            match app.setup.active_field {
+                SetupField::ApiKey => app.setup.api_key.clear(),
+                SetupField::Model => app.setup.model.clear(),
+                SetupField::BaseUrl => app.setup.base_url.clear(),
+                _ => {}
+            }
+        }
         (KeyCode::Up, _) if app.setup.active_field == SetupField::Model => {
             app.setup.select_previous_model();
         }
