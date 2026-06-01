@@ -209,7 +209,25 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 app.should_quit = true;
             }
-            _ => {}
+            KeyCode::Up => {
+                app.confirm_scroll = app.confirm_scroll.saturating_sub(1);
+            }
+            KeyCode::Down => {
+                app.confirm_scroll = app.confirm_scroll.saturating_add(1);
+            }
+            KeyCode::PageUp => {
+                app.confirm_scroll = app.confirm_scroll.saturating_sub(10);
+            }
+            KeyCode::PageDown => {
+                app.confirm_scroll = app.confirm_scroll.saturating_add(10);
+            }
+            _ => {
+                if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollUp, key) {
+                    app.confirm_scroll = app.confirm_scroll.saturating_sub(1);
+                } else if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollDown, key) {
+                    app.confirm_scroll = app.confirm_scroll.saturating_add(1);
+                }
+            }
         }
         return Ok(());
     }
