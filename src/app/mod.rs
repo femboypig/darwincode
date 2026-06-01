@@ -61,65 +61,6 @@ pub enum Screen {
     Sessions,
 }
 
-fn detect_background_light() -> bool {
-    // Check environment variables first (fast)
-    if let Ok(colorfgbg) = std::env::var("COLORFGBG") {
-        if let Some(bg) = colorfgbg.split(';').last() {
-            if let Ok(bg_num) = bg.parse::<i32>() {
-                return bg_num == 7 || (bg_num >= 9 && bg_num <= 15);
-            }
-        }
-    }
-
-    // Try querying terminal background color via OSC 11
-    use std::io::{Read, Write};
-    
-    // We only try this if stdin/stdout are terminals and raw mode is not enabled yet
-    let mut stdout = std::io::stdout();
-    let _ = stdout.write_all(b"\x1b]11;?\x07");
-    let _ = stdout.flush();
-
-    // Put stdin in raw mode temporarily to read the response immediately without waiting for enter key
-    if crossterm::terminal::enable_raw_mode().is_ok() {
-        let mut buf = [0u8; 100];
-        let mut read_bytes = 0;
-        // Poll stdin with a short timeout (e.g. 50ms)
-        if let Ok(true) = crossterm::event::poll(std::time::Duration::from_millis(50)) {
-            // Read response
-            let mut stdin = std::io::stdin();
-            if let Ok(n) = stdin.read(&mut buf) {
-                read_bytes = n;
-            }
-        }
-        let _ = crossterm::terminal::disable_raw_mode();
-
-        if read_bytes > 0 {
-            let response = String::from_utf8_lossy(&buf[..read_bytes]);
-            // Response is typically in the format: \x1b]11;rgb:XXXX/XXXX/XXXX\x07
-            if let Some(rgb_idx) = response.find("rgb:") {
-                let rgb_str = &response[rgb_idx + 4..];
-                let parts: Vec<&str> = rgb_str.split(|c| c == '/' || c == '\x07' || c == '\x1b').collect();
-                if parts.len() >= 3 {
-                    let parse_hex = |s: &str| -> Option<u32> {
-                        let clean: String = s.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-                        u32::from_str_radix(&clean, 16).ok()
-                    };
-                    if let (Some(r), Some(g), Some(b)) = (parse_hex(parts[0]), parse_hex(parts[1]), parse_hex(parts[2])) {
-                        let max_val = if parts[0].len() > 2 { 65535.0 } else { 255.0 };
-                        let r_norm = (r as f64) / max_val;
-                        let g_norm = (g as f64) / max_val;
-                        let b_norm = (b as f64) / max_val;
-                        let luminance = 0.2126 * r_norm + 0.7152 * g_norm + 0.0722 * b_norm;
-                        return luminance > 0.5; // Light background if luminance > 0.5
-                    }
-                }
-            }
-        }
-    }
-
-    false // Default to dark mode
-}
-
 #[derive(Debug)]
 pub struct App {
     pub screen: Screen,
@@ -132,12 +73,10 @@ pub struct App {
     pub pending: Option<PendingTask>,
     pub tick: usize,
     pub should_quit: bool,
-    pub terminal_light: bool,
 }
 
 impl App {
     pub fn new(config: Option<StoredConfig>) -> Self {
-        let terminal_light = detect_background_light();
         match config {
             Some(config) => Self {
                 screen: Screen::Chat,
@@ -150,7 +89,6 @@ impl App {
                 pending: None,
                 tick: 0,
                 should_quit: false,
-                terminal_light,
             },
             None => Self {
                 screen: Screen::Setup,
@@ -164,7 +102,6 @@ impl App {
                 pending: None,
                 tick: 0,
                 should_quit: false,
-                terminal_light,
             },
         }
     }
