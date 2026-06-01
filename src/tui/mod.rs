@@ -29,6 +29,7 @@ pub(crate) enum WorkerEvent {
     StreamError(String),
     Models(Result<Vec<String>, String>),
     ToolResult(String, serde_json::Value),
+    ResetStream,
 }
 
 pub fn run(mut app: App) -> Result<()> {
@@ -69,7 +70,7 @@ fn run_loop(
             && let Some(action) = app.pop_and_start_next_queue_item() {
                 match action {
                     crate::app::SubmitAction::Generate(request) => {
-                        spawn_generation_worker(request.config, request.history, sender.clone());
+                        spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
                     }
                     crate::app::SubmitAction::LoadModels(config) => {
                         spawn_models_worker(config, sender.clone());
@@ -118,8 +119,11 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
         WorkerEvent::Models(result) => app.complete_load_models(result),
         WorkerEvent::ToolResult(name, response) => {
             if let Some(crate::app::FunctionAction::ResumeGeneration(request)) = app.complete_function_execution(name, response) {
-                spawn_generation_worker(request.config, request.history, sender.clone());
+                spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
             }
+        }
+        WorkerEvent::ResetStream => {
+            app.chat.streaming_parts.clear();
         }
     }
 }
@@ -158,6 +162,134 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                         match std::fs::read_to_string(path) {
                             Ok(content) => serde_json::json!({ "content": content }),
                             Err(e) => serde_json::json!({ "error": e.to_string() }),
+                        }
+                    }
+                    "read_files" => {
+                        let paths = args.get("paths").and_then(|v| v.as_array());
+                        if let Some(paths) = paths {
+                            let mut results = serde_json::Map::new();
+                            for path_val in paths {
+                                if let Some(path) = path_val.as_str() {
+                                    match std::fs::read_to_string(path) {
+                                        Ok(content) => {
+                                            results.insert(path.to_owned(), serde_json::json!({ "content": content }));
+                                        }
+                                        Err(e) => {
+                                            results.insert(path.to_owned(), serde_json::json!({ "error": e.to_string() }));
+                                        }
+                                    }
+                                }
+                            }
+                            serde_json::json!({ "files": results })
+                        } else {
+                            serde_json::json!({ "error": "Invalid arguments: paths array is required" })
+                        }
+                    }
+                    "edit_files" => {
+                        let edits = args.get("edits").and_then(|v| v.as_array());
+                        if let Some(edits) = edits {
+                            let mut parsed_edits = Vec::new();
+                            let mut validation_errors = Vec::new();
+                            
+                            for (idx, edit_val) in edits.iter().enumerate() {
+                                let path = edit_val.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                let old_string = edit_val.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+                                let new_string = edit_val.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                                if path.is_empty() {
+                                    validation_errors.push(format!("Edit at index {} is missing 'path'", idx));
+                                    continue;
+                                }
+                                parsed_edits.push((path.to_owned(), old_string.to_owned(), new_string.to_owned()));
+                            }
+                            
+                            if !validation_errors.is_empty() {
+                                serde_json::json!({ "error": validation_errors.join("; ") })
+                            } else {
+                                let mut original_contents = std::collections::HashMap::new();
+                                let mut apply_errors = Vec::new();
+                                
+                                for (path, _, _) in &parsed_edits {
+                                    if !original_contents.contains_key(path) {
+                                        match std::fs::read_to_string(path) {
+                                            Ok(content) => {
+                                                original_contents.insert(path.clone(), content);
+                                            }
+                                            Err(e) => {
+                                                apply_errors.push(format!("Failed to read `{}`: {}", path, e));
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if !apply_errors.is_empty() {
+                                    serde_json::json!({ "error": apply_errors.join("; ") })
+                                } else {
+                                    let mut working_contents = original_contents.clone();
+                                    let mut diffs = Vec::new();
+                                    
+                                    for (path, old_string, new_string) in &parsed_edits {
+                                        let current_content = working_contents.get_mut(path).unwrap();
+                                        if current_content.contains(old_string) {
+                                            let mut diff = format!("--- {}\n+++ {}\n", path, path);
+                                            let old_lines: Vec<&str> = old_string.lines().collect();
+                                            let new_lines: Vec<&str> = new_string.lines().collect();
+                                            
+                                            for line in &old_lines {
+                                                diff.push_str("- ");
+                                                diff.push_str(line);
+                                                diff.push('\n');
+                                            }
+                                            for line in &new_lines {
+                                                diff.push_str("+ ");
+                                                diff.push_str(line);
+                                                diff.push('\n');
+                                            }
+                                            diffs.push(diff);
+                                            
+                                            *current_content = current_content.replacen(old_string, new_string, 1);
+                                        } else {
+                                            apply_errors.push(format!("old_string not found in `{}`", path));
+                                            break;
+                                        }
+                                    }
+                                    
+                                    if !apply_errors.is_empty() {
+                                        serde_json::json!({ "error": apply_errors.join("; ") })
+                                    } else {
+                                        let mut written_files = Vec::new();
+                                        let mut write_error = None;
+                                        
+                                        for (path, new_content) in &working_contents {
+                                            match std::fs::write(path, new_content) {
+                                                Ok(_) => {
+                                                    written_files.push(path.clone());
+                                                }
+                                                Err(e) => {
+                                                    write_error = Some(format!("Failed to write `{}`: {}", path, e));
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        
+                                        if let Some(err) = write_error {
+                                            for path in written_files {
+                                                let orig = original_contents.get(&path).unwrap();
+                                                let _ = std::fs::write(&path, orig);
+                                            }
+                                            serde_json::json!({ "error": format!("Write failed, transaction rolled back. Error: {}", err) })
+                                        } else {
+                                            let mut combined_diff = String::new();
+                                            combined_diff.push_str("```diff\n");
+                                            combined_diff.push_str(&diffs.join("\n"));
+                                            combined_diff.push_str("```");
+                                            
+                                            serde_json::json!({ "success": true, "diff": combined_diff })
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            serde_json::json!({ "error": "Invalid arguments: edits array is required" })
                         }
                     }
                     "list_directory" => {
@@ -287,7 +419,7 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
             });
         }
         crate::app::FunctionAction::ResumeGeneration(request) => {
-            spawn_generation_worker(request.config, request.history, sender.clone());
+            spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
         }
     }
 }
@@ -295,20 +427,45 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
 pub(crate) fn spawn_generation_worker(
     config: StoredConfig,
     history: Vec<crate::gemini::ChatMessage>,
+    cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
     sender: Sender<WorkerEvent>,
 ) {
     thread::spawn(move || {
         let sender_clone = sender.clone();
-        let result = GeminiClient::new(config).generate_stream(&history, move |chunk| {
-            let _ = sender_clone.send(WorkerEvent::StreamChunk(chunk));
-            Ok(())
-        });
-        match result {
-            Ok(_) => {
-                let _ = sender.send(WorkerEvent::StreamDone);
+        let cancel_clone = cancel_token.clone();
+        
+        let mut retries = 0;
+        loop {
+            if cancel_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                let _ = sender.send(WorkerEvent::StreamError("Stream cancelled".to_owned()));
+                return;
             }
-            Err(error) => {
-                let _ = sender.send(WorkerEvent::StreamError(error.to_string()));
+            let sender_c = sender_clone.clone();
+            let cancel_c = cancel_clone.clone();
+            let history_c = history.clone();
+            let result = GeminiClient::new(config.clone()).generate_stream(&history_c, cancel_c, move |chunk| {
+                let _ = sender_c.send(WorkerEvent::StreamChunk(chunk));
+                Ok(())
+            });
+            match result {
+                Ok(_) => {
+                    let _ = sender.send(WorkerEvent::StreamDone);
+                    return;
+                }
+                Err(error) => {
+                    if cancel_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                        let _ = sender.send(WorkerEvent::StreamError("Stream cancelled".to_owned()));
+                        return;
+                    }
+                    retries += 1;
+                    if retries < 3 {
+                        let _ = sender.send(WorkerEvent::ResetStream);
+                        thread::sleep(Duration::from_millis(500));
+                    } else {
+                        let _ = sender.send(WorkerEvent::StreamError(error.to_string()));
+                        return;
+                    }
+                }
             }
         }
     });
