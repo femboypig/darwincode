@@ -20,8 +20,12 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
         "stable-darwincode-fallback-key-998".to_owned()
     };
     
-    let username = std::env::var("USER").unwrap_or_else(|_| "default_user".to_owned());
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_owned());
+    let username = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "default_user".to_owned());
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| "/".to_owned());
     
     hasher.update(machine_id.as_bytes());
     hasher.update(username.as_bytes());
