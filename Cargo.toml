@@ -1,6 +1,6 @@
 [package]
 name = "darwincode"
-version = "1.9.30"
+version = "1.9.31"
 edition = "2024"
 
 [dependencies]
