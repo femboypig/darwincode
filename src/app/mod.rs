@@ -85,6 +85,7 @@ pub struct App {
     pub cancel_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub last_file_backups: Vec<FileBackup>,
     pub generation_id: usize,
+    pub confirm_scroll: u16,
 }
 
 impl App {
@@ -106,6 +107,7 @@ impl App {
                 cancel_token: None,
                 last_file_backups: Vec::new(),
                 generation_id: 0,
+                confirm_scroll: 0,
             },
             None => Self {
                 screen: Screen::Setup,
@@ -123,6 +125,7 @@ impl App {
                 cancel_token: None,
                 last_file_backups: Vec::new(),
                 generation_id: 0,
+                confirm_scroll: 0,
             },
         }
     }
@@ -394,6 +397,7 @@ impl App {
                 self.pending = Some(PendingTask::Generating);
                 self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"}))
             } else {
+                self.confirm_scroll = 0;
                 self.pending = Some(PendingTask::ConfirmFunction { name, args });
                 self.status = "Action required".to_owned();
                 None
