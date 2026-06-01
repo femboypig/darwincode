@@ -37,6 +37,11 @@ cargo install --path .
 | `Ctrl+S` | Open settings from chat |
 | `Ctrl+P` | Open interactive model switcher mid-conversation |
 | `Ctrl+A` | Auto-apply OmniRoute defaults (when `sk-` key is typed) |
+| `Ctrl+Z` | Undo last edit in message input |
+| `Ctrl+R` | Redo last undone edit in message input |
+| `Ctrl+K` | Cut/copy entire input to system clipboard |
+| `Ctrl+Y` | Paste from system clipboard into message input |
+| `Ctrl+L` | Copy entire last assistant response to clipboard |
 | `Esc` | Quit app, or return from settings to active chat |
 
 ### Chat Commands
