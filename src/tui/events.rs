@@ -10,7 +10,7 @@ pub(crate) fn handle_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEv
         Screen::Setup => handle_setup_key(app, sender, key),
         Screen::Chat => handle_chat_key(app, sender, key),
         Screen::Models => handle_models_key(app, key),
-        Screen::Permissions => handle_permissions_key(app, key),
+        Screen::Permissions => handle_permissions_key(app, sender, key),
         Screen::Sessions => handle_sessions_key(app, key),
     }
 }
@@ -32,14 +32,28 @@ pub(crate) fn handle_paste(app: &mut App, text: String) {
     }
 }
 
-fn handle_permissions_key(app: &mut App, key: KeyEvent) -> Result<()> {
+fn handle_permissions_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -> Result<()> {
     match (key.code, key.modifiers) {
         (KeyCode::Char('c'), KeyModifiers::CONTROL) | (KeyCode::Esc, _) => {
             app.cancel_permissions();
         }
         (KeyCode::Up, _) => app.permissions.select_previous(),
         (KeyCode::Down, _) => app.permissions.select_next(),
-        (KeyCode::Enter, _) => app.apply_permission_level(),
+        (KeyCode::Enter, _) => {
+            if let Some(action) = app.apply_permission_level() {
+                match action {
+                    SubmitAction::Generate(request) => {
+                        spawn_generation_worker(request.config, request.history, sender.clone());
+                    }
+                    SubmitAction::LoadModels(config) => {
+                        spawn_models_worker(config, sender.clone());
+                    }
+                    SubmitAction::ExecuteFunction { name, args } => {
+                        handle_function_action(crate::app::FunctionAction::Execute { name, args }, sender);
+                    }
+                }
+            }
+        }
         _ => {}
     }
     Ok(())
@@ -170,6 +184,53 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
             app.should_quit = true;
         }
+        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+            app.chat.undo();
+        }
+        (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+            app.chat.redo();
+        }
+        (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+            let text = app.chat.input.clone();
+            if !text.is_empty() {
+                if copy_to_clipboard(&text).is_ok() {
+                    app.status = "Copied input to clipboard".to_owned();
+                }
+                app.chat.save_history();
+                app.chat.input.clear();
+                app.chat.cursor = 0;
+                app.chat.input_scroll = 0;
+            }
+        }
+        (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
+            if let Ok(text) = read_from_clipboard() {
+                app.chat.insert_text(&text);
+            }
+        }
+        (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
+            let mut last_response = None;
+            for msg in app.chat.history.iter().rev() {
+                if msg.role == "model" {
+                    let mut text = String::new();
+                    for part in &msg.parts {
+                        if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
+                            text.push_str(t);
+                        }
+                    }
+                    if !text.is_empty() {
+                        last_response = Some(text);
+                        break;
+                    }
+                }
+            }
+            if let Some(text) = last_response {
+                if copy_to_clipboard(&text).is_ok() {
+                    app.status = "Copied last response to clipboard".to_owned();
+                }
+            } else {
+                app.status = "No assistant response to copy".to_owned();
+            }
+        }
         (KeyCode::Esc, _) => {
             if matches!(app.pending, Some(crate::app::PendingTask::Generating)) {
                 app.pending = None;
@@ -200,6 +261,9 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
                     }
                     SubmitAction::LoadModels(config) => {
                         spawn_models_worker(config, sender.clone());
+                    }
+                    SubmitAction::ExecuteFunction { name, args } => {
+                        handle_function_action(crate::app::FunctionAction::Execute { name, args }, sender);
                     }
                 }
             }
@@ -273,4 +337,66 @@ fn handle_sessions_key(app: &mut App, key: KeyEvent) -> Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+fn copy_to_clipboard(text: &str) -> Result<()> {
+    use std::process::{Command, Stdio};
+    use std::io::Write;
+
+    if cfg!(target_os = "macos") {
+        let mut child = Command::new("pbcopy")
+            .stdin(Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes())?;
+        }
+        child.wait()?;
+    } else if cfg!(target_os = "windows") {
+        let mut child = Command::new("clip")
+            .stdin(Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes())?;
+        }
+        child.wait()?;
+    } else {
+        let cmd = if Command::new("which").arg("wl-copy").output().is_ok_and(|o| o.status.success()) {
+            "wl-copy"
+        } else {
+            "xclip"
+        };
+        let args = if cmd == "xclip" { vec!["-selection", "clipboard"] } else { vec![] };
+        let mut child = Command::new(cmd)
+            .args(&args)
+            .stdin(Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes())?;
+        }
+        child.wait()?;
+    }
+    Ok(())
+}
+
+fn read_from_clipboard() -> Result<String> {
+    use std::process::Command;
+
+    if cfg!(target_os = "macos") {
+        let output = Command::new("pbpaste").output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else if cfg!(target_os = "windows") {
+        let output = Command::new("powershell.exe")
+            .args(&["-Command", "Get-Clipboard"])
+            .output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    } else {
+        let cmd = if Command::new("which").arg("wl-paste").output().is_ok_and(|o| o.status.success()) {
+            "wl-paste"
+        } else {
+            "xclip"
+        };
+        let args = if cmd == "xclip" { vec!["-o", "-selection", "clipboard"] } else { vec![] };
+        let output = Command::new(cmd).args(&args).output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
 }
