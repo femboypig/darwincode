@@ -167,30 +167,23 @@ pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
     for entry in std::fs::read_dir(sessions_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            if let Ok(cipher_data) = std::fs::read(&path) {
-                if let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key) {
-                    if let Ok(session) = serde_json::from_slice::<serde_json::Value>(&plain_data) {
+        if path.extension().and_then(|s| s.to_str()) == Some("json")
+            && let Ok(cipher_data) = std::fs::read(&path)
+                && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
+                    && let Ok(session) = serde_json::from_slice::<serde_json::Value>(&plain_data) {
                         let id = session.get("id").and_then(|v| v.as_str()).unwrap_or("").to_owned();
                         if id.is_empty() { continue; }
                         
                         let mut snippet = "Empty chat".to_owned();
-                        if let Some(history) = session.get("history").and_then(|v| v.as_array()) {
-                            if let Some(first_msg) = history.first() {
-                                if let Some(parts) = first_msg.get("parts").and_then(|v| v.as_array()) {
-                                    if let Some(first_part) = parts.first() {
-                                        if let Some(text) = first_part.get("text").and_then(|v| v.as_str()) {
+                        if let Some(history) = session.get("history").and_then(|v| v.as_array())
+                            && let Some(first_msg) = history.first()
+                                && let Some(parts) = first_msg.get("parts").and_then(|v| v.as_array())
+                                    && let Some(first_part) = parts.first()
+                                        && let Some(text) = first_part.get("text").and_then(|v| v.as_str()) {
                                             snippet = text.chars().take(40).collect::<String>();
                                         }
-                                    }
-                                }
-                            }
-                        }
                         result.push(SessionMeta { id, snippet });
                     }
-                }
-            }
-        }
     }
     
     result.sort_by(|a, b| b.id.cmp(&a.id));
@@ -214,11 +207,10 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
             }
             "model" => {
                 for part in &msg.parts {
-                    if let Some(call) = part.get("functionCall") {
-                        if let (Some(name), Some(args)) = (call.get("name").and_then(|v| v.as_str()), call.get("args")) {
+                    if let Some(call) = part.get("functionCall")
+                        && let (Some(name), Some(args)) = (call.get("name").and_then(|v| v.as_str()), call.get("args")) {
                             last_function_call = Some((name.to_owned(), args.clone()));
                         }
-                    }
                 }
 
                 let mut text = String::new();
@@ -293,8 +285,10 @@ mod tests {
             std::env::set_var("HOME", &temp_dir);
         }
         
-        let mut config = crate::config::StoredConfig::default();
-        config.api_key = "test_key".to_owned();
+        let config = crate::config::StoredConfig {
+            api_key: "test_key".to_owned(),
+            ..Default::default()
+        };
         let mut chat = ChatState::new(config);
         chat.session_id = "test_session_123".to_owned();
         chat.history.push(ChatMessage::user("Hello!".to_owned()));
@@ -380,7 +374,7 @@ mod tests {
         assert_eq!(messages[1].author, "Shell");
         assert_eq!(messages[1].shell_cmd, "echo hello");
         assert_eq!(messages[1].text, "hello\n");
-        assert_eq!(messages[1].shell_success, true);
+        assert!(messages[1].shell_success);
 
         assert_eq!(messages[2].author, "Darwin");
         assert!(messages[2].text.contains("foo.txt"));
