@@ -217,40 +217,29 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                     }
                     "run_bash_command" => {
                         let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                        let ts = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_micros())
-                            .unwrap_or(0);
-                        let temp_out = std::env::temp_dir().join(format!("darwincode_cmd_{}.log", ts));
                         
                         let run_result = (|| -> Result<serde_json::Value, std::io::Error> {
-                            let out_file = std::fs::File::create(&temp_out)?;
-                            let err_file = out_file.try_clone()?;
-                            
-                            let mut child = std::process::Command::new("bash")
+                            let child = std::process::Command::new("bash")
                                 .arg("-c")
                                 .arg(cmd)
-                                .stdout(out_file)
-                                .stderr(err_file)
+                                .stdout(std::process::Stdio::piped())
+                                .stderr(std::process::Stdio::piped())
                                 .spawn()?;
                             
-                            let status = child.wait()?;
-                            let output_content = std::fs::read_to_string(&temp_out).unwrap_or_default();
-                            let _ = std::fs::remove_file(&temp_out);
+                            let output = child.wait_with_output()?;
+                            let stdout_content = String::from_utf8_lossy(&output.stdout).into_owned();
+                            let stderr_content = String::from_utf8_lossy(&output.stderr).into_owned();
                             
                             Ok(serde_json::json!({
-                                "status": status.code(),
-                                "stdout": output_content,
-                                "stderr": "",
+                                "status": output.status.code(),
+                                "stdout": stdout_content,
+                                "stderr": stderr_content,
                             }))
                         })();
                         
                         match run_result {
                             Ok(val) => val,
-                            Err(e) => {
-                                let _ = std::fs::remove_file(&temp_out);
-                                serde_json::json!({ "error": e.to_string() })
-                            }
+                            Err(e) => serde_json::json!({ "error": e.to_string() })
                         }
                     }
                     _ => serde_json::json!({ "error": "Unknown function" }),
