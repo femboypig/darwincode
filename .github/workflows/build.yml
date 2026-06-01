@@ -1,0 +1,66 @@
+name: Rust CI & Release
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Run tests
+      run: cargo test --verbose
+
+    - name: Bump version & Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Configure Git
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Extract current version from Cargo.toml
+        VERSION=$(grep -m 1 '^version = ' Cargo.toml | cut -d '"' -f 2)
+        echo "Current version: $VERSION"
+
+        # Split version into parts
+        IFS='.' read -r major minor patch <<< "$VERSION"
+        new_patch=$((patch + 1))
+        NEW_VERSION="$major.$minor.$new_patch"
+        echo "New version: $NEW_VERSION"
+
+        # Update Cargo.toml with the new version
+        sed -i "0,/^version = .*/{s/^version = .*/version = \"$NEW_VERSION\"/}" Cargo.toml
+
+        # Build production release binary
+        cargo build --release --verbose
+
+        # Commit and push updated Cargo.toml back to main (using [skip ci] to avoid infinite loops)
+        git add Cargo.toml
+        git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+        git push origin main
+
+        # Get latest commit message for release details
+        COMMIT_MSG=$(git log -1 --pretty=%B)
+
+        # Create GitHub Release and upload the compiled binary
+        gh release create "v$NEW_VERSION" target/release/darwincode \
+          --title "Release v$NEW_VERSION" \
+          --notes "### Latest Changes:
+        $COMMIT_MSG"
