@@ -73,6 +73,9 @@ fn run_loop(
                     crate::app::SubmitAction::LoadModels(config) => {
                         spawn_models_worker(config, sender.clone());
                     }
+                    crate::app::SubmitAction::ExecuteFunction { name, args } => {
+                        handle_function_action(crate::app::FunctionAction::Execute { name, args }, sender);
+                    }
                 }
             }
         }
