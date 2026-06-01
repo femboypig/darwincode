@@ -33,6 +33,10 @@ pub struct GenerationRequest {
 pub enum SubmitAction {
     Generate(GenerationRequest),
     LoadModels(StoredConfig),
+    ExecuteFunction {
+        name: String,
+        args: serde_json::Value,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -164,13 +168,15 @@ impl App {
             return None;
         }
 
-        // Special case: If user enters exit command, execute it immediately even if busy!
-        if let Some(ChatCommand::Exit) = ChatCommand::parse(&input) {
-            self.chat.input.clear();
-            self.chat.cursor = 0;
-            self.chat.input_scroll = 0;
-            self.chat.scroll = 0;
-            return self.run_command(ChatCommand::Exit);
+        // Special case: If user enters exit or permissions command, execute it immediately even if busy!
+        if let Some(command) = ChatCommand::parse(&input) {
+            if matches!(command, ChatCommand::Exit | ChatCommand::Permissions(_)) {
+                self.chat.input.clear();
+                self.chat.cursor = 0;
+                self.chat.input_scroll = 0;
+                self.chat.scroll = 0;
+                return self.run_command(command);
+            }
         }
 
         if self.is_busy() {
@@ -476,6 +482,19 @@ impl App {
                     let level_label = self.chat.config.permission_level.label();
                     self.chat.messages.push(MessageLine::assistant(format!("Permission level set to **{level_label}**")));
                     let _ = self.chat.config.save();
+                    
+                    if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone() {
+                        let auto_allowed = level == PermissionLevel::Chaos || (level == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files"));
+                        if auto_allowed {
+                            self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
+                            self.status = format!("Auto-executing {name}");
+                            return Some(SubmitAction::ExecuteFunction { name, args });
+                        } else if level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file") {
+                            if let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
+                                return Some(SubmitAction::Generate(request));
+                            }
+                        }
+                    }
                     None
                 } else {
                     self.screen = Screen::Permissions;
@@ -617,15 +636,30 @@ impl App {
         }
     }
 
-    pub fn apply_permission_level(&mut self) {
+    pub fn apply_permission_level(&mut self) -> Option<SubmitAction> {
         let options = PermissionPickerState::options();
+        let mut ret = None;
         if let Some((label, _, level)) = options.get(self.permissions.selected) {
             self.chat.config.permission_level = *level;
             self.chat.messages.push(MessageLine::assistant(format!("Permission level set to **{label}**")));
             let _ = self.chat.config.save();
+            
+            if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone() {
+                let auto_allowed = *level == PermissionLevel::Chaos || (*level == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files"));
+                if auto_allowed {
+                    self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
+                    self.status = format!("Auto-executing {name}");
+                    ret = Some(SubmitAction::ExecuteFunction { name, args });
+                } else if *level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file") {
+                    if let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
+                        ret = Some(SubmitAction::Generate(request));
+                    }
+                }
+            }
         }
         self.screen = Screen::Chat;
         self.status = "Ready".to_owned();
+        ret
     }
 
     pub fn cancel_permissions(&mut self) {
