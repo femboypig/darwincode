@@ -301,6 +301,9 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
         (KeyCode::Delete, _) => app.chat.delete_char(),
         (KeyCode::Left, _) => app.chat.move_cursor_left(),
         (KeyCode::Right, _) => app.chat.move_cursor_right(),
+        (KeyCode::Up, modifiers) if modifiers.contains(KeyModifiers::CONTROL) => {
+            app.chat.navigate_history_up();
+        }
         (KeyCode::Up, _) => {
             if app.chat.input.contains('\n') {
                 let old_cursor = app.chat.cursor;
@@ -311,6 +314,9 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
             } else {
                 app.chat.scroll = app.chat.scroll.saturating_add(1);
             }
+        }
+        (KeyCode::Down, modifiers) if modifiers.contains(KeyModifiers::CONTROL) => {
+            app.chat.navigate_history_down();
         }
         (KeyCode::Down, _) => {
             if app.chat.input.contains('\n') {
