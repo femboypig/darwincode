@@ -309,11 +309,10 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let width = area.width.saturating_sub(4);
 
     let push_margin = |lines: &mut Vec<Line<'static>>| {
-        if let Some(last) = lines.last() {
-            if !last.spans.is_empty() || last.width() > 0 {
+        if let Some(last) = lines.last()
+            && (!last.spans.is_empty() || last.width() > 0) {
                 lines.push(Line::from(""));
             }
-        }
     };
 
     let mut prev_is_tool = false;
@@ -331,8 +330,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         // Strip "(empty)" prefix and any leading/trailing whitespace/newlines that follow it
         if !message.pending && !is_tool && !is_shell && message.author == "Darwin" {
             let trimmed = content.trim_start();
-            if trimmed.starts_with("(empty)") {
-                let rest = &trimmed["(empty)".len()..];
+            if let Some(rest) = trimmed.strip_prefix("(empty)") {
                 content = rest.trim_start().to_owned();
             }
         }
@@ -384,23 +382,42 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
             continue;
         }
 
-        let lines_count = content.lines().count();
-        let limit = 500;
-        let (display_content, is_truncated) = if lines_count > limit {
-            let truncated: String = content.lines().take(limit).collect::<Vec<&str>>().join("\n");
-            (truncated, true)
-        } else {
-            (content.clone(), false)
+        let cached_ok = {
+            let cache = message.cached_wrapped.borrow();
+            if let Some((w, ref cached_lines)) = *cache {
+                if w == width as usize {
+                    Some(cached_lines.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         };
 
-        let parsed_lines = parse_markdown_lines(&display_content);
-        let mut wrapped_parsed_lines = wrap_lines(parsed_lines, width as usize);
-        if is_truncated {
-            wrapped_parsed_lines.push(Line::from(Span::styled(
-                format!("... [Message truncated: {} more lines. Use a paging tool or scroll inside editor to view full text.]", lines_count - limit),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)
-            )));
-        }
+        let wrapped_parsed_lines = if let Some(lines) = cached_ok {
+            lines
+        } else {
+            let lines_count = content.lines().count();
+            let limit = 500;
+            let (display_content, is_truncated) = if lines_count > limit {
+                let truncated: String = content.lines().take(limit).collect::<Vec<&str>>().join("\n");
+                (truncated, true)
+            } else {
+                (content.clone(), false)
+            };
+
+            let parsed_lines = parse_markdown_lines(&display_content);
+            let mut lines = wrap_lines(parsed_lines, width as usize);
+            if is_truncated {
+                lines.push(Line::from(Span::styled(
+                    format!("... [Message truncated: {} more lines. Use a paging tool or scroll inside editor to view full text.]", lines_count - limit),
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)
+                )));
+            }
+            *message.cached_wrapped.borrow_mut() = Some((width as usize, lines.clone()));
+            lines
+        };
 
         match message.author {
             "You" => {
@@ -457,7 +474,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
             }
             _ => {
                 // Assistant message
-                if !all_lines.is_empty() && !(is_tool && prev_is_tool) {
+                if !all_lines.is_empty() && (!is_tool || !prev_is_tool) {
                     push_margin(&mut all_lines);
                 }
                 for line in wrapped_parsed_lines {
@@ -619,7 +636,7 @@ fn render_chat(frame: &mut Frame, app: &App) {
 
     // --- Render input paragraph with scroll ---
     // inner content width: border(1 each side) + padding(1 each side) = -4 total
-    let input_inner_width = input_box.width.saturating_sub(4).max(1) as u16;
+    let input_inner_width = input_box.width.saturating_sub(4).max(1);
     let total_visual_lines = display_lines;
 
     // Compute cursor visual row and column
@@ -634,7 +651,7 @@ fn render_chat(frame: &mut Frame, app: &App) {
             cursor_col_in_logical = 0;
         } else {
             cursor_col_in_logical += 1;
-            if cursor_col_in_logical % input_inner_width == 0 {
+            if cursor_col_in_logical.is_multiple_of(input_inner_width) {
                 cursor_visual_row += 1;
             }
         }
@@ -672,7 +689,7 @@ fn render_chat(frame: &mut Frame, app: &App) {
     let target_y = input_box.y + 1 + cursor_y_in_box;
     let max_y = input_box.bottom().saturating_sub(2);
 
-    if target_y <= max_y && target_y >= input_box.y + 1 {
+    if target_y <= max_y && target_y > input_box.y {
         frame.set_cursor_position((
             input_box.x + 2 + cursor_x,
             target_y,
