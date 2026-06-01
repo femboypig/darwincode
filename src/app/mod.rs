@@ -27,6 +27,7 @@ pub enum FunctionAction {
 pub struct GenerationRequest {
     pub config: StoredConfig,
     pub history: Vec<ChatMessage>,
+    pub cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +62,12 @@ pub enum Screen {
     Sessions,
 }
 
+#[derive(Clone, Debug)]
+pub struct FileBackup {
+    pub path: String,
+    pub original_content: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct App {
     pub screen: Screen,
@@ -74,6 +81,8 @@ pub struct App {
     pub tick: usize,
     pub should_quit: bool,
     pub keybindings: crate::tui::keybindings::KeyBindings,
+    pub cancel_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub last_file_backups: Vec<FileBackup>,
 }
 
 impl App {
@@ -92,6 +101,8 @@ impl App {
                 tick: 0,
                 should_quit: false,
                 keybindings,
+                cancel_token: None,
+                last_file_backups: Vec::new(),
             },
             None => Self {
                 screen: Screen::Setup,
@@ -106,6 +117,8 @@ impl App {
                 tick: 0,
                 should_quit: false,
                 keybindings,
+                cancel_token: None,
+                last_file_backups: Vec::new(),
             },
         }
     }
@@ -204,6 +217,7 @@ impl App {
             return self.run_command(command);
         }
 
+        self.last_file_backups.clear();
         self.chat.history.push(ChatMessage::user(input.clone()));
         let _ = session::save_session(&self.chat);
         self.chat.messages.push(MessageLine::user(input));
@@ -211,9 +225,13 @@ impl App {
         self.pending = Some(PendingTask::Generating);
         self.status = "Working...".to_owned();
 
+        let cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.cancel_token = Some(cancel_token.clone());
+
         Some(SubmitAction::Generate(GenerationRequest {
             config: self.chat.config.clone(),
             history: self.chat.history.clone(),
+            cancel_token,
         }))
     }
 
@@ -228,6 +246,7 @@ impl App {
             return self.run_command(command);
         }
 
+        self.last_file_backups.clear();
         self.chat.history.push(ChatMessage::user(input.clone()));
         let _ = session::save_session(&self.chat);
         self.chat.messages.push(MessageLine::user(input));
@@ -241,9 +260,13 @@ impl App {
             self.status = "Working...".to_owned();
         }
 
+        let cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.cancel_token = Some(cancel_token.clone());
+
         Some(SubmitAction::Generate(GenerationRequest {
             config: self.chat.config.clone(),
             history: self.chat.history.clone(),
+            cancel_token,
         }))
     }
 
@@ -350,13 +373,14 @@ impl App {
 
         if let Some((name, args)) = first_call {
             let permission = self.chat.config.permission_level;
-            let auto_allowed = permission == PermissionLevel::Chaos || (permission == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files"));
+            let auto_allowed = permission == PermissionLevel::Chaos || (permission == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files" || name == "read_files"));
             
             if auto_allowed {
+                self.backup_before_execution(&name, &args);
                 self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                 self.status = format!("Auto-executing {name}");
                 Some(FunctionAction::Execute { name, args })
-            } else if permission == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file") {
+            } else if permission == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files") {
                 self.pending = Some(PendingTask::Generating);
                 self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"}))
             } else {
@@ -506,12 +530,13 @@ impl App {
                     let _ = self.chat.config.save();
                     
                     if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone() {
-                        let auto_allowed = level == PermissionLevel::Chaos || (level == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files"));
+                        let auto_allowed = level == PermissionLevel::Chaos || (level == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files" || name == "read_files"));
                         if auto_allowed {
+                            self.backup_before_execution(&name, &args);
                             self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                             self.status = format!("Auto-executing {name}");
                             return Some(SubmitAction::ExecuteFunction { name, args });
-                        } else if level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file")
+                        } else if level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files")
                             && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
                                 return Some(SubmitAction::Generate(request));
                             }
@@ -594,6 +619,31 @@ impl App {
                 }
                 None
             }
+            ChatCommand::Undo => {
+                if self.last_file_backups.is_empty() {
+                    self.chat.messages.push(MessageLine::info("No changes to undo from the last prompt.".to_owned()));
+                } else {
+                    let mut undone = Vec::new();
+                    for backup in &self.last_file_backups {
+                        match &backup.original_content {
+                            Some(content) => {
+                                if std::fs::write(&backup.path, content).is_ok() {
+                                    undone.push(format!("reverted `{}`", backup.path));
+                                }
+                            }
+                            None => {
+                                if std::fs::remove_file(&backup.path).is_ok() {
+                                    undone.push(format!("deleted new file `{}`", backup.path));
+                                }
+                            }
+                        }
+                    }
+                    self.last_file_backups.clear();
+                    self.chat.messages.push(MessageLine::info(format!("Undo completed successfully: {}", undone.join(", "))));
+                }
+                None
+            }
+
             ChatCommand::Help => {
                 let help_text = "Available commands:\n\
                                  - **/settings**: Open configuration settings\n\
@@ -603,6 +653,7 @@ impl App {
                                  - **/new**: Start a new chat session\n\
                                  - **/clear**: Clear the current chat history\n\
                                  - **/history**: Show all saved chat session IDs\n\
+                                 - **/undo**: Revert all file changes made in the last prompt\n\
                                  - **/help**: Display this help card\n\
                                  - **/exit** / **/quit**: Exit the application\n\n\
                                  Hotkeys (in Chat):\n\
@@ -665,12 +716,13 @@ impl App {
             let _ = self.chat.config.save();
             
             if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone() {
-                let auto_allowed = *level == PermissionLevel::Chaos || (*level == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files"));
+                let auto_allowed = *level == PermissionLevel::Chaos || (*level == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files" || name == "read_files"));
                 if auto_allowed {
+                    self.backup_before_execution(&name, &args);
                     self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                     self.status = format!("Auto-executing {name}");
                     ret = Some(SubmitAction::ExecuteFunction { name, args });
-                } else if *level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file")
+                } else if *level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files")
                     && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
                         ret = Some(SubmitAction::Generate(request));
                     }
@@ -717,25 +769,12 @@ impl App {
         };
 
         if !allow {
-            self.chat.history.push(ChatMessage {
-                role: "function".to_owned(),
-                parts: vec![serde_json::json!({
-                    "functionResponse": {
-                        "name": name.clone(),
-                        "response": { "error": "User denied the tool call" }
-                    }
-                })],
-            });
-            let _ = session::save_session(&self.chat);
-            self.chat.messages.push(MessageLine::tool(format!("**{name}** → Cancelled")));
-            self.chat.messages.push(MessageLine::pending());
-            self.pending = Some(PendingTask::Generating);
-            self.status = "Working...".to_owned();
-
-            return Some(FunctionAction::ResumeGeneration(GenerationRequest {
-                config: self.chat.config.clone(),
-                history: self.chat.history.clone(),
-            }));
+            self.rollback_transactions();
+            self.chat.messages.push(MessageLine::info("Transaction cancelled and rolled back.".to_owned()));
+            self.chat.message_queue.clear();
+            self.pending = None;
+            self.status = "Ready".to_owned();
+            return None;
         }
 
         self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
@@ -792,13 +831,91 @@ impl App {
             self.chat.messages.push(MessageLine::tool(summary));
         }
 
+        if response.get("error").is_some() {
+            self.rollback_transactions();
+            self.chat.messages.push(MessageLine::error(format!("Tool `{name}` failed. Transaction rolled back.")));
+            self.chat.message_queue.clear();
+            self.pending = None;
+            self.status = "Ready".to_owned();
+            return None;
+        }
+
         self.chat.messages.push(MessageLine::pending());
         self.pending = Some(PendingTask::Generating);
         self.status = "Working...".to_owned();
 
+        let cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.cancel_token = Some(cancel_token.clone());
         Some(FunctionAction::ResumeGeneration(GenerationRequest {
             config: self.chat.config.clone(),
             history: self.chat.history.clone(),
+            cancel_token,
         }))
+    }
+
+    pub fn cancel_generation(&mut self) {
+        if let Some(token) = self.cancel_token.take() {
+            token.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.pending = None;
+        self.status = "Generation stopped".to_owned();
+        if self.chat.messages.last().is_some_and(|m| m.pending) {
+            self.chat.messages.pop();
+        }
+        self.chat.streaming_parts.clear();
+        self.chat.message_queue.clear();
+        let _ = crate::app::session::save_session(&self.chat);
+    }
+
+    pub fn rollback_transactions(&mut self) {
+        if !self.last_file_backups.is_empty() {
+            for backup in &self.last_file_backups {
+                match &backup.original_content {
+                    Some(content) => {
+                        let _ = std::fs::write(&backup.path, content);
+                    }
+                    None => {
+                        let _ = std::fs::remove_file(&backup.path);
+                    }
+                }
+            }
+            self.last_file_backups.clear();
+        }
+    }
+
+    pub fn backup_before_execution(&mut self, name: &str, args: &serde_json::Value) {
+        let mut paths_to_backup = Vec::new();
+        match name {
+            "edit_file" | "write_file" => {
+                if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
+                    paths_to_backup.push(path.to_owned());
+                }
+            }
+            "edit_files" => {
+                if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+                    for edit_val in edits {
+                        if let Some(path) = edit_val.get("path").and_then(|v| v.as_str()) {
+                            paths_to_backup.push(path.to_owned());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        for path in paths_to_backup {
+            if self.last_file_backups.iter().any(|b| b.path == path) {
+                continue;
+            }
+            let original_content = if std::path::Path::new(&path).exists() {
+                std::fs::read_to_string(&path).ok()
+            } else {
+                None
+            };
+            self.last_file_backups.push(FileBackup {
+                path,
+                original_content,
+            });
+        }
     }
 }

@@ -689,26 +689,87 @@ fn render_chat(frame: &mut Frame, app: &App) {
     render_statusbar(frame, app, statusbar_area);
 
     if let Some(PendingTask::ConfirmFunction { name, args }) = &app.pending {
-        let text = vec![
+        let mut text = vec![
             Line::from(vec![
                 Span::styled("Tool: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(name),
             ]),
             Line::from(""),
-            Line::from(vec![
+        ];
+
+        if name == "edit_file" {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let old_str = args.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+            let new_str = args.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+            
+            text.push(Line::from(vec![
+                Span::styled("File: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(path, Style::default().fg(Color::Cyan)),
+            ]));
+            text.push(Line::from(""));
+            text.push(Line::from(Span::styled("Diff Preview:", Style::default().add_modifier(Modifier::BOLD))));
+            
+            for line in old_str.lines() {
+                text.push(Line::from(vec![
+                    Span::styled("- ", Style::default().fg(Color::Red)),
+                    Span::styled(line, Style::default().fg(Color::Red)),
+                ]));
+            }
+            for line in new_str.lines() {
+                text.push(Line::from(vec![
+                    Span::styled("+ ", Style::default().fg(Color::Green)),
+                    Span::styled(line, Style::default().fg(Color::Green)),
+                ]));
+            }
+            text.push(Line::from(""));
+        } else if name == "edit_files" {
+            if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+                for (idx, edit_val) in edits.iter().enumerate() {
+                    let path = edit_val.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    let old_str = edit_val.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+                    let new_str = edit_val.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                    
+                    text.push(Line::from(vec![
+                        Span::styled(format!("Edit #{} (", idx + 1), Style::default().add_modifier(Modifier::BOLD)),
+                        Span::styled(path, Style::default().fg(Color::Cyan)),
+                        Span::styled("):", Style::default().add_modifier(Modifier::BOLD)),
+                    ]));
+                    
+                    for line in old_str.lines() {
+                        text.push(Line::from(vec![
+                            Span::styled("- ", Style::default().fg(Color::Red)),
+                            Span::styled(line, Style::default().fg(Color::Red)),
+                        ]));
+                    }
+                    for line in new_str.lines() {
+                        text.push(Line::from(vec![
+                            Span::styled("+ ", Style::default().fg(Color::Green)),
+                            Span::styled(line, Style::default().fg(Color::Green)),
+                        ]));
+                    }
+                    text.push(Line::from(""));
+                }
+            }
+        } else {
+            text.push(Line::from(vec![
                 Span::styled("Args: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(serde_json::to_string_pretty(args).unwrap_or_default()),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("[Y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                Span::raw(" Allow   "),
-                Span::styled("[N]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::raw(" Deny"),
-            ]),
-        ];
+            ]));
+            text.push(Line::from(""));
+        }
+
+        text.push(Line::from(vec![
+            Span::styled("[Y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::raw(" Allow   "),
+            Span::styled("[N]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::raw(" Deny"),
+        ]));
         
-        let popup_area = centered_rect(60, 50, area);
+        let popup_area = if name == "edit_file" || name == "edit_files" {
+            centered_rect(80, 70, area)
+        } else {
+            centered_rect(60, 50, area)
+        };
         frame.render_widget(ratatui::widgets::Clear, popup_area);
         frame.render_widget(
             Paragraph::new(text)
@@ -986,6 +1047,12 @@ fn keep_selected_visible(state: &mut ListState, selected: usize, viewport_height
 }
 
 fn render_sessions(frame: &mut Frame, app: &App) {
+    let theme = get_theme(app);
+    let (label_color, query_color) = match theme {
+        crate::config::Theme::Light => (Color::Blue, Color::Black),
+        _ => (Color::Cyan, Color::White),
+    };
+
     let area = frame.area();
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -999,8 +1066,8 @@ fn render_sessions(frame: &mut Frame, app: &App) {
 
     let filter_text = format!(" {}", app.sessions.query);
     let filter_para = Paragraph::new(Line::from(vec![
-        Span::styled(" Search: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled(filter_text, Style::default().fg(Color::White)),
+        Span::styled(" Search: ", Style::default().fg(label_color).add_modifier(Modifier::BOLD)),
+        Span::styled(filter_text, Style::default().fg(query_color)),
     ]))
     .block(
         Block::default()
@@ -1012,6 +1079,15 @@ fn render_sessions(frame: &mut Frame, app: &App) {
     frame.render_widget(filter_para, session_chunks[0]);
 
     let filtered = app.sessions.filtered_sessions();
+    let (sel_bg, sel_fg_id, sel_fg_snippet) = match theme {
+        crate::config::Theme::Light => (Color::Rgb(220, 220, 230), Color::Black, Color::Black),
+        _ => (Color::Rgb(40, 40, 50), Color::White, Color::White),
+    };
+    let (unsel_fg_id, unsel_fg_snippet) = match theme {
+        crate::config::Theme::Light => (Color::Rgb(50, 50, 50), Color::Rgb(100, 100, 100)),
+        _ => (Color::Gray, Color::DarkGray),
+    };
+
     let items = filtered
         .iter()
         .enumerate()
@@ -1022,16 +1098,16 @@ fn render_sessions(frame: &mut Frame, app: &App) {
             if index == app.sessions.selected {
                 ListItem::new(Line::from(vec![
                     Span::styled("> ", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow)),
-                    Span::styled(format!("{:<30} ", id), Style::default().add_modifier(Modifier::BOLD).fg(Color::White)),
+                    Span::styled(format!("{:<30} ", id), Style::default().add_modifier(Modifier::BOLD).fg(sel_fg_id)),
                     Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(snippet.clone(), Style::default().fg(Color::White)),
-                ])).style(Style::default().bg(Color::Rgb(40, 40, 50)))
+                    Span::styled(snippet.clone(), Style::default().fg(sel_fg_snippet)),
+                ])).style(Style::default().bg(sel_bg))
             } else {
                 ListItem::new(Line::from(vec![
                     Span::raw("  "),
-                    Span::styled(format!("{:<30} ", id), Style::default().fg(Color::Gray)),
+                    Span::styled(format!("{:<30} ", id), Style::default().fg(unsel_fg_id)),
                     Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(snippet.clone(), Style::default().fg(Color::DarkGray)),
+                    Span::styled(snippet.clone(), Style::default().fg(unsel_fg_snippet)),
                 ]))
             }
         })
