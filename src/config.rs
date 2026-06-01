@@ -180,7 +180,9 @@ impl StoredConfig {
     }
 
     pub fn save(&self) -> Result<()> {
-        self.validate()?;
+        let mut normalized_config = self.clone();
+        normalized_config.base_url = normalized_config.base_url.trim().trim_end_matches('/').to_owned();
+        normalized_config.validate()?;
 
         let path = config_path()?;
         if let Some(parent) = path.parent() {
@@ -191,13 +193,13 @@ impl StoredConfig {
         // Save secret to OS keyring securely (if available)
         let mut keyring_succeeded = false;
         if let Ok(entry) = keyring::Entry::new("darwincode", "api_key") {
-            if entry.set_password(&self.api_key).is_ok() {
+            if entry.set_password(&normalized_config.api_key).is_ok() {
                 keyring_succeeded = true;
             }
         }
 
         // Encrypt the configuration file on disk with the secret field stripped ONLY if stored in keyring
-        let mut file_config = self.clone();
+        let mut file_config = normalized_config.clone();
         if keyring_succeeded {
             file_config.api_key = String::new(); // Strip plain text secret from disk representation
         }
@@ -222,12 +224,21 @@ impl StoredConfig {
             bail!("model cannot be empty");
         }
 
-        if self.base_url.trim().is_empty() {
+        let url_str = self.base_url.trim();
+        if url_str.is_empty() {
             bail!("base URL cannot be empty");
         }
 
+        let url_str_trimmed = url_str.trim_end_matches('/');
+        if !url_str_trimmed.starts_with("http://") && !url_str_trimmed.starts_with("https://") {
+            bail!("base URL must start with http:// or https://");
+        }
+        if url_str_trimmed.contains(' ') || url_str_trimmed.len() < 8 {
+            bail!("base URL is not a valid format");
+        }
+
         if self.api_key.starts_with("sk-") {
-            if self.base_url == "https://generativelanguage.googleapis.com/v1beta" {
+            if url_str_trimmed == "https://generativelanguage.googleapis.com/v1beta" {
                 bail!("For OpenAI/OmniRoute keys (starting with sk-), you must specify an OpenAI-compatible Base URL (e.g. http://localhost:20128/v1)");
             }
             if self.model == "gemini-2.0-flash" {
