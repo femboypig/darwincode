@@ -124,6 +124,30 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
     }
 }
 
+fn recursive_search(dir: &std::path::Path, pattern: &str, matches: &mut Vec<String>) -> std::io::Result<()> {
+    if dir.is_dir() {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                let _ = recursive_search(&path, pattern, matches);
+            } else if path.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    for (line_num, line) in content.lines().enumerate() {
+                        if line.contains(pattern) {
+                            matches.push(format!("{}:{}:{}", path.display(), line_num + 1, line));
+                            if matches.len() >= 1000 {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender: &Sender<WorkerEvent>) {
     match action {
         crate::app::FunctionAction::Execute { name, args } => {
@@ -153,9 +177,26 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                     "search_files" => {
                         let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-                        match std::process::Command::new("grep").arg("-rnI").arg(pattern).arg(path).output() {
-                            Ok(output) => {
-                                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                        
+                        let mut matches = Vec::new();
+                        let search_path = std::path::Path::new(path);
+                        
+                        let run_res = if search_path.is_file() {
+                            if let Ok(content) = std::fs::read_to_string(search_path) {
+                                for (line_num, line) in content.lines().enumerate() {
+                                    if line.contains(pattern) {
+                                        matches.push(format!("{}:{}:{}", search_path.display(), line_num + 1, line));
+                                    }
+                                }
+                            }
+                            Ok(())
+                        } else {
+                            recursive_search(search_path, pattern, &mut matches)
+                        };
+                        
+                        match run_res {
+                            Ok(_) => {
+                                let stdout = matches.join("\n");
                                 serde_json::json!({ "matches": stdout })
                             }
                             Err(e) => serde_json::json!({ "error": e.to_string() }),
