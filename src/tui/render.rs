@@ -373,7 +373,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
         match message.author {
             "You" => {
-                let user_bg = Color::Black;
+                let user_bg = Color::Rgb(30, 30, 40);
                 let block_width = area.width as usize;
                 
                 if !all_lines.is_empty() {
@@ -850,7 +850,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         ])
         .split(area);
 
-    let base_style = Style::default().add_modifier(Modifier::REVERSED);
+    let base_style = Style::default().bg(Color::Rgb(30, 30, 38));
 
     // 1. Render left mode block (powerline capsule style)
     let mode_paragraph = Paragraph::new(mode_text)
@@ -873,7 +873,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
 
     let middle_spans = vec![
         Span::styled(format!(" {status_icon} "), Style::default().fg(status_color)),
-        Span::styled(format!("{} ", status_str), Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{} ", status_str), Style::default().fg(Color::Rgb(220, 220, 225)).add_modifier(Modifier::BOLD)),
     ];
 
     let middle_paragraph = Paragraph::new(Line::from(middle_spans)).style(base_style);
@@ -887,7 +887,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
     let right_text = format!(" {}{} ", icons::CPU, model_name);
     let right_paragraph = Paragraph::new(right_text)
         .alignment(Alignment::Right)
-        .style(base_style);
+        .style(base_style.fg(Color::Rgb(110, 168, 254)));
     frame.render_widget(right_paragraph, chunks[2]);
 }
 
