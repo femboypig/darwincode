@@ -623,22 +623,14 @@ impl App {
                 if self.last_file_backups.is_empty() {
                     self.chat.messages.push(MessageLine::info("No changes to undo from the last prompt.".to_owned()));
                 } else {
-                    let mut undone = Vec::new();
-                    for backup in &self.last_file_backups {
-                        match &backup.original_content {
-                            Some(content) => {
-                                if std::fs::write(&backup.path, content).is_ok() {
-                                    undone.push(format!("reverted `{}`", backup.path));
-                                }
-                            }
-                            None => {
-                                if std::fs::remove_file(&backup.path).is_ok() {
-                                    undone.push(format!("deleted new file `{}`", backup.path));
-                                }
-                            }
+                    let undone: Vec<String> = self.last_file_backups.iter().map(|b| {
+                        if b.original_content.is_some() {
+                            format!("reverted `{}`", b.path)
+                        } else {
+                            format!("deleted new file `{}`", b.path)
                         }
-                    }
-                    self.last_file_backups.clear();
+                    }).collect();
+                    self.rollback_transactions();
                     self.chat.messages.push(MessageLine::info(format!("Undo completed successfully: {}", undone.join(", "))));
                 }
                 None
@@ -769,11 +761,14 @@ impl App {
         };
 
         if !allow {
-            self.rollback_transactions();
-            self.chat.messages.push(MessageLine::info("Transaction cancelled and rolled back.".to_owned()));
+            self.chat.messages.push(MessageLine::info("Tool execution denied. Generation stopped.".to_owned()));
             self.chat.message_queue.clear();
             self.pending = None;
             self.status = "Ready".to_owned();
+            if self.chat.messages.last().is_some_and(|m| m.pending) {
+                self.chat.messages.pop();
+            }
+            let _ = crate::app::session::save_session(&self.chat);
             return None;
         }
 
@@ -832,11 +827,14 @@ impl App {
         }
 
         if response.get("error").is_some() {
-            self.rollback_transactions();
-            self.chat.messages.push(MessageLine::error(format!("Tool `{name}` failed. Transaction rolled back.")));
+            self.chat.messages.push(MessageLine::error(format!("Tool `{name}` failed. Generation stopped.")));
             self.chat.message_queue.clear();
             self.pending = None;
             self.status = "Ready".to_owned();
+            if self.chat.messages.last().is_some_and(|m| m.pending) {
+                self.chat.messages.pop();
+            }
+            let _ = crate::app::session::save_session(&self.chat);
             return None;
         }
 
