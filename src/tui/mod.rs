@@ -64,8 +64,8 @@ fn run_loop(
             handle_worker_event(app, event, sender);
         }
 
-        if app.screen == crate::app::Screen::Chat && !app.is_busy() && !app.chat.message_queue.is_empty() {
-            if let Some(action) = app.pop_and_start_next_queue_item() {
+        if app.screen == crate::app::Screen::Chat && !app.is_busy() && !app.chat.message_queue.is_empty()
+            && let Some(action) = app.pop_and_start_next_queue_item() {
                 match action {
                     crate::app::SubmitAction::Generate(request) => {
                         spawn_generation_worker(request.config, request.history, sender.clone());
@@ -78,7 +78,6 @@ fn run_loop(
                     }
                 }
             }
-        }
 
         let _ = terminal.draw(|frame| render::render(frame, app));
 
@@ -131,8 +130,8 @@ fn recursive_search(dir: &std::path::Path, pattern: &str, matches: &mut Vec<Stri
             let path = entry.path();
             if path.is_dir() {
                 let _ = recursive_search(&path, pattern, matches);
-            } else if path.is_file() {
-                if let Ok(content) = std::fs::read_to_string(&path) {
+            } else if path.is_file()
+                && let Ok(content) = std::fs::read_to_string(&path) {
                     for (line_num, line) in content.lines().enumerate() {
                         if line.contains(pattern) {
                             matches.push(format!("{}:{}:{}", path.display(), line_num + 1, line));
@@ -142,7 +141,6 @@ fn recursive_search(dir: &std::path::Path, pattern: &str, matches: &mut Vec<Stri
                         }
                     }
                 }
-            }
         }
     }
     Ok(())
@@ -243,11 +241,10 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
                         let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
                         let write_res = (|| -> Result<(), std::io::Error> {
-                            if let Some(parent) = std::path::Path::new(path).parent() {
-                                if !parent.as_os_str().is_empty() {
+                            if let Some(parent) = std::path::Path::new(path).parent()
+                                && !parent.as_os_str().is_empty() {
                                     std::fs::create_dir_all(parent)?;
                                 }
-                            }
                             std::fs::write(path, content)?;
                             Ok(())
                         })();
