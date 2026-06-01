@@ -28,6 +28,7 @@ pub struct GenerationRequest {
     pub config: StoredConfig,
     pub history: Vec<ChatMessage>,
     pub cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub generation_id: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -83,6 +84,7 @@ pub struct App {
     pub keybindings: crate::tui::keybindings::KeyBindings,
     pub cancel_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub last_file_backups: Vec<FileBackup>,
+    pub generation_id: usize,
 }
 
 impl App {
@@ -103,6 +105,7 @@ impl App {
                 keybindings,
                 cancel_token: None,
                 last_file_backups: Vec::new(),
+                generation_id: 0,
             },
             None => Self {
                 screen: Screen::Setup,
@@ -119,6 +122,7 @@ impl App {
                 keybindings,
                 cancel_token: None,
                 last_file_backups: Vec::new(),
+                generation_id: 0,
             },
         }
     }
@@ -227,11 +231,14 @@ impl App {
 
         let cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.cancel_token = Some(cancel_token.clone());
+        self.generation_id += 1;
+        let generation_id = self.generation_id;
 
         Some(SubmitAction::Generate(GenerationRequest {
             config: self.chat.config.clone(),
             history: self.chat.history.clone(),
             cancel_token,
+            generation_id,
         }))
     }
 
@@ -262,11 +269,14 @@ impl App {
 
         let cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.cancel_token = Some(cancel_token.clone());
+        self.generation_id += 1;
+        let generation_id = self.generation_id;
 
         Some(SubmitAction::Generate(GenerationRequest {
             config: self.chat.config.clone(),
             history: self.chat.history.clone(),
             cancel_token,
+            generation_id,
         }))
     }
 
@@ -844,10 +854,14 @@ impl App {
 
         let cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.cancel_token = Some(cancel_token.clone());
+        self.generation_id += 1;
+        let generation_id = self.generation_id;
+
         Some(FunctionAction::ResumeGeneration(GenerationRequest {
             config: self.chat.config.clone(),
             history: self.chat.history.clone(),
             cancel_token,
+            generation_id,
         }))
     }
 
