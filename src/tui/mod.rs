@@ -92,6 +92,7 @@ fn run_loop(
                 Event::Paste(text) => events::handle_paste(app, text),
                 Event::Resize(_, _) => {
                     let _ = terminal.autoresize();
+                    let _ = terminal.clear();
                 }
                 _ => {}
             }
