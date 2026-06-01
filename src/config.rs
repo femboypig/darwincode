@@ -157,8 +157,10 @@ impl Default for StoredConfig {
 pub fn config_path() -> Result<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
+        .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        .context("could not find HOME or XDG_CONFIG_HOME")?;
+        .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".config")))
+        .context("could not find HOME, USERPROFILE, APPDATA, or XDG_CONFIG_HOME")?;
 
     Ok(base.join("darwincode").join("config.json"))
 }
