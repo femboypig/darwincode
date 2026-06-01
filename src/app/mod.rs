@@ -480,7 +480,10 @@ impl App {
                 if let Some(level) = level {
                     self.chat.config.permission_level = level;
                     let level_label = self.chat.config.permission_level.label();
-                    self.chat.messages.push(MessageLine::assistant(format!("Permission level set to **{level_label}**")));
+                    if self.chat.messages.last().is_some_and(|m| m.pending) {
+                        self.chat.messages.pop();
+                    }
+                    self.chat.messages.push(MessageLine::info(format!("Permission level set to **{level_label}**")));
                     let _ = self.chat.config.save();
                     
                     if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone() {
@@ -562,13 +565,13 @@ impl App {
                 match session::list_saved_sessions() {
                     Ok(list) => {
                         if list.is_empty() {
-                            self.chat.messages.push(MessageLine::assistant("No saved sessions found.".to_owned()));
+                            self.chat.messages.push(MessageLine::info("No saved sessions found.".to_owned()));
                         } else {
                             let mut msg = "Saved sessions:\n".to_owned();
                             for meta in list {
                                 msg.push_str(&format!("- **{}**: {}\n", meta.id, meta.snippet));
                             }
-                            self.chat.messages.push(MessageLine::assistant(msg));
+                            self.chat.messages.push(MessageLine::info(msg));
                         }
                     }
                     Err(e) => {
@@ -591,12 +594,12 @@ impl App {
                                  Hotkeys (in Chat):\n\
                                  - **Ctrl+S**: Open Setup screen\n\
                                  - **Ctrl+P**: Switch active Model instantly";
-                self.chat.messages.push(MessageLine::assistant(help_text.to_owned()));
+                self.chat.messages.push(MessageLine::info(help_text.to_owned()));
                 None
             }
 
             ChatCommand::Unknown(command) => {
-                self.chat.messages.push(MessageLine::assistant(format!(
+                self.chat.messages.push(MessageLine::info(format!(
                     "Unknown command: {command}\nTry /settings, /models, /permissions, or /exit."
                 )));
                 self.status = "Unknown command".to_owned();
@@ -641,7 +644,10 @@ impl App {
         let mut ret = None;
         if let Some((label, _, level)) = options.get(self.permissions.selected) {
             self.chat.config.permission_level = *level;
-            self.chat.messages.push(MessageLine::assistant(format!("Permission level set to **{label}**")));
+            if self.chat.messages.last().is_some_and(|m| m.pending) {
+                self.chat.messages.pop();
+            }
+            self.chat.messages.push(MessageLine::info(format!("Permission level set to **{label}**")));
             let _ = self.chat.config.save();
             
             if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone() {
@@ -807,6 +813,21 @@ impl App {
                     "write_file" => {
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
                         res_parts.push(format!("`{path}` written successfully"));
+                        if let Some(content) = args.get("content").and_then(|v| v.as_str()) {
+                            let mut diff = "```diff\n".to_owned();
+                            let lines: Vec<&str> = content.lines().collect();
+                            let limit = 30;
+                            for line in lines.iter().take(limit) {
+                                diff.push_str("+ ");
+                                diff.push_str(line);
+                                diff.push('\n');
+                            }
+                            if lines.len() > limit {
+                                diff.push_str(&format!("+ ... and {} more lines\n", lines.len() - limit));
+                            }
+                            diff.push_str("```");
+                            res_parts.push(format!("\n{diff}"));
+                        }
                     }
                     "list_directory" => {
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
