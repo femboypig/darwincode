@@ -15,6 +15,8 @@ pub struct ChatState {
     pub message_queue: Vec<String>,
     pub input_history: Vec<(String, usize)>,
     pub redo_history: Vec<(String, usize)>,
+    pub sent_history_index: Option<usize>,
+    pub input_draft: String,
 }
 
 impl ChatState {
@@ -39,6 +41,61 @@ impl ChatState {
             message_queue: Vec::new(),
             input_history: Vec::new(),
             redo_history: Vec::new(),
+            sent_history_index: None,
+            input_draft: String::new(),
+        }
+    }
+
+    pub fn get_user_prompts(&self) -> Vec<String> {
+        self.history.iter()
+            .filter(|m| m.role == "user")
+            .filter_map(|m| {
+                m.parts.first()
+                    .and_then(|p| p.get("text"))
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_owned())
+            })
+            .collect()
+    }
+
+    pub fn navigate_history_up(&mut self) {
+        let prompts = self.get_user_prompts();
+        if prompts.is_empty() {
+            return;
+        }
+
+        let next_index = match self.sent_history_index {
+            None => {
+                self.input_draft = self.input.clone();
+                prompts.len().saturating_sub(1)
+            }
+            Some(idx) => idx.saturating_sub(1),
+        };
+
+        if next_index < prompts.len() {
+            self.input = prompts[next_index].clone();
+            self.cursor = self.input.chars().count();
+            self.sent_history_index = Some(next_index);
+        }
+    }
+
+    pub fn navigate_history_down(&mut self) {
+        let prompts = self.get_user_prompts();
+        if prompts.is_empty() {
+            return;
+        }
+
+        if let Some(idx) = self.sent_history_index {
+            let next_index = idx + 1;
+            if next_index >= prompts.len() {
+                self.input = self.input_draft.clone();
+                self.cursor = self.input.chars().count();
+                self.sent_history_index = None;
+            } else {
+                self.input = prompts[next_index].clone();
+                self.cursor = self.input.chars().count();
+                self.sent_history_index = Some(next_index);
+            }
         }
     }
 
