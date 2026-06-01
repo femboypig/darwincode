@@ -53,7 +53,7 @@ fn handle_permissions_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyE
         if let Some(action) = app.apply_permission_level() {
             match action {
                 SubmitAction::Generate(request) => {
-                    spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
+                    spawn_generation_worker(request.config, request.history, request.cancel_token, request.generation_id, sender.clone());
                 }
                 SubmitAction::LoadModels(config) => {
                     spawn_models_worker(config, sender.clone());
@@ -247,7 +247,7 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
         if let Some(action) = app.submit_chat_input() {
             match action {
                 SubmitAction::Generate(request) => {
-                    spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
+                    spawn_generation_worker(request.config, request.history, request.cancel_token, request.generation_id, sender.clone());
                 }
                 SubmitAction::LoadModels(config) => {
                     spawn_models_worker(config, sender.clone());
