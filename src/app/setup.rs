@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crate::config::{PermissionLevel, StoredConfig};
+use crate::config::{PermissionLevel, StoredConfig, Theme};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SetupField {
@@ -10,6 +10,7 @@ pub enum SetupField {
     EnableBash,
     PermissionLevel,
     ShowThoughts,
+    Theme,
     Save,
 }
 
@@ -22,6 +23,7 @@ pub struct SetupState {
     pub enable_bash_tools: bool,
     pub permission_level: PermissionLevel,
     pub show_thoughts: bool,
+    pub theme: Theme,
     pub active_field: SetupField,
     pub models: Vec<String>,
     pub selected_model: usize,
@@ -37,6 +39,7 @@ impl SetupState {
             enable_bash_tools: config.enable_bash_tools,
             permission_level: config.permission_level,
             show_thoughts: config.show_thoughts,
+            theme: config.theme,
             active_field: SetupField::ApiKey,
             models: Vec::new(),
             selected_model: 0,
@@ -52,6 +55,7 @@ impl SetupState {
             enable_bash_tools: self.enable_bash_tools,
             show_thoughts: self.show_thoughts,
             permission_level: self.permission_level,
+            theme: self.theme,
         };
 
         config.validate()?;
@@ -66,7 +70,8 @@ impl SetupState {
             SetupField::EnableCodebase => SetupField::EnableBash,
             SetupField::EnableBash => SetupField::PermissionLevel,
             SetupField::PermissionLevel => SetupField::ShowThoughts,
-            SetupField::ShowThoughts => SetupField::Save,
+            SetupField::ShowThoughts => SetupField::Theme,
+            SetupField::Theme => SetupField::Save,
             SetupField::Save => SetupField::ApiKey,
         };
     }
@@ -80,7 +85,8 @@ impl SetupState {
             SetupField::EnableBash => SetupField::EnableCodebase,
             SetupField::PermissionLevel => SetupField::EnableBash,
             SetupField::ShowThoughts => SetupField::PermissionLevel,
-            SetupField::Save => SetupField::ShowThoughts,
+            SetupField::Theme => SetupField::ShowThoughts,
+            SetupField::Save => SetupField::Theme,
         };
     }
 
@@ -148,6 +154,7 @@ impl Default for SetupState {
             enable_bash_tools: config.enable_bash_tools,
             permission_level: config.permission_level,
             show_thoughts: config.show_thoughts,
+            theme: config.theme,
             active_field: SetupField::ApiKey,
             models: Vec::new(),
             selected_model: 0,
