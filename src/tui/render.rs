@@ -373,36 +373,33 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
         match message.author {
             "You" => {
-                let user_bg = Color::Rgb(30, 30, 40);
+                let user_style = Style::default().add_modifier(Modifier::REVERSED);
                 let block_width = area.width as usize;
                 
                 if !all_lines.is_empty() {
                     push_margin(&mut all_lines);
                 }
                 
-                // Top padding (with bg)
-                all_lines.push(Line::from(Span::styled(" ".repeat(block_width), Style::default().bg(user_bg))));
+                // Top padding (with reversed style)
+                all_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
                 
                 for line in wrapped_parsed_lines {
-                    let mut spans = vec![Span::styled("  ", Style::default().bg(user_bg))];
+                    let mut spans = vec![Span::styled("  ", user_style)];
                     let line_text_width = line.width();
                     for s in &line.spans {
-                        let mut style = s.style.bg(user_bg);
-                        if style.fg.is_none() {
-                            style = style.fg(Color::White);
-                        }
+                        let style = s.style.patch(user_style);
                         spans.push(s.clone().style(style));
                     }
                     
                     let remaining = block_width.saturating_sub(line_text_width + 2);
                     if remaining > 0 {
-                        spans.push(Span::styled(" ".repeat(remaining), Style::default().bg(user_bg)));
+                        spans.push(Span::styled(" ".repeat(remaining), user_style));
                     }
                     all_lines.push(Line::from(spans));
                 }
                 
-                // Bottom padding (with bg)
-                all_lines.push(Line::from(Span::styled(" ".repeat(block_width), Style::default().bg(user_bg))));
+                // Bottom padding (with reversed style)
+                all_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
                 prev_is_tool = false;
             }
             "System" => {
@@ -850,7 +847,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         ])
         .split(area);
 
-    let base_style = Style::default().bg(Color::Rgb(30, 30, 38));
+    let base_style = Style::default().add_modifier(Modifier::REVERSED);
 
     // 1. Render left mode block (powerline capsule style)
     let mode_paragraph = Paragraph::new(mode_text)
@@ -872,8 +869,8 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
     let status_color = if is_busy { Color::Rgb(245, 158, 11) } else { Color::Rgb(34, 197, 94) }; // Amber vs Green
 
     let middle_spans = vec![
-        Span::styled(format!(" {status_icon} "), Style::default().fg(status_color)),
-        Span::styled(format!("{} ", status_str), Style::default().fg(Color::Rgb(220, 220, 225)).add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" {status_icon} "), Style::default().bg(status_color)),
+        Span::styled(format!("{} ", status_str), Style::default().add_modifier(Modifier::BOLD)),
     ];
 
     let middle_paragraph = Paragraph::new(Line::from(middle_spans)).style(base_style);
@@ -887,7 +884,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
     let right_text = format!(" {}{} ", icons::CPU, model_name);
     let right_paragraph = Paragraph::new(right_text)
         .alignment(Alignment::Right)
-        .style(base_style.fg(Color::Rgb(110, 168, 254)));
+        .style(base_style);
     frame.render_widget(right_paragraph, chunks[2]);
 }
 
