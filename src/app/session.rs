@@ -103,11 +103,13 @@ pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serd
             }
             "read_files" => {
                 let paths_len = args.get("paths").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                res_parts.push(format!("read {paths_len} files successfully"));
+                let suffix = if paths_len == 1 { "file" } else { "files" };
+                res_parts.push(format!("read {paths_len} {suffix} successfully"));
             }
             "edit_files" => {
                 let edits_len = args.get("edits").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                res_parts.push(format!("atomically edited {edits_len} files"));
+                let suffix = if edits_len == 1 { "file" } else { "files" };
+                res_parts.push(format!("atomically edited {edits_len} {suffix}"));
                 if let Some(diff) = response.get("diff").and_then(|v| v.as_str()) {
                     res_parts.push(format!("\n{diff}"));
                 }
