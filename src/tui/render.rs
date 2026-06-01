@@ -787,9 +787,10 @@ fn render_chat(frame: &mut Frame, app: &App) {
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
-                        .title(" Tool Access Request "),
+                        .title(" Tool Access Request (↑/↓ to scroll) "),
                 )
-                .wrap(Wrap { trim: true }),
+                .wrap(Wrap { trim: true })
+                .scroll((app.confirm_scroll, 0)),
             popup_area,
         );
     }
