@@ -18,6 +18,31 @@ pub struct StoredConfig {
     pub show_thoughts: bool,
     #[serde(default)]
     pub permission_level: PermissionLevel,
+    #[serde(default)]
+    pub theme: Theme,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum Theme {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl Theme {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Dark => "Dark (Default)",
+            Self::Light => "Light",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Dark => Self::Light,
+            Self::Light => Self::Dark,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -148,6 +173,7 @@ impl Default for StoredConfig {
             enable_bash_tools: false,
             show_thoughts: true,
             permission_level: PermissionLevel::Guardian,
+            theme: Theme::Dark,
         }
     }
 }
