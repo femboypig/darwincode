@@ -53,7 +53,7 @@ fn handle_permissions_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyE
         if let Some(action) = app.apply_permission_level() {
             match action {
                 SubmitAction::Generate(request) => {
-                    spawn_generation_worker(request.config, request.history, sender.clone());
+                    spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
                 }
                 SubmitAction::LoadModels(config) => {
                     spawn_models_worker(config, sender.clone());
@@ -221,14 +221,7 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
 
     if app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key) {
         if matches!(app.pending, Some(crate::app::PendingTask::Generating)) {
-            app.pending = None;
-            app.status = "Generation stopped".to_owned();
-            if app.chat.messages.last().is_some_and(|m| m.pending) {
-                app.chat.messages.pop();
-            }
-            app.chat.streaming_parts.clear();
-            app.chat.message_queue.clear();
-            let _ = crate::app::session::save_session(&app.chat);
+            app.cancel_generation();
         }
         return Ok(());
     }
@@ -254,7 +247,7 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
         if let Some(action) = app.submit_chat_input() {
             match action {
                 SubmitAction::Generate(request) => {
-                    spawn_generation_worker(request.config, request.history, sender.clone());
+                    spawn_generation_worker(request.config, request.history, request.cancel_token, sender.clone());
                 }
                 SubmitAction::LoadModels(config) => {
                     spawn_models_worker(config, sender.clone());
