@@ -209,16 +209,25 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
         }
         (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
             let mut last_response = None;
-            for msg in app.chat.history.iter().rev() {
-                if msg.role == "model" {
-                    let mut text = String::new();
-                    for part in &msg.parts {
-                        if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
-                            text.push_str(t);
+            for msg in app.chat.messages.iter().rev() {
+                if msg.author == "Darwin" && !msg.is_tool && !msg.is_shell && !msg.pending {
+                    let mut text = msg.text.trim();
+                    if text.starts_with("(empty)") {
+                        text = text["(empty)".len()..].trim();
+                    }
+                    let mut clean_text = text.to_owned();
+                    if clean_text.starts_with("░ Thinking...") {
+                        clean_text = clean_text["░ Thinking...".len()..].to_owned();
+                    } else if clean_text.starts_with("░ Thinking:") {
+                        if let Some(first_newline_idx) = clean_text.find('\n') {
+                            clean_text = clean_text[first_newline_idx + 1..].to_owned();
+                        } else {
+                            clean_text = clean_text["░ Thinking:".len()..].to_owned();
                         }
                     }
-                    if !text.is_empty() {
-                        last_response = Some(text);
+                    let final_text = clean_text.trim().to_owned();
+                    if !final_text.is_empty() {
+                        last_response = Some(final_text);
                         break;
                     }
                 }
