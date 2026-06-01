@@ -755,22 +755,6 @@ impl App {
             })],
         });
         let _ = session::save_session(&self.chat);
-        
-        let tool_label = {
-            let mut label = String::new();
-            let mut next_cap = true;
-            for c in name.chars() {
-                if c == '_' { next_cap = true; }
-                else if next_cap {
-                    label.push(c.to_ascii_uppercase());
-                    next_cap = false;
-                } else {
-                    label.push(c);
-                }
-            }
-            label
-        };
-
         if name == "run_bash_command" {
             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let mut output = String::new();
@@ -792,75 +776,7 @@ impl App {
             
             self.chat.messages.push(MessageLine::shell(cmd.to_owned(), output, icon == "✓"));
         } else {
-            let mut summary = format!("**{tool_label}** ");
-            let mut res_parts = Vec::new();
-            
-            if let Some(err) = response.get("error").and_then(|v| v.as_str()) {
-                res_parts.push(format!("Error: {err}"));
-            } else {
-                match name.as_str() {
-                    "edit_file" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-                        res_parts.push(format!("`{path}` updated"));
-                        if let Some(diff) = response.get("diff").and_then(|v| v.as_str()) {
-                            res_parts.push(format!("\n{diff}"));
-                        }
-                    }
-                    "read_file" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-                        res_parts.push(format!("`{path}` read successfully"));
-                    }
-                    "write_file" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-                        res_parts.push(format!("`{path}` written successfully"));
-                        if let Some(content) = args.get("content").and_then(|v| v.as_str()) {
-                            let mut diff = "```diff\n".to_owned();
-                            let lines: Vec<&str> = content.lines().collect();
-                            let limit = 30;
-                            for line in lines.iter().take(limit) {
-                                diff.push_str("+ ");
-                                diff.push_str(line);
-                                diff.push('\n');
-                            }
-                            if lines.len() > limit {
-                                diff.push_str(&format!("+ ... and {} more lines\n", lines.len() - limit));
-                            }
-                            diff.push_str("```");
-                            res_parts.push(format!("\n{diff}"));
-                        }
-                    }
-                    "list_directory" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-                        if let Some(files) = response.get("files").and_then(|v| v.as_array()) {
-                            res_parts.push(format!("`{path}` → {} items", files.len()));
-                        }
-                    }
-                    "search_files" => {
-                        let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("?");
-                        if let Some(matches) = response.get("matches").and_then(|v| v.as_str()) {
-                            res_parts.push(format!("`{pattern}` → {} matches", matches.lines().count()));
-                        }
-                    }
-                    _ => {
-                        if let Some(obj) = response.as_object() {
-                            for (k, v) in obj {
-                                if k == "content" || k == "matches" || k == "diff" {
-                                    res_parts.push(format!("{k}=..."));
-                                } else if let Some(arr) = v.as_array() {
-                                    res_parts.push(format!("{k}={} items", arr.len()));
-                                } else {
-                                    res_parts.push(format!("{k}={v}"));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            if !res_parts.is_empty() {
-                summary.push_str("→ ");
-                summary.push_str(&res_parts.join(", "));
-            }
+            let summary = crate::app::session::format_tool_summary(&name, &args, &response);
             self.chat.messages.push(MessageLine::tool(summary));
         }
 
