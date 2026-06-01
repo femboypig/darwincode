@@ -689,6 +689,13 @@ fn render_chat(frame: &mut Frame, app: &App) {
     render_statusbar(frame, app, statusbar_area);
 
     if let Some(PendingTask::ConfirmFunction { name, args }) = &app.pending {
+        let popup_area = if name == "edit_file" || name == "edit_files" {
+            centered_rect(80, 70, area)
+        } else {
+            centered_rect(60, 50, area)
+        };
+        let inner_width = (popup_area.width as usize).saturating_sub(4);
+
         let mut text = vec![
             Line::from(vec![
                 Span::styled("Tool: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -710,16 +717,20 @@ fn render_chat(frame: &mut Frame, app: &App) {
             text.push(Line::from(Span::styled("Diff Preview:", Style::default().add_modifier(Modifier::BOLD))));
             
             for line in old_str.lines() {
-                text.push(Line::from(vec![
-                    Span::styled("- ", Style::default().fg(Color::Red)),
-                    Span::styled(line, Style::default().fg(Color::Red)),
-                ]));
+                let formatted = format!("- {line}");
+                let padded = format!("{formatted:<width$}", width = inner_width);
+                text.push(Line::from(Span::styled(
+                    padded,
+                    Style::default().fg(Color::Rgb(255, 180, 180)).bg(Color::Rgb(70, 20, 20))
+                )));
             }
             for line in new_str.lines() {
-                text.push(Line::from(vec![
-                    Span::styled("+ ", Style::default().fg(Color::Green)),
-                    Span::styled(line, Style::default().fg(Color::Green)),
-                ]));
+                let formatted = format!("+ {line}");
+                let padded = format!("{formatted:<width$}", width = inner_width);
+                text.push(Line::from(Span::styled(
+                    padded,
+                    Style::default().fg(Color::Rgb(180, 255, 180)).bg(Color::Rgb(20, 60, 20))
+                )));
             }
             text.push(Line::from(""));
         } else if name == "edit_files" {
@@ -736,16 +747,20 @@ fn render_chat(frame: &mut Frame, app: &App) {
                     ]));
                     
                     for line in old_str.lines() {
-                        text.push(Line::from(vec![
-                            Span::styled("- ", Style::default().fg(Color::Red)),
-                            Span::styled(line, Style::default().fg(Color::Red)),
-                        ]));
+                        let formatted = format!("- {line}");
+                        let padded = format!("{formatted:<width$}", width = inner_width);
+                        text.push(Line::from(Span::styled(
+                            padded,
+                            Style::default().fg(Color::Rgb(255, 180, 180)).bg(Color::Rgb(70, 20, 20))
+                        )));
                     }
                     for line in new_str.lines() {
-                        text.push(Line::from(vec![
-                            Span::styled("+ ", Style::default().fg(Color::Green)),
-                            Span::styled(line, Style::default().fg(Color::Green)),
-                        ]));
+                        let formatted = format!("+ {line}");
+                        let padded = format!("{formatted:<width$}", width = inner_width);
+                        text.push(Line::from(Span::styled(
+                            padded,
+                            Style::default().fg(Color::Rgb(180, 255, 180)).bg(Color::Rgb(20, 60, 20))
+                        )));
                     }
                     text.push(Line::from(""));
                 }
@@ -765,11 +780,6 @@ fn render_chat(frame: &mut Frame, app: &App) {
             Span::raw(" Deny"),
         ]));
         
-        let popup_area = if name == "edit_file" || name == "edit_files" {
-            centered_rect(80, 70, area)
-        } else {
-            centered_rect(60, 50, area)
-        };
         frame.render_widget(ratatui::widgets::Clear, popup_area);
         frame.render_widget(
             Paragraph::new(text)
