@@ -73,10 +73,12 @@ pub struct App {
     pub pending: Option<PendingTask>,
     pub tick: usize,
     pub should_quit: bool,
+    pub keybindings: crate::tui::keybindings::KeyBindings,
 }
 
 impl App {
     pub fn new(config: Option<StoredConfig>) -> Self {
+        let keybindings = crate::tui::keybindings::load_keybindings();
         match config {
             Some(config) => Self {
                 screen: Screen::Chat,
@@ -89,6 +91,7 @@ impl App {
                 pending: None,
                 tick: 0,
                 should_quit: false,
+                keybindings,
             },
             None => Self {
                 screen: Screen::Setup,
@@ -102,6 +105,7 @@ impl App {
                 pending: None,
                 tick: 0,
                 should_quit: false,
+                keybindings,
             },
         }
     }
@@ -377,6 +381,24 @@ impl App {
         self.status = "Edit settings. Press Enter to save or Esc to quit.".to_owned();
     }
 
+    pub fn open_sessions(&mut self) {
+        if self.is_busy() {
+            return;
+        }
+        match crate::app::session::list_saved_sessions() {
+            Ok(list) => {
+                self.sessions.sessions = list;
+                self.sessions.selected = 0;
+                self.sessions.query = String::new();
+                self.screen = Screen::Sessions;
+                self.status = "Select a session to resume. Enter to apply, Esc to cancel.".to_owned();
+            }
+            Err(e) => {
+                self.chat.messages.push(MessageLine::error(format!("Failed to list sessions: {}", e)));
+            }
+        }
+    }
+
     pub fn cancel_setup(&mut self) {
         if self.is_busy() {
             return;
@@ -520,17 +542,7 @@ impl App {
                         }
                     }
                 } else {
-                    match session::list_saved_sessions() {
-                        Ok(list) => {
-                            self.sessions.sessions = list;
-                            self.sessions.selected = 0;
-                            self.screen = Screen::Sessions;
-                            self.status = "Select a session to resume. Enter to apply, Esc to cancel.".to_owned();
-                        }
-                        Err(e) => {
-                            self.chat.messages.push(MessageLine::error(format!("Failed to list sessions: {}", e)));
-                        }
-                    }
+                    self.open_sessions();
                 }
                 None
             }

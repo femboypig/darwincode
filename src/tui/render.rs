@@ -987,14 +987,32 @@ fn keep_selected_visible(state: &mut ListState, selected: usize, viewport_height
 
 fn render_sessions(frame: &mut Frame, app: &App) {
     let area = frame.area();
-    let chunks = Layout::default()
+    let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(8), Constraint::Length(1)])
         .split(area);
 
-    let items = app
-        .sessions
-        .sessions
+    let session_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(5)])
+        .split(main_chunks[0]);
+
+    let filter_text = format!(" {}", app.sessions.query);
+    let filter_para = Paragraph::new(Line::from(vec![
+        Span::styled(" Search: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(filter_text, Style::default().fg(Color::White)),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::DarkGray))
+            .title(" Filter Sessions ")
+    );
+    frame.render_widget(filter_para, session_chunks[0]);
+
+    let filtered = app.sessions.filtered_sessions();
+    let items = filtered
         .iter()
         .enumerate()
         .map(|(index, session)| {
@@ -1019,12 +1037,15 @@ fn render_sessions(frame: &mut Frame, app: &App) {
         })
         .collect::<Vec<_>>();
 
-    let mut state = ListState::default().with_selected(Some(app.sessions.selected));
-    keep_selected_visible(
-        &mut state,
-        app.sessions.selected,
-        chunks[0].height.saturating_sub(2),
-    );
+    let selected_opt = if filtered.is_empty() { None } else { Some(app.sessions.selected) };
+    let mut state = ListState::default().with_selected(selected_opt);
+    if !filtered.is_empty() {
+        keep_selected_visible(
+            &mut state,
+            app.sessions.selected,
+            session_chunks[1].height.saturating_sub(2),
+        );
+    }
 
     frame.render_stateful_widget(
         List::new(items).block(
@@ -1034,11 +1055,11 @@ fn render_sessions(frame: &mut Frame, app: &App) {
                 .title(" Resume Chat Session ")
                 .padding(Padding::horizontal(1)),
         ),
-        chunks[0],
+        session_chunks[1],
         &mut state,
     );
 
-    render_statusbar(frame, app, chunks[1]);
+    render_statusbar(frame, app, main_chunks[1]);
 }
 
 fn welcome_lines(_app: &App, area: Rect) -> Vec<Line<'static>> {

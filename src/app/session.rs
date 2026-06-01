@@ -20,23 +20,46 @@ pub struct SessionMeta {
 pub struct SessionPickerState {
     pub sessions: Vec<SessionMeta>,
     pub selected: usize,
+    pub query: String,
 }
 
 impl SessionPickerState {
+    pub fn filtered_sessions(&self) -> Vec<SessionMeta> {
+        if self.query.is_empty() {
+            return self.sessions.clone();
+        }
+        let q = self.query.to_lowercase();
+        self.sessions
+            .iter()
+            .filter(|s| s.id.to_lowercase().contains(&q) || s.snippet.to_lowercase().contains(&q))
+            .cloned()
+            .collect()
+    }
+
     pub fn select_next(&mut self) {
-        if !self.sessions.is_empty() {
-            self.selected = (self.selected + 1) % self.sessions.len();
+        let len = self.filtered_sessions().len();
+        if len > 0 {
+            self.selected = (self.selected + 1) % len;
         }
     }
 
     pub fn select_previous(&mut self) {
-        if !self.sessions.is_empty() {
-            self.selected = self.selected.checked_sub(1).unwrap_or(self.sessions.len() - 1);
+        let len = self.filtered_sessions().len();
+        if len > 0 {
+            self.selected = self.selected.checked_sub(1).unwrap_or(len - 1);
         }
     }
 
-    pub fn selected_session(&self) -> Option<&SessionMeta> {
-        self.sessions.get(self.selected)
+    pub fn selected_session(&self) -> Option<SessionMeta> {
+        self.filtered_sessions().get(self.selected).cloned()
+    }
+
+    pub fn update_query(&mut self, query: String) {
+        self.query = query;
+        let len = self.filtered_sessions().len();
+        if self.selected >= len {
+            self.selected = if len > 0 { len - 1 } else { 0 };
+        }
     }
 }
 pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serde_json::Value) -> String {
@@ -72,6 +95,24 @@ pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serd
             "read_file" => {
                 let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
                 res_parts.push(format!("`{path}` read successfully"));
+                if let Some(content) = response.get("content").and_then(|v| v.as_str()) {
+                    let ext = std::path::Path::new(path)
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("");
+                    let lines: Vec<&str> = content.lines().collect();
+                    let limit = 100;
+                    let mut formatted = format!("\n```{ext}\n");
+                    for line in lines.iter().take(limit) {
+                        formatted.push_str(line);
+                        formatted.push('\n');
+                    }
+                    if lines.len() > limit {
+                        formatted.push_str(&format!("... and {} more lines\n", lines.len() - limit));
+                    }
+                    formatted.push_str("```");
+                    res_parts.push(formatted);
+                }
             }
             "write_file" => {
                 let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
@@ -102,6 +143,20 @@ pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serd
                 let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("?");
                 if let Some(matches) = response.get("matches").and_then(|v| v.as_str()) {
                     res_parts.push(format!("`{pattern}` → {} matches", matches.lines().count()));
+                    if !matches.trim().is_empty() {
+                        let lines: Vec<&str> = matches.lines().collect();
+                        let limit = 50;
+                        let mut formatted = "\n```grep\n".to_owned();
+                        for line in lines.iter().take(limit) {
+                            formatted.push_str(line);
+                            formatted.push('\n');
+                        }
+                        if lines.len() > limit {
+                            formatted.push_str(&format!("... and {} more matches\n", lines.len() - limit));
+                        }
+                        formatted.push_str("```");
+                        res_parts.push(formatted);
+                    }
                 }
             }
             _ => {

@@ -33,37 +33,52 @@ pub(crate) fn handle_paste(app: &mut App, text: String) {
 }
 
 fn handle_permissions_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -> Result<()> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) | (KeyCode::Esc, _) => {
-            app.cancel_permissions();
-        }
-        (KeyCode::Up, _) => app.permissions.select_previous(),
-        (KeyCode::Down, _) => app.permissions.select_next(),
-        (KeyCode::Enter, _) => {
-            if let Some(action) = app.apply_permission_level() {
-                match action {
-                    SubmitAction::Generate(request) => {
-                        spawn_generation_worker(request.config, request.history, sender.clone());
-                    }
-                    SubmitAction::LoadModels(config) => {
-                        spawn_models_worker(config, sender.clone());
-                    }
-                    SubmitAction::ExecuteFunction { name, args } => {
-                        handle_function_action(crate::app::FunctionAction::Execute { name, args }, sender);
-                    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key) {
+        app.cancel_permissions();
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key) {
+        app.cancel_permissions();
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollUp, key) {
+        app.permissions.select_previous();
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollDown, key) {
+        app.permissions.select_next();
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Submit, key) {
+        if let Some(action) = app.apply_permission_level() {
+            match action {
+                SubmitAction::Generate(request) => {
+                    spawn_generation_worker(request.config, request.history, sender.clone());
+                }
+                SubmitAction::LoadModels(config) => {
+                    spawn_models_worker(config, sender.clone());
+                }
+                SubmitAction::ExecuteFunction { name, args } => {
+                    handle_function_action(crate::app::FunctionAction::Execute { name, args }, sender);
                 }
             }
         }
-        _ => {}
+        return Ok(());
     }
     Ok(())
 }
 
 fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key: KeyEvent) -> Result<()> {
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key) {
+        app.should_quit = true;
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key) {
+        app.cancel_setup();
+        return Ok(());
+    }
+
     match (key.code, key.modifiers) {
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            app.should_quit = true;
-        }
         (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
             if app.setup.api_key.starts_with("sk-") {
                 app.setup.base_url = "http://localhost:20128/v1".to_owned();
@@ -71,7 +86,6 @@ fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key: KeyEvent)
                 app.status = "Applied OmniRoute defaults for OpenAI/OmniRoute key".to_owned();
             }
         }
-        (KeyCode::Esc, _) => app.cancel_setup(),
         (KeyCode::Tab, _) => app.setup.next_field(),
         (KeyCode::BackTab, _) => app.setup.previous_field(),
         (KeyCode::Enter, _) => match app.setup.active_field {
@@ -200,10 +214,106 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
         return Ok(());
     }
 
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            app.should_quit = true;
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key) {
+        app.should_quit = true;
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key) {
+        if matches!(app.pending, Some(crate::app::PendingTask::Generating)) {
+            app.pending = None;
+            app.status = "Generation stopped".to_owned();
+            if app.chat.messages.last().is_some_and(|m| m.pending) {
+                app.chat.messages.pop();
+            }
+            app.chat.streaming_parts.clear();
+            app.chat.message_queue.clear();
+            let _ = crate::app::session::save_session(&app.chat);
         }
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ToggleSetup, key) {
+        app.open_setup();
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ToggleModels, key) {
+        if let Some(config) = app.begin_load_chat_models() {
+            spawn_models_worker(config, sender.clone());
+        }
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ToggleSessions, key) {
+        app.open_sessions();
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Submit, key) {
+        if let Some(action) = app.submit_chat_input() {
+            match action {
+                SubmitAction::Generate(request) => {
+                    spawn_generation_worker(request.config, request.history, sender.clone());
+                }
+                SubmitAction::LoadModels(config) => {
+                    spawn_models_worker(config, sender.clone());
+                }
+                SubmitAction::ExecuteFunction { name, args } => {
+                    handle_function_action(crate::app::FunctionAction::Execute { name, args }, sender);
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollUp, key) {
+        if app.chat.input.contains('\n') {
+            let old_cursor = app.chat.cursor;
+            app.chat.move_cursor_up();
+            if app.chat.cursor == old_cursor {
+                app.chat.scroll = app.chat.scroll.saturating_add(3);
+            }
+        } else {
+            app.chat.scroll = app.chat.scroll.saturating_add(3);
+        }
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollDown, key) {
+        if app.chat.input.contains('\n') {
+            let old_cursor = app.chat.cursor;
+            app.chat.move_cursor_down();
+            if app.chat.cursor == old_cursor {
+                app.chat.scroll = app.chat.scroll.saturating_sub(3);
+            }
+        } else {
+            app.chat.scroll = app.chat.scroll.saturating_sub(3);
+        }
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::PageUp, key) {
+        app.chat.scroll = app.chat.scroll.saturating_add(15);
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::PageDown, key) {
+        app.chat.scroll = app.chat.scroll.saturating_sub(15);
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::HistoryUp, key) {
+        app.chat.navigate_history_up();
+        return Ok(());
+    }
+
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::HistoryDown, key) {
+        app.chat.navigate_history_down();
+        return Ok(());
+    }
+
+    match (key.code, key.modifiers) {
         (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
             app.chat.undo();
         }
@@ -260,83 +370,16 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
                 app.status = "No assistant response to copy".to_owned();
             }
         }
-        (KeyCode::Esc, _) => {
-            if matches!(app.pending, Some(crate::app::PendingTask::Generating)) {
-                app.pending = None;
-                app.status = "Generation stopped".to_owned();
-                if app.chat.messages.last().is_some_and(|m| m.pending) {
-                    app.chat.messages.pop();
-                }
-                app.chat.streaming_parts.clear();
-                app.chat.message_queue.clear();
-                let _ = crate::app::session::save_session(&app.chat);
-            }
-        }
-        (KeyCode::Char('s'), KeyModifiers::CONTROL) => app.open_setup(),
-        (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
-            if let Some(config) = app.begin_load_chat_models() {
-                spawn_models_worker(config, sender.clone());
-            }
-        }
         (KeyCode::Tab, _) => app.accept_command_suggestion(),
         (KeyCode::Enter, modifiers) if !modifiers.is_empty() => {
             app.chat.insert_char('\n');
-        }
-        (KeyCode::Enter, _) => {
-            if let Some(action) = app.submit_chat_input() {
-                match action {
-                    SubmitAction::Generate(request) => {
-                        spawn_generation_worker(request.config, request.history, sender.clone());
-                    }
-                    SubmitAction::LoadModels(config) => {
-                        spawn_models_worker(config, sender.clone());
-                    }
-                    SubmitAction::ExecuteFunction { name, args } => {
-                        handle_function_action(crate::app::FunctionAction::Execute { name, args }, sender);
-                    }
-                }
-            }
         }
         (KeyCode::Backspace, _) => app.chat.remove_char(),
         (KeyCode::Delete, _) => app.chat.delete_char(),
         (KeyCode::Left, _) => app.chat.move_cursor_left(),
         (KeyCode::Right, _) => app.chat.move_cursor_right(),
-        (KeyCode::Up, modifiers) if modifiers.contains(KeyModifiers::CONTROL) => {
-            app.chat.navigate_history_up();
-        }
-        (KeyCode::Up, _) => {
-            if app.chat.input.contains('\n') {
-                let old_cursor = app.chat.cursor;
-                app.chat.move_cursor_up();
-                if app.chat.cursor == old_cursor {
-                    app.chat.scroll = app.chat.scroll.saturating_add(3);
-                }
-            } else {
-                app.chat.scroll = app.chat.scroll.saturating_add(3);
-            }
-        }
-        (KeyCode::Down, modifiers) if modifiers.contains(KeyModifiers::CONTROL) => {
-            app.chat.navigate_history_down();
-        }
-        (KeyCode::Down, _) => {
-            if app.chat.input.contains('\n') {
-                let old_cursor = app.chat.cursor;
-                app.chat.move_cursor_down();
-                if app.chat.cursor == old_cursor {
-                    app.chat.scroll = app.chat.scroll.saturating_sub(3);
-                }
-            } else {
-                app.chat.scroll = app.chat.scroll.saturating_sub(3);
-            }
-        }
         (KeyCode::Home, _) => app.chat.move_cursor_start(),
         (KeyCode::End, _) => app.chat.move_cursor_end(),
-        (KeyCode::PageUp, _) => {
-            app.chat.scroll = app.chat.scroll.saturating_add(15);
-        }
-        (KeyCode::PageDown, _) => {
-            app.chat.scroll = app.chat.scroll.saturating_sub(15);
-        }
         (KeyCode::Char(value), modifiers)
             if !modifiers.contains(KeyModifiers::CONTROL)
                 && !modifiers.contains(KeyModifiers::ALT) =>
@@ -350,25 +393,58 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
 }
 
 fn handle_models_key(app: &mut App, key: KeyEvent) -> Result<()> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) | (KeyCode::Esc, _) => app.cancel_models(),
-        (KeyCode::Up, _) => app.select_previous_model(),
-        (KeyCode::Down, _) => app.select_next_model(),
-        (KeyCode::Enter, _) => app.apply_selected_model(),
-        _ => {}
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key)
+        || app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key)
+    {
+        app.cancel_models();
+        return Ok(());
     }
-
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollUp, key) {
+        app.select_previous_model();
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollDown, key) {
+        app.select_next_model();
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Submit, key) {
+        app.apply_selected_model();
+        return Ok(());
+    }
     Ok(())
 }
 
 fn handle_sessions_key(app: &mut App, key: KeyEvent) -> Result<()> {
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key)
+        || app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key)
+    {
+        app.cancel_sessions();
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollUp, key) {
+        app.sessions.select_previous();
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollDown, key) {
+        app.sessions.select_next();
+        return Ok(());
+    }
+    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Submit, key) {
+        app.apply_selected_session();
+        return Ok(());
+    }
+
     match (key.code, key.modifiers) {
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) | (KeyCode::Esc, _) => {
-            app.cancel_sessions();
+        (KeyCode::Backspace, _) => {
+            let mut q = app.sessions.query.clone();
+            q.pop();
+            app.sessions.update_query(q);
         }
-        (KeyCode::Up, _) => app.sessions.select_previous(),
-        (KeyCode::Down, _) => app.sessions.select_next(),
-        (KeyCode::Enter, _) => app.apply_selected_session(),
+        (KeyCode::Char(c), modifiers) if !modifiers.contains(KeyModifiers::CONTROL) && !modifiers.contains(KeyModifiers::ALT) => {
+            let mut q = app.sessions.query.clone();
+            q.push(c);
+            app.sessions.update_query(q);
+        }
         _ => {}
     }
     Ok(())
