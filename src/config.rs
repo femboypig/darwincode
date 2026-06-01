@@ -87,21 +87,19 @@ pub fn resolve_theme(theme: Theme) -> Theme {
             #[cfg(target_os = "linux")]
             {
                 // 1. Check COLORFGBG environment variable
-                if let Ok(colorfgbg) = std::env::var("COLORFGBG") {
-                    if let Some(bg) = colorfgbg.split(';').last() {
-                        if let Ok(bg_num) = bg.parse::<i32>() {
-                            let is_light = bg_num == 7 || (bg_num >= 9 && bg_num <= 15);
+                if let Ok(colorfgbg) = std::env::var("COLORFGBG")
+                    && let Some(bg) = colorfgbg.split(';').next_back()
+                        && let Ok(bg_num) = bg.parse::<i32>() {
+                            let is_light = bg_num == 7 || (9..=15).contains(&bg_num);
                             if is_light {
                                 return Theme::Light;
                             } else {
                                 return Theme::Dark;
                             }
                         }
-                    }
-                }
                 // 2. Check gsettings as a fallback (GNOME/Ubuntu preference)
                 if let Ok(output) = std::process::Command::new("gsettings")
-                    .args(&["get", "org.gnome.desktop.interface", "color-scheme"])
+                    .args(["get", "org.gnome.desktop.interface", "color-scheme"])
                     .output()
                 {
                     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
@@ -168,13 +166,11 @@ impl StoredConfig {
             .with_context(|| format!("failed to parse config {}", path.display()))?;
 
         // Load secret from OS securely if available, otherwise use fallback from encrypted file
-        if let Ok(entry) = keyring::Entry::new("darwincode", "api_key") {
-            if let Ok(secret) = entry.get_password() {
-                if !secret.trim().is_empty() {
+        if let Ok(entry) = keyring::Entry::new("darwincode", "api_key")
+            && let Ok(secret) = entry.get_password()
+                && !secret.trim().is_empty() {
                     config.api_key = secret;
                 }
-            }
-        }
 
         Ok(Some(config))
     }
@@ -192,11 +188,10 @@ impl StoredConfig {
 
         // Save secret to OS keyring securely (if available)
         let mut keyring_succeeded = false;
-        if let Ok(entry) = keyring::Entry::new("darwincode", "api_key") {
-            if entry.set_password(&normalized_config.api_key).is_ok() {
+        if let Ok(entry) = keyring::Entry::new("darwincode", "api_key")
+            && entry.set_password(&normalized_config.api_key).is_ok() {
                 keyring_succeeded = true;
             }
-        }
 
         // Encrypt the configuration file on disk with the secret field stripped ONLY if stored in keyring
         let mut file_config = normalized_config.clone();
