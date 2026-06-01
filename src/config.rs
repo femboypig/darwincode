@@ -25,6 +25,7 @@ pub struct StoredConfig {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Theme {
     #[default]
+    Auto,
     Dark,
     Light,
 }
@@ -32,15 +33,90 @@ pub enum Theme {
 impl Theme {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Dark => "Dark (Default)",
+            Self::Auto => "Auto (System/Term)",
+            Self::Dark => "Dark",
             Self::Light => "Light",
         }
     }
 
     pub fn next(self) -> Self {
         match self {
+            Self::Auto => Self::Dark,
             Self::Dark => Self::Light,
-            Self::Light => Self::Dark,
+            Self::Light => Self::Auto,
+        }
+    }
+}
+
+pub fn resolve_theme(theme: Theme) -> Theme {
+    match theme {
+        Theme::Dark => Theme::Dark,
+        Theme::Light => Theme::Light,
+        Theme::Auto => {
+            #[cfg(target_os = "windows")]
+            {
+                if let Ok(output) = std::process::Command::new("reg")
+                    .args(&[
+                        "query",
+                        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                        "/v",
+                        "AppsUseLightTheme",
+                    ])
+                    .output()
+                {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if stdout.contains("0x1") || stdout.contains("1") {
+                        return Theme::Light;
+                    }
+                }
+                Theme::Dark
+            }
+            #[cfg(target_os = "macos")]
+            {
+                if let Ok(output) = std::process::Command::new("defaults")
+                    .args(&["read", "-g", "AppleInterfaceStyle"])
+                    .output()
+                {
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
+                    if stdout.contains("dark") {
+                        return Theme::Dark;
+                    }
+                }
+                Theme::Light
+            }
+            #[cfg(target_os = "linux")]
+            {
+                // 1. Check COLORFGBG environment variable
+                if let Ok(colorfgbg) = std::env::var("COLORFGBG") {
+                    if let Some(bg) = colorfgbg.split(';').last() {
+                        if let Ok(bg_num) = bg.parse::<i32>() {
+                            let is_light = bg_num == 7 || (bg_num >= 9 && bg_num <= 15);
+                            if is_light {
+                                return Theme::Light;
+                            } else {
+                                return Theme::Dark;
+                            }
+                        }
+                    }
+                }
+                // 2. Check gsettings as a fallback (GNOME/Ubuntu preference)
+                if let Ok(output) = std::process::Command::new("gsettings")
+                    .args(&["get", "org.gnome.desktop.interface", "color-scheme"])
+                    .output()
+                {
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
+                    if stdout.contains("prefer-dark") {
+                        return Theme::Dark;
+                    } else if stdout.contains("prefer-light") {
+                        return Theme::Light;
+                    }
+                }
+                Theme::Dark
+            }
+            #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+            {
+                Theme::Dark
+            }
         }
     }
 }
@@ -173,7 +249,7 @@ impl Default for StoredConfig {
             enable_bash_tools: false,
             show_thoughts: true,
             permission_level: PermissionLevel::Guardian,
-            theme: Theme::Dark,
+            theme: Theme::Auto,
         }
     }
 }
