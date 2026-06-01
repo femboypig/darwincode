@@ -13,6 +13,8 @@ pub struct ChatState {
     pub streaming_parts: Vec<Part>,
     pub session_id: String,
     pub message_queue: Vec<String>,
+    pub input_history: Vec<(String, usize)>,
+    pub redo_history: Vec<(String, usize)>,
 }
 
 impl ChatState {
@@ -35,16 +37,47 @@ impl ChatState {
             streaming_parts: Vec::new(),
             session_id,
             message_queue: Vec::new(),
+            input_history: Vec::new(),
+            redo_history: Vec::new(),
+        }
+    }
+
+    pub fn save_history(&mut self) {
+        let current = (self.input.clone(), self.cursor);
+        if self.input_history.last() != Some(&current) {
+            self.input_history.push(current);
+            if self.input_history.len() > 100 {
+                self.input_history.remove(0);
+            }
+        }
+        self.redo_history.clear();
+    }
+
+    pub fn undo(&mut self) {
+        if let Some((prev_input, prev_cursor)) = self.input_history.pop() {
+            self.redo_history.push((self.input.clone(), self.cursor));
+            self.input = prev_input;
+            self.cursor = prev_cursor;
+        }
+    }
+
+    pub fn redo(&mut self) {
+        if let Some((next_input, next_cursor)) = self.redo_history.pop() {
+            self.input_history.push((self.input.clone(), self.cursor));
+            self.input = next_input;
+            self.cursor = next_cursor;
         }
     }
 
     pub fn insert_char(&mut self, c: char) {
+        self.save_history();
         let byte_idx = self.input.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap_or(self.input.len());
         self.input.insert(byte_idx, c);
         self.cursor += 1;
     }
 
     pub fn insert_text(&mut self, text: &str) {
+        self.save_history();
         let byte_idx = self.input.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap_or(self.input.len());
         self.input.insert_str(byte_idx, text);
         self.cursor += text.chars().count();
@@ -52,6 +85,7 @@ impl ChatState {
 
     pub fn remove_char(&mut self) {
         if self.cursor > 0 {
+            self.save_history();
             self.cursor -= 1;
             let byte_idx = self.input.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap();
             self.input.remove(byte_idx);
@@ -60,6 +94,7 @@ impl ChatState {
 
     pub fn delete_char(&mut self) {
         if self.cursor < self.input.chars().count() {
+            self.save_history();
             let byte_idx = self.input.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap();
             self.input.remove(byte_idx);
         }
