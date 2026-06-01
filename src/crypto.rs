@@ -79,6 +79,7 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
                     if let Ok(mut file) = std::fs::OpenOptions::new()
                         .create(true)
                         .write(true)
+                        .truncate(true)
                         .mode(0o600)
                         .open(&machine_id_path)
                     {
