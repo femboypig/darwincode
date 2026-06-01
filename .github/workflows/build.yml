@@ -22,6 +22,13 @@ jobs:
 
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-pc-windows-gnu
+
+    - name: Install MinGW (Windows cross-compilation toolchain)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mingw-w64
 
     - name: Run tests
       run: cargo test --verbose
@@ -59,8 +66,9 @@ jobs:
         # Update Cargo.toml with the new version
         sed -i "0,/^version = .*/{s/^version = .*/version = \"$NEW_VERSION\"/}" Cargo.toml
 
-        # Build production release binary
+        # Build production release binaries
         cargo build --release --verbose
+        cargo build --release --target x86_64-pc-windows-gnu --verbose
 
         # Configure Git
         git config user.name "github-actions[bot]"
@@ -71,7 +79,9 @@ jobs:
         git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
         git push origin main
 
-        # Create GitHub Release and upload the compiled binary
-        gh release create "v$NEW_VERSION" target/release/darwincode \
+        # Create GitHub Release and upload the compiled binaries
+        gh release create "v$NEW_VERSION" \
+          target/release/darwincode \
+          target/x86_64-pc-windows-gnu/release/darwincode.exe \
           --title "Release v$NEW_VERSION" \
           --notes-file release_notes.md
