@@ -373,21 +373,29 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
         match message.author {
             "You" => {
-                let user_style = Style::default().add_modifier(Modifier::REVERSED);
+                let (user_bg, user_fg) = if app.terminal_light {
+                    (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255))
+                } else {
+                    (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0))
+                };
+                let user_style = Style::default().bg(user_bg).fg(user_fg);
                 let block_width = area.width as usize;
                 
                 if !all_lines.is_empty() {
                     push_margin(&mut all_lines);
                 }
                 
-                // Top padding (with reversed style)
+                // Top padding (with user style)
                 all_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
                 
                 for line in wrapped_parsed_lines {
                     let mut spans = vec![Span::styled("  ", user_style)];
                     let line_text_width = line.width();
                     for s in &line.spans {
-                        let style = s.style.patch(user_style);
+                        let mut style = s.style.bg(user_bg);
+                        if style.fg.is_none() {
+                            style = style.fg(user_fg);
+                        }
                         spans.push(s.clone().style(style));
                     }
                     
@@ -398,7 +406,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     all_lines.push(Line::from(spans));
                 }
                 
-                // Bottom padding (with reversed style)
+                // Bottom padding (with user style)
                 all_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
                 prev_is_tool = false;
             }
@@ -847,7 +855,13 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         ])
         .split(area);
 
-    let base_style = Style::default().add_modifier(Modifier::REVERSED);
+    let (sb_bg, sb_fg) = if app.terminal_light {
+        (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255))
+    } else {
+        (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0))
+    };
+
+    let base_style = Style::default().bg(sb_bg).fg(sb_fg);
 
     // 1. Render left mode block (powerline capsule style)
     let mode_paragraph = Paragraph::new(mode_text)
@@ -869,7 +883,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
     let status_color = if is_busy { Color::Rgb(245, 158, 11) } else { Color::Rgb(34, 197, 94) }; // Amber vs Green
 
     let middle_spans = vec![
-        Span::styled(format!(" {status_icon} "), Style::default().bg(status_color)),
+        Span::styled(format!(" {status_icon} "), Style::default().fg(status_color)),
         Span::styled(format!("{} ", status_str), Style::default().add_modifier(Modifier::BOLD)),
     ];
 
