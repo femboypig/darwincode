@@ -232,6 +232,18 @@ impl MessageLine {
         }
     }
 
+    pub fn info(text: String) -> Self {
+        Self {
+            author: "Info",
+            text,
+            pending: false,
+            is_shell: false,
+            shell_success: false,
+            shell_cmd: String::new(),
+            is_tool: false,
+        }
+    }
+
     pub fn tool(text: String) -> Self {
         Self {
             author: "Darwin",
