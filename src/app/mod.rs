@@ -171,15 +171,14 @@ impl App {
         self.chat.input_draft.clear();
 
         // Special case: If user enters exit or permissions command, execute it immediately even if busy!
-        if let Some(command) = ChatCommand::parse(&input) {
-            if matches!(command, ChatCommand::Exit | ChatCommand::Permissions(_)) {
+        if let Some(command) = ChatCommand::parse(&input)
+            && matches!(command, ChatCommand::Exit | ChatCommand::Permissions(_)) {
                 self.chat.input.clear();
                 self.chat.cursor = 0;
                 self.chat.input_scroll = 0;
                 self.chat.scroll = 0;
                 return self.run_command(command);
             }
-        }
 
         if self.is_busy() {
             self.chat.input.clear();
@@ -263,37 +262,35 @@ impl App {
                 || part.get("thought_signature").is_some();
 
             if is_thought {
-                if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                    if !text.trim().is_empty() {
+                if let Some(text) = part.get("text").and_then(|v| v.as_str())
+                    && !text.trim().is_empty() {
                         if show_thoughts {
                             self.append_to_chat_messages("Darwin", format!("░ Thinking: {text}"));
                         } else {
-                            if !self.chat.messages.last().is_some_and(|m| m.text == "░ Thinking...") {
+                            if self.chat.messages.last().is_none_or(|m| m.text != "░ Thinking...") {
                                 self.chat.messages.push(MessageLine::assistant("░ Thinking...".to_owned()));
                             }
                         }
                     }
-                }
                 continue;
             }
 
-            if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                if !text.is_empty() {
+            if let Some(text) = part.get("text").and_then(|v| v.as_str())
+                && !text.is_empty() {
                     self.append_to_chat_messages("Darwin", text.to_owned());
                 }
-            }
         }
         
         self.chat.scroll = 0;
     }
 
     fn append_to_chat_messages(&mut self, author: &'static str, text: String) {
-        if let Some(msg) = self.chat.messages.last_mut() {
-            if msg.author == author && !msg.pending && !msg.is_shell && !msg.is_tool {
+        if let Some(msg) = self.chat.messages.last_mut()
+            && msg.author == author && !msg.pending && !msg.is_shell && !msg.is_tool {
                 msg.text.push_str(&text);
+                *msg.cached_wrapped.borrow_mut() = None;
                 return;
             }
-        }
         
         self.chat.messages.push(MessageLine {
             author,
@@ -303,15 +300,15 @@ impl App {
             shell_success: false,
             shell_cmd: String::new(),
             is_tool: false,
+            cached_wrapped: std::cell::RefCell::new(None),
         });
     }
 
     pub fn handle_stream_error(&mut self, error: String) {
-        if let Some(m) = self.chat.messages.last_mut() {
-            if m.pending {
+        if let Some(m) = self.chat.messages.last_mut()
+            && m.pending {
                 self.chat.messages.pop();
             }
-        }
         self.chat.messages.push(MessageLine::error(error));
         self.chat.streaming_parts.clear();
         self.chat.scroll = 0;
@@ -340,13 +337,11 @@ impl App {
 
         let mut first_call = None;
         for part in &parts {
-            if let Some(call) = part.get("functionCall") {
-                if first_call.is_none() {
-                    if let (Some(name), Some(args)) = (call.get("name").and_then(|v| v.as_str()), call.get("args")) {
+            if let Some(call) = part.get("functionCall")
+                && first_call.is_none()
+                    && let (Some(name), Some(args)) = (call.get("name").and_then(|v| v.as_str()), call.get("args")) {
                         first_call = Some((name.to_owned(), args.clone()));
                     }
-                }
-            }
         }
 
         if let Some((name, args)) = first_call {
@@ -436,8 +431,8 @@ impl App {
                 .collect();
         }
 
-        if input.starts_with("/resume ") || input == "/resume" {
-            if let Ok(sessions) = session::list_saved_sessions() {
+        if (input.starts_with("/resume ") || input == "/resume")
+            && let Ok(sessions) = session::list_saved_sessions() {
                 return sessions.into_iter()
                     .map(|meta| {
                         CommandSuggestion { 
@@ -448,7 +443,6 @@ impl App {
                     .filter(|s| s.name.starts_with(input))
                     .collect();
             }
-        }
 
         if input.contains(' ') {
             return Vec::new();
@@ -495,11 +489,10 @@ impl App {
                             self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                             self.status = format!("Auto-executing {name}");
                             return Some(SubmitAction::ExecuteFunction { name, args });
-                        } else if level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file") {
-                            if let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
+                        } else if level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file")
+                            && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
                                 return Some(SubmitAction::Generate(request));
                             }
-                        }
                     }
                     None
                 } else {
@@ -665,11 +658,10 @@ impl App {
                     self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                     self.status = format!("Auto-executing {name}");
                     ret = Some(SubmitAction::ExecuteFunction { name, args });
-                } else if *level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file") {
-                    if let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
+                } else if *level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file")
+                    && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
                         ret = Some(SubmitAction::Generate(request));
                     }
-                }
             }
         }
         self.screen = Screen::Chat;
@@ -743,11 +735,10 @@ impl App {
         self.chat.scroll = 0;
         let args = if let Some(ChatMessage { parts, .. }) = self.chat.history.iter().rev().find(|m| m.role == "model") {
             parts.iter().find_map(|p| {
-                if let Some(call) = p.get("functionCall") {
-                    if call.get("name").and_then(|v| v.as_str()) == Some(&name) {
+                if let Some(call) = p.get("functionCall")
+                    && call.get("name").and_then(|v| v.as_str()) == Some(&name) {
                         return call.get("args").cloned();
                     }
-                }
                 None
             }).unwrap_or(serde_json::Value::Null)
         } else {
