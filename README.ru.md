@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/femboypig/darwincode/actions"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/darwincode/darwincode/build.yml?style=flat-square&branch=main" /></a>
   <img alt="Rust version" src="https://img.shields.io/badge/rust-1.75%2B-blue?style=flat-square" />
-  <img alt="License" src="https://img.shields.io/github/license/femboypig/darwincode?style=flat-square" />
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
 </p>
 
 <p align="center">
