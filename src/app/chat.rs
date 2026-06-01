@@ -1,4 +1,4 @@
-use crate::config::{PermissionLevel, StoredConfig};
+use crate::config::{PermissionLevel, StoredConfig, Theme};
 use crate::gemini::{ChatMessage, Part};
 
 #[derive(Debug)]
@@ -250,7 +250,7 @@ pub struct MessageLine {
     pub shell_success: bool,
     pub shell_cmd: String,
     pub is_tool: bool,
-    pub cached_wrapped: std::cell::RefCell<Option<(usize, Vec<ratatui::text::Line<'static>>)>>,
+    pub cached_wrapped: std::cell::RefCell<Option<(usize, Theme, Vec<ratatui::text::Line<'static>>)>>,
 }
 
 impl MessageLine {
