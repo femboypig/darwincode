@@ -67,7 +67,7 @@ impl GeminiClient {
 
             let body_str = response
                 .into_string()
-                .context("failed to read Gemini models response body")?;
+                .context("failed to read API models response body")?;
             let response_data: ListModelsResponse = serde_json::from_str(&body_str)
                 .with_context(|| {
                     let truncated = if body_str.len() > 500 {
@@ -75,7 +75,7 @@ impl GeminiClient {
                     } else {
                         body_str.clone()
                     };
-                    format!("failed to parse Gemini models response. Raw body: {}", truncated)
+                    format!("failed to parse API models response. Raw body: {}", truncated)
                 })?;
 
             let mut names = response_data
@@ -603,8 +603,8 @@ fn read_error(error: ureq::Error) -> anyhow::Error {
             let message = response
                 .into_string()
                 .unwrap_or_else(|_| "unknown error".to_owned());
-            anyhow::anyhow!("Gemini request failed with HTTP {code}: {message}")
+            anyhow::anyhow!("API request failed with HTTP {code}: {message}")
         }
-        ureq::Error::Transport(error) => anyhow::anyhow!("Gemini request failed: {error}"),
+        ureq::Error::Transport(error) => anyhow::anyhow!("API request failed: {error}"),
     }
 }
