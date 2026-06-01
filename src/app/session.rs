@@ -217,6 +217,21 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
                                     "write_file" => {
                                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
                                         res_parts.push(format!("`{path}` written successfully"));
+                                        if let Some(content) = args.get("content").and_then(|v| v.as_str()) {
+                                            let mut diff = "```diff\n".to_owned();
+                                            let lines: Vec<&str> = content.lines().collect();
+                                            let limit = 30;
+                                            for line in lines.iter().take(limit) {
+                                                diff.push_str("+ ");
+                                                diff.push_str(line);
+                                                diff.push('\n');
+                                            }
+                                            if lines.len() > limit {
+                                                diff.push_str(&format!("+ ... and {} more lines\n", lines.len() - limit));
+                                            }
+                                            diff.push_str("```");
+                                            res_parts.push(format!("\n{diff}"));
+                                        }
                                     }
                                     "list_directory" => {
                                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
@@ -365,6 +380,7 @@ mod tests {
         assert_eq!(messages[1].shell_success, true);
 
         assert_eq!(messages[2].author, "Darwin");
-        assert_eq!(messages[2].text, "**WriteFile** → `foo.txt` written successfully");
+        assert!(messages[2].text.contains("foo.txt"));
+        assert!(messages[2].text.contains("+ hello"));
     }
 }
