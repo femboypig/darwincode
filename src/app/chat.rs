@@ -432,3 +432,45 @@ impl ChatCommand {
         ]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chat_history_navigation() {
+        let config = StoredConfig::default();
+        let mut chat = ChatState::new(config);
+        
+        chat.history.push(ChatMessage::user("first prompt".to_owned()));
+        chat.history.push(ChatMessage::user("second prompt".to_owned()));
+        
+        chat.input = "current draft".to_owned();
+        
+        // Navigate up
+        chat.navigate_history_up();
+        assert_eq!(chat.input, "second prompt");
+        assert_eq!(chat.sent_history_index, Some(1));
+        assert_eq!(chat.input_draft, "current draft");
+        
+        // Navigate up again
+        chat.navigate_history_up();
+        assert_eq!(chat.input, "first prompt");
+        assert_eq!(chat.sent_history_index, Some(0));
+        
+        // Navigate up at top (should stay at first prompt)
+        chat.navigate_history_up();
+        assert_eq!(chat.input, "first prompt");
+        assert_eq!(chat.sent_history_index, Some(0));
+        
+        // Navigate down
+        chat.navigate_history_down();
+        assert_eq!(chat.input, "second prompt");
+        assert_eq!(chat.sent_history_index, Some(1));
+        
+        // Navigate down to restore draft
+        chat.navigate_history_down();
+        assert_eq!(chat.input, "current draft");
+        assert_eq!(chat.sent_history_index, None);
+    }
+}
