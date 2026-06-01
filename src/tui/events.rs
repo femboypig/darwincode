@@ -96,6 +96,9 @@ fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key: KeyEvent)
             SetupField::ShowThoughts => {
                 app.setup.show_thoughts = !app.setup.show_thoughts;
             }
+            SetupField::Theme => {
+                app.setup.theme = app.setup.theme.next();
+            }
             _ => app.setup.next_field(),
         },
         (KeyCode::Char(' '), modifiers)
@@ -118,6 +121,9 @@ fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key: KeyEvent)
                 }
                 SetupField::ShowThoughts => {
                     app.setup.show_thoughts = !app.setup.show_thoughts;
+                }
+                SetupField::Theme => {
+                    app.setup.theme = app.setup.theme.next();
                 }
                 _ => app.setup.push_char(' '),
             }
@@ -150,6 +156,12 @@ fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key: KeyEvent)
                 crate::config::PermissionLevel::Guardian => crate::config::PermissionLevel::Chaos,
                 crate::config::PermissionLevel::Chaos => crate::config::PermissionLevel::Safe,
             };
+        }
+        (KeyCode::Up, _) if app.setup.active_field == SetupField::Theme => {
+            app.setup.theme = app.setup.theme.next();
+        }
+        (KeyCode::Down, _) if app.setup.active_field == SetupField::Theme => {
+            app.setup.theme = app.setup.theme.next();
         }
         (KeyCode::Char(value), modifiers)
             if !modifiers.contains(KeyModifiers::CONTROL)
