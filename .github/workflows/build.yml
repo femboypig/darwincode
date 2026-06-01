@@ -31,9 +31,20 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Configure Git
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
+        # Capture changelog and contributors from commits in this push BEFORE making the version bump commit
+        if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ] || [ -z "${{ github.event.before }}" ]; then
+          # Fallback to last 5 commits if before commit is missing
+          CHANGELOG=$(git log -n 5 --pretty=format:"• %s by @%an")
+          CONTRIBUTORS=$(git log -n 5 --pretty=format:"@%an" | sort -u | paste -sd ", " -)
+        else
+          # Get all commits in this push
+          CHANGELOG=$(git log ${{ github.event.before }}..${{ github.event.after }} --pretty=format:"• %s by @%an")
+          CONTRIBUTORS=$(git log ${{ github.event.before }}..${{ github.event.after }} --pretty=format:"@%an" | sort -u | paste -sd ", " -)
+        fi
+
+        # Format release notes into a temporary file
+        echo -e "### Latest Changes:\n$CHANGELOG\n\n### Contributors:\n$CONTRIBUTORS" > release_notes.md
+        cat release_notes.md
 
         # Extract current version from Cargo.toml
         VERSION=$(grep -m 1 '^version = ' Cargo.toml | cut -d '"' -f 2)
@@ -51,16 +62,16 @@ jobs:
         # Build production release binary
         cargo build --release --verbose
 
+        # Configure Git
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
         # Commit and push updated Cargo.toml back to main (using [skip ci] to avoid infinite loops)
         git add Cargo.toml
         git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
         git push origin main
 
-        # Get latest commit message for release details
-        COMMIT_MSG=$(git log -1 --pretty=%B)
-
         # Create GitHub Release and upload the compiled binary
         gh release create "v$NEW_VERSION" target/release/darwincode \
           --title "Release v$NEW_VERSION" \
-          --notes "### Latest Changes:
-        $COMMIT_MSG"
+          --notes-file release_notes.md
