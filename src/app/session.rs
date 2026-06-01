@@ -63,19 +63,27 @@ impl SessionPickerState {
     }
 }
 pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serde_json::Value) -> String {
-    let tool_label = {
-        let mut label = String::new();
-        let mut next_cap = true;
-        for c in name.chars() {
-            if c == '_' { next_cap = true; }
-            else if next_cap {
-                label.push(c.to_ascii_uppercase());
-                next_cap = false;
-            } else {
-                label.push(c);
+    let tool_label = match name {
+        "read_file" | "read_files" => "Read".to_owned(),
+        "edit_file" | "edit_files" => "Edit".to_owned(),
+        "write_file" => "Write".to_owned(),
+        "search_files" => "Search".to_owned(),
+        "list_directory" => "List".to_owned(),
+        "run_bash_command" => "Run".to_owned(),
+        _ => {
+            let mut label = String::new();
+            let mut next_cap = true;
+            for c in name.chars() {
+                if c == '_' { next_cap = true; }
+                else if next_cap {
+                    label.push(c.to_ascii_uppercase());
+                    next_cap = false;
+                } else {
+                    label.push(c);
+                }
             }
+            label
         }
-        label
     };
 
     let mut summary = format!("**{tool_label}** ");
