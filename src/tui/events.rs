@@ -309,10 +309,10 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
                 let old_cursor = app.chat.cursor;
                 app.chat.move_cursor_up();
                 if app.chat.cursor == old_cursor {
-                    app.chat.scroll = app.chat.scroll.saturating_add(1);
+                    app.chat.scroll = app.chat.scroll.saturating_add(3);
                 }
             } else {
-                app.chat.scroll = app.chat.scroll.saturating_add(1);
+                app.chat.scroll = app.chat.scroll.saturating_add(3);
             }
         }
         (KeyCode::Down, modifiers) if modifiers.contains(KeyModifiers::CONTROL) => {
@@ -323,19 +323,19 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
                 let old_cursor = app.chat.cursor;
                 app.chat.move_cursor_down();
                 if app.chat.cursor == old_cursor {
-                    app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                    app.chat.scroll = app.chat.scroll.saturating_sub(3);
                 }
             } else {
-                app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                app.chat.scroll = app.chat.scroll.saturating_sub(3);
             }
         }
         (KeyCode::Home, _) => app.chat.move_cursor_start(),
         (KeyCode::End, _) => app.chat.move_cursor_end(),
         (KeyCode::PageUp, _) => {
-            app.chat.scroll = app.chat.scroll.saturating_add(5);
+            app.chat.scroll = app.chat.scroll.saturating_add(15);
         }
         (KeyCode::PageDown, _) => {
-            app.chat.scroll = app.chat.scroll.saturating_sub(5);
+            app.chat.scroll = app.chat.scroll.saturating_sub(15);
         }
         (KeyCode::Char(value), modifiers)
             if !modifiers.contains(KeyModifiers::CONTROL)
@@ -412,24 +412,14 @@ fn copy_to_clipboard(text: &str) -> Result<()> {
         let mut tried_wl = false;
 
         if is_wayland {
-            match try_copy_wl(text) {
-                Ok(true) => return Ok(()),
-                _ => {}
-            }
+            if let Ok(true) = try_copy_wl(text) { return Ok(()) }
             tried_wl = true;
         }
 
-        match try_copy_x11(text) {
-            Ok(true) => return Ok(()),
-            _ => {}
-        }
+        if let Ok(true) = try_copy_x11(text) { return Ok(()) }
 
-        if !tried_wl {
-            match try_copy_wl(text) {
-                Ok(true) => return Ok(()),
-                _ => {}
-            }
-        }
+        if !tried_wl
+            && let Ok(true) = try_copy_wl(text) { return Ok(()) }
 
         anyhow::bail!("No working clipboard tool found (tried wl-copy, xclip, xsel)")
     }
@@ -464,7 +454,7 @@ fn try_copy_x11(text: &str) -> Result<bool> {
 
     // Try xclip
     let child_res = Command::new("xclip")
-        .args(&["-selection", "clipboard"])
+        .args(["-selection", "clipboard"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -486,7 +476,7 @@ fn try_copy_x11(text: &str) -> Result<bool> {
 
     // Try xsel
     let child_res = Command::new("xsel")
-        .args(&["--clipboard", "--input"])
+        .args(["--clipboard", "--input"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -523,7 +513,7 @@ fn read_from_clipboard() -> Result<String> {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     } else if cfg!(target_os = "windows") {
         let output = Command::new("powershell.exe")
-            .args(&["-Command", "Get-Clipboard"])
+            .args(["-Command", "Get-Clipboard"])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .output()?;
@@ -537,24 +527,14 @@ fn read_from_clipboard() -> Result<String> {
         let mut tried_wl = false;
 
         if is_wayland {
-            match try_paste_wl() {
-                Ok(Some(text)) => return Ok(text),
-                _ => {}
-            }
+            if let Ok(Some(text)) = try_paste_wl() { return Ok(text) }
             tried_wl = true;
         }
 
-        match try_paste_x11() {
-            Ok(Some(text)) => return Ok(text),
-            _ => {}
-        }
+        if let Ok(Some(text)) = try_paste_x11() { return Ok(text) }
 
-        if !tried_wl {
-            match try_paste_wl() {
-                Ok(Some(text)) => return Ok(text),
-                _ => {}
-            }
-        }
+        if !tried_wl
+            && let Ok(Some(text)) = try_paste_wl() { return Ok(text) }
 
         anyhow::bail!("No working clipboard tool found for pasting")
     }
@@ -586,7 +566,7 @@ fn try_paste_x11() -> Result<Option<String>> {
 
     // Try xclip
     let output_res = Command::new("xclip")
-        .args(&["-o", "-selection", "clipboard"])
+        .args(["-o", "-selection", "clipboard"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output();
@@ -603,7 +583,7 @@ fn try_paste_x11() -> Result<Option<String>> {
 
     // Try xsel
     let output_res = Command::new("xsel")
-        .args(&["--clipboard", "--output"])
+        .args(["--clipboard", "--output"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output();
