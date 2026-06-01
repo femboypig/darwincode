@@ -689,7 +689,7 @@ fn render_chat(frame: &mut Frame, app: &App) {
     render_statusbar(frame, app, statusbar_area);
 
     if let Some(PendingTask::ConfirmFunction { name, args }) = &app.pending {
-        let popup_area = if name == "edit_file" || name == "edit_files" {
+        let popup_area = if name == "edit_file" || name == "edit_files" || name == "write_file" {
             centered_rect(80, 70, area)
         } else {
             centered_rect(60, 50, area)
@@ -765,6 +765,26 @@ fn render_chat(frame: &mut Frame, app: &App) {
                     text.push(Line::from(""));
                 }
             }
+        } else if name == "write_file" {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            
+            text.push(Line::from(vec![
+                Span::styled("File: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(path, Style::default().fg(Color::Cyan)),
+            ]));
+            text.push(Line::from(""));
+            text.push(Line::from(Span::styled("Content to Write:", Style::default().add_modifier(Modifier::BOLD))));
+            
+            for line in content.lines() {
+                let formatted = format!("+ {line}");
+                let padded = format!("{formatted:<width$}", width = inner_width);
+                text.push(Line::from(Span::styled(
+                    padded,
+                    Style::default().fg(Color::Rgb(180, 255, 180)).bg(Color::Rgb(20, 60, 20))
+                )));
+            }
+            text.push(Line::from(""));
         } else {
             text.push(Line::from(vec![
                 Span::styled("Args: ", Style::default().add_modifier(Modifier::BOLD)),
