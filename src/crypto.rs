@@ -53,8 +53,49 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
     }
 
     if machine_id.is_empty() {
-        // Fallback to a stable default combined with home/user env
-        machine_id = "stable-darwincode-fallback-key-998".to_owned();
+        // Retrieve config directory to store/load a persistent unique machine-id
+        let base_dir = std::env::var_os("XDG_CONFIG_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
+            .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")))
+            .or_else(|| std::env::var_os("USERPROFILE").map(|home| std::path::PathBuf::from(home).join(".config")));
+
+        if let Some(base) = base_dir {
+            let darwincode_dir = base.join("darwincode");
+            let _ = std::fs::create_dir_all(&darwincode_dir);
+            let machine_id_path = darwincode_dir.join("machine-id");
+            if let Ok(id) = std::fs::read_to_string(&machine_id_path) {
+                machine_id = id.trim().to_owned();
+            } else {
+                // Generate a random stable key
+                let mut bytes = [0u8; 32];
+                rand::fill(&mut bytes);
+                let hex_id = bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+                
+                // Write with secure permissions on unix
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    if let Ok(mut file) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .mode(0o600)
+                        .open(&machine_id_path)
+                    {
+                        use std::io::Write;
+                        let _ = write!(file, "{}", hex_id);
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = std::fs::write(&machine_id_path, &hex_id);
+                }
+                machine_id = hex_id;
+            }
+        } else {
+            // Extreme fallback if home path cannot be determined at all
+            machine_id = "ultimate-emergency-fallback-key-998".to_owned();
+        }
     }
     
     let username = std::env::var("USER")
