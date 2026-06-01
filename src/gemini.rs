@@ -12,9 +12,13 @@ pub struct GeminiClient {
 
 impl GeminiClient {
     pub fn new(config: StoredConfig) -> Self {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(std::time::Duration::from_secs(10))
+            .timeout_read(std::time::Duration::from_secs(30))
+            .build();
         Self {
             config,
-            agent: ureq::Agent::new(),
+            agent,
         }
     }
 
