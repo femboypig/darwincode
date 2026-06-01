@@ -167,6 +167,8 @@ impl App {
         if input.is_empty() {
             return None;
         }
+        self.chat.sent_history_index = None;
+        self.chat.input_draft.clear();
 
         // Special case: If user enters exit or permissions command, execute it immediately even if busy!
         if let Some(command) = ChatCommand::parse(&input) {
@@ -315,6 +317,7 @@ impl App {
         self.chat.scroll = 0;
         self.pending = None;
         self.status = "Ready".to_owned();
+        let _ = session::save_session(&self.chat);
     }
 
     pub fn complete_stream(&mut self) -> Option<FunctionAction> {
@@ -542,6 +545,9 @@ impl App {
                 self.chat.history.clear();
                 self.chat.messages.clear();
                 self.chat.scroll = 0;
+                self.chat.message_queue.clear();
+                self.chat.sent_history_index = None;
+                self.chat.input_draft.clear();
                 let _ = session::save_session(&self.chat);
                 self.status = "Chat history cleared".to_owned();
                 None
@@ -550,6 +556,9 @@ impl App {
                 self.chat.history.clear();
                 self.chat.messages.clear();
                 self.chat.scroll = 0;
+                self.chat.message_queue.clear();
+                self.chat.sent_history_index = None;
+                self.chat.input_draft.clear();
                 self.chat.session_id = format!(
                     "session_{}",
                     std::time::SystemTime::now()
