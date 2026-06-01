@@ -54,11 +54,12 @@ mod icons {
 }
 
 fn get_theme(app: &App) -> crate::config::Theme {
-    if app.screen == Screen::Setup {
+    let raw_theme = if app.screen == Screen::Setup {
         app.setup.theme
     } else {
         app.chat.config.theme
-    }
+    };
+    crate::config::resolve_theme(raw_theme)
 }
 
 pub(crate) fn render(frame: &mut Frame, app: &App) {
@@ -390,7 +391,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
             "You" => {
                 let theme = get_theme(app);
                 let (user_bg, user_fg) = match theme {
-                    crate::config::Theme::Dark => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
+                    crate::config::Theme::Dark | crate::config::Theme::Auto => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
                     crate::config::Theme::Light => (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)),
                 };
                 let user_style = Style::default().bg(user_bg).fg(user_fg);
@@ -869,7 +870,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
 
     let theme = get_theme(app);
     let (bar_bg, bar_fg) = match theme {
-        crate::config::Theme::Dark => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
+        crate::config::Theme::Dark | crate::config::Theme::Auto => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
         crate::config::Theme::Light => (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)),
     };
     let base_style = Style::default().bg(bar_bg).fg(bar_fg);
