@@ -23,7 +23,14 @@ jobs:
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
       with:
+        components: rustfmt, clippy
         targets: x86_64-pc-windows-gnu
+
+    - name: Check formatting
+      run: cargo fmt --all --check
+
+    - name: Run Clippy
+      run: cargo clippy --all-targets -- -D warnings
 
     - name: Install MinGW (Windows cross-compilation toolchain)
       run: |
