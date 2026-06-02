@@ -265,10 +265,21 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
         if is_ctrl_c || is_esc {
             if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
                 if let Some(pid) = *guard {
-                    let _ = std::process::Command::new("kill")
-                        .arg("-9")
-                        .arg(format!("-{}", pid))
-                        .status();
+                    #[cfg(unix)]
+                    {
+                        let _ = std::process::Command::new("kill")
+                            .arg("-9")
+                            .arg(format!("-{}", pid))
+                            .status();
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        let _ = std::process::Command::new("taskkill")
+                            .arg("/F")
+                            .arg("/PID")
+                            .arg(pid.to_string())
+                            .status();
+                    }
                     *guard = None;
                 }
             }
@@ -341,10 +352,21 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
     if app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key) {
         if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
             if let Some(pid) = *guard {
-                let _ = std::process::Command::new("kill")
-                    .arg("-9")
-                    .arg(format!("-{}", pid))
-                    .status();
+                #[cfg(unix)]
+                {
+                    let _ = std::process::Command::new("kill")
+                        .arg("-9")
+                        .arg(format!("-{}", pid))
+                        .status();
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = std::process::Command::new("taskkill")
+                        .arg("/F")
+                        .arg("/PID")
+                        .arg(pid.to_string())
+                        .status();
+                }
                 *guard = None;
             }
         }
