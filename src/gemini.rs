@@ -313,6 +313,7 @@ impl GeminiClient {
                     }
                     "model" => {
                         let mut content = String::new();
+                        let mut reasoning_content = String::new();
                         let mut tool_calls = Vec::new();
                         
                         // Lookahead to collect all responded tool names in the subsequent "function" message(s)
@@ -329,7 +330,20 @@ impl GeminiClient {
 
                         for part in &msg.parts {
                             if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                                content.push_str(text);
+                                if part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false)
+                                    || part.get("reasoning_content").is_some()
+                                    || text.starts_with("░ Thinking:")
+                                    || text.starts_with("░ Thinking...") {
+                                        let mut r = part.get("reasoning_content").and_then(|v| v.as_str()).unwrap_or(text);
+                                        if r.starts_with("░ Thinking:") {
+                                            r = &r["░ Thinking:".len()..];
+                                        } else if r.starts_with("░ Thinking...") {
+                                            r = &r["░ Thinking...".len()..];
+                                        }
+                                        reasoning_content.push_str(r);
+                                    } else {
+                                        content.push_str(text);
+                                    }
                             }
                             if let Some(call) = part.get("functionCall")
                                 && let Some(name) = call.get("name").and_then(|v| v.as_str()) {
@@ -357,21 +371,24 @@ impl GeminiClient {
                                     }
                                 }
                         }
+                        
+                        let mut msg_obj = serde_json::json!({
+                            "role": "assistant"
+                        });
                         if !tool_calls.is_empty() {
-                            let mut msg_obj = serde_json::json!({
-                                "role": "assistant",
-                                "tool_calls": tool_calls
-                            });
-                            if !content.is_empty() {
-                                msg_obj.as_object_mut().unwrap().insert("content".to_owned(), serde_json::json!(content));
-                            }
-                            openai_messages.push(msg_obj);
-                        } else {
-                            openai_messages.push(serde_json::json!({
-                                "role": "assistant",
-                                "content": content
-                            }));
+                            msg_obj.as_object_mut().unwrap().insert("tool_calls".to_owned(), serde_json::json!(tool_calls));
                         }
+                        if !content.is_empty() {
+                            msg_obj.as_object_mut().unwrap().insert("content".to_owned(), serde_json::json!(content));
+                        } else if !tool_calls.is_empty() || !reasoning_content.is_empty() {
+                            msg_obj.as_object_mut().unwrap().insert("content".to_owned(), serde_json::Value::Null);
+                        } else {
+                            msg_obj.as_object_mut().unwrap().insert("content".to_owned(), serde_json::json!(""));
+                        }
+                        if !reasoning_content.is_empty() {
+                            msg_obj.as_object_mut().unwrap().insert("reasoning_content".to_owned(), serde_json::json!(reasoning_content.trim()));
+                        }
+                        openai_messages.push(msg_obj);
                     }
                     "function" => {
                         for part in &msg.parts {
@@ -453,6 +470,14 @@ impl GeminiClient {
                                     && !content.is_empty() {
                                         on_chunk(GeminiResponse::Turn(vec![serde_json::json!({
                                             "text": content
+                                        })]))?;
+                                    }
+                                if let Some(reasoning) = delta.get("reasoning_content").and_then(|v| v.as_str())
+                                    && !reasoning.is_empty() {
+                                        on_chunk(GeminiResponse::Turn(vec![serde_json::json!({
+                                            "text": reasoning,
+                                            "thought": true,
+                                            "reasoning_content": reasoning
                                         })]))?;
                                     }
                                 
