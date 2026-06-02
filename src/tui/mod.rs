@@ -152,7 +152,7 @@ fn load_gitignore_rules() -> Vec<String> {
         for line in content.lines() {
             let trimmed = line.trim();
             if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                let rule = trimmed.trim_end_matches('/').to_owned();
+                let rule = trimmed.trim_start_matches('/').trim_end_matches('/').to_owned();
                 if !rules.contains(&rule) {
                     rules.push(rule);
                 }
@@ -352,11 +352,15 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                     }
                     "list_directory" => {
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                        let rules = load_gitignore_rules();
                         match std::fs::read_dir(path) {
                             Ok(entries) => {
                                 let mut files = Vec::new();
                                 for entry in entries.filter_map(Result::ok) {
-                                    files.push(entry.path().display().to_string());
+                                    let entry_path = entry.path();
+                                    if !should_ignore(&entry_path, &rules) {
+                                        files.push(entry_path.display().to_string());
+                                    }
                                 }
                                 serde_json::json!({ "files": files })
                             }
@@ -470,16 +474,12 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                             
                             let output = output?;
                             let stdout_content = String::from_utf8_lossy(&output.stdout).into_owned();
-                            let mut stderr_content = String::from_utf8_lossy(&output.stderr).into_owned();
+                            let stderr_content = String::from_utf8_lossy(&output.stderr).into_owned();
                             let status_code = output.status.code();
                             let mut err_val = serde_json::Value::Null;
                             
                             if status_code.is_none() {
                                 err_val = serde_json::json!("Process terminated by user via Ctrl+C");
-                                if !stderr_content.is_empty() {
-                                    stderr_content.push('\n');
-                                }
-                                stderr_content.push_str("[Process terminated by user via Ctrl+C]");
                             }
                             
                             Ok(serde_json::json!({
