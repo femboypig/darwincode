@@ -12,7 +12,7 @@ pub use session::SessionPickerState;
 
 use anyhow::Result;
 use crate::config::{PermissionLevel, StoredConfig};
-use crate::gemini::{ChatMessage, GeminiResponse};
+use crate::api::{ChatMessage, GeminiResponse};
 
 #[derive(Clone, Debug)]
 pub enum FunctionAction {
