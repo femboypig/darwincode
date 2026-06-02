@@ -23,6 +23,8 @@ use crate::gemini::{GeminiClient, GeminiResponse};
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
+pub static RUNNING_PROCESS_PID: std::sync::Mutex<Option<u32>> = std::sync::Mutex::new(None);
+
 pub(crate) enum WorkerEvent {
     StreamChunk(usize, GeminiResponse),
     StreamDone(usize),
@@ -137,13 +139,60 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
     }
 }
 
-fn recursive_search(dir: &std::path::Path, pattern: &str, matches: &mut Vec<String>) -> std::io::Result<()> {
+fn load_gitignore_rules() -> Vec<String> {
+    let mut rules = vec![
+        ".git".to_owned(),
+        "node_modules".to_owned(),
+        "target".to_owned(),
+        "dist".to_owned(),
+        "build".to_owned(),
+        ".next".to_owned(),
+    ];
+    if let Ok(content) = std::fs::read_to_string(".gitignore") {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                let rule = trimmed.trim_end_matches('/').to_owned();
+                if !rules.contains(&rule) {
+                    rules.push(rule);
+                }
+            }
+        }
+    }
+    rules
+}
+
+fn should_ignore(path: &std::path::Path, rules: &[String]) -> bool {
+    for component in path.components() {
+        if let Some(comp_str) = component.as_os_str().to_str() {
+            for rule in rules {
+                if comp_str == rule || (rule.starts_with('*') && comp_str.ends_with(&rule[1..])) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn recursive_search(
+    dir: &std::path::Path,
+    pattern: &str,
+    rules: &[String],
+    matches: &mut Vec<String>,
+) -> std::io::Result<()> {
     if dir.is_dir() {
+        if should_ignore(dir, rules) {
+            return Ok(());
+        }
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
+            if should_ignore(&path, rules) {
+                continue;
+            }
             if path.is_dir() {
-                let _ = recursive_search(&path, pattern, matches);
+                let _ = recursive_search(&path, pattern, rules, matches);
             } else if path.is_file()
                 && let Ok(content) = std::fs::read_to_string(&path) {
                     for (line_num, line) in content.lines().enumerate() {
@@ -320,18 +369,20 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                         
                         let mut matches = Vec::new();
                         let search_path = std::path::Path::new(path);
+                        let rules = load_gitignore_rules();
                         
                         let run_res = if search_path.is_file() {
-                            if let Ok(content) = std::fs::read_to_string(search_path) {
-                                for (line_num, line) in content.lines().enumerate() {
-                                    if line.contains(pattern) {
-                                        matches.push(format!("{}:{}:{}", search_path.display(), line_num + 1, line));
+                            if !should_ignore(search_path, &rules)
+                                && let Ok(content) = std::fs::read_to_string(search_path) {
+                                    for (line_num, line) in content.lines().enumerate() {
+                                        if line.contains(pattern) {
+                                            matches.push(format!("{}:{}:{}", search_path.display(), line_num + 1, line));
+                                        }
                                     }
                                 }
-                            }
                             Ok(())
                         } else {
-                            recursive_search(search_path, pattern, &mut matches)
+                            recursive_search(search_path, pattern, &rules, &mut matches)
                         };
                         
                         match run_res {
@@ -406,7 +457,18 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                 .stderr(std::process::Stdio::piped())
                                 .spawn()?;
                             
-                            let output = child.wait_with_output()?;
+                            let pid = child.id();
+                            if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+                                *guard = Some(pid);
+                            }
+                            
+                            let output = child.wait_with_output();
+                            
+                            if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+                                *guard = None;
+                            }
+                            
+                            let output = output?;
                             let stdout_content = String::from_utf8_lossy(&output.stdout).into_owned();
                             let stderr_content = String::from_utf8_lossy(&output.stderr).into_owned();
                             
