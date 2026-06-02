@@ -18,6 +18,7 @@ pub struct ChatState {
     pub sent_history_index: Option<usize>,
     pub input_draft: String,
     pub shell_focused: bool,
+    pub last_chunk_was_thought: bool,
 }
 
 impl ChatState {
@@ -45,6 +46,7 @@ impl ChatState {
             sent_history_index: None,
             input_draft: String::new(),
             shell_focused: false,
+            last_chunk_was_thought: false,
         }
     }
 
