@@ -5,7 +5,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Padding, Paragraph};
 
 use crate::app::App;
-use crate::tui::render::icons::icons;
 use crate::tui::render::{get_theme, render_statusbar};
 
 pub(crate) fn render_sessions(frame: &mut Frame, app: &App) {
