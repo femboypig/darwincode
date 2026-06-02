@@ -392,6 +392,7 @@ impl App {
                 self.backup_before_execution(&name, &args);
                 self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                 self.status = format!("Auto-executing {name}");
+                self.start_function_execution(&name, &args);
                 Some(FunctionAction::Execute { name, args })
             } else if permission == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files") {
                 self.pending = Some(PendingTask::Generating);
@@ -727,6 +728,7 @@ impl App {
                     self.backup_before_execution(&name, &args);
                     self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                     self.status = format!("Auto-executing {name}");
+                    self.start_function_execution(&name, &args);
                     ret = Some(SubmitAction::ExecuteFunction { name, args });
                 } else if *level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files")
                     && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
@@ -788,6 +790,7 @@ impl App {
 
         self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
         self.status = format!("Executing {name}");
+        self.start_function_execution(&name, &args);
         Some(FunctionAction::Execute { name, args })
     }
 
@@ -816,14 +819,13 @@ impl App {
         });
         let _ = session::save_session(&self.chat);
         if name == "run_bash_command" {
-            let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let mut output = String::new();
-            let mut icon = "✓";
+            let mut success = true;
             
             if let Some(status) = response.get("status").and_then(|v| v.as_i64()) {
-                if status != 0 { icon = "✗"; }
+                if status != 0 { success = false; }
             } else if response.get("error").is_some() {
-                icon = "✗";
+                success = false;
             }
             
             let stdout = response.get("stdout").and_then(|v| v.as_str()).unwrap_or("");
@@ -833,11 +835,21 @@ impl App {
                 if !output.is_empty() { output.push('\n'); }
                 output.push_str(stderr);
             }
+            if output.is_empty() {
+                output = "(empty output)".to_owned();
+            }
             
-            self.chat.messages.push(MessageLine::shell(cmd.to_owned(), output, icon == "✓"));
+            if let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
+                msg.text = output;
+                msg.shell_success = success;
+                *msg.cached_wrapped.borrow_mut() = None;
+            }
         } else {
             let summary = crate::app::session::format_tool_summary(&name, &args, &response);
-            self.chat.messages.push(MessageLine::tool(summary));
+            if let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_tool) {
+                msg.text = summary;
+                *msg.cached_wrapped.borrow_mut() = None;
+            }
         }
 
 
@@ -923,5 +935,16 @@ impl App {
                 original_content,
             });
         }
+    }
+
+    pub fn start_function_execution(&mut self, name: &str, args: &serde_json::Value) {
+        if name == "run_bash_command" {
+            let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
+            self.chat.messages.push(MessageLine::shell(cmd.to_owned(), "Running...\n".to_owned(), false));
+        } else {
+            let summary = format!("**{}** executing...", name);
+            self.chat.messages.push(MessageLine::tool(summary));
+        }
+        self.chat.scroll = 0;
     }
 }
