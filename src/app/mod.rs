@@ -63,6 +63,16 @@ pub enum Screen {
     Models,
     Permissions,
     Sessions,
+    AskUser,
+}
+
+#[derive(Clone, Debug)]
+pub struct AskUserState {
+    pub question: String,
+    pub options: Vec<String>,
+    pub selected_idx: usize,
+    pub custom_input: String,
+    pub is_custom: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -88,6 +98,7 @@ pub struct App {
     pub last_file_backups: Vec<FileBackup>,
     pub generation_id: usize,
     pub confirm_scroll: u16,
+    pub ask_user: AskUserState,
 }
 
 impl App {
@@ -110,6 +121,13 @@ impl App {
                 last_file_backups: Vec::new(),
                 generation_id: 0,
                 confirm_scroll: 0,
+                ask_user: AskUserState {
+                    question: String::new(),
+                    options: Vec::new(),
+                    selected_idx: 0,
+                    custom_input: String::new(),
+                    is_custom: false,
+                },
             },
             None => Self {
                 screen: Screen::Setup,
@@ -128,6 +146,13 @@ impl App {
                 last_file_backups: Vec::new(),
                 generation_id: 0,
                 confirm_scroll: 0,
+                ask_user: AskUserState {
+                    question: String::new(),
+                    options: Vec::new(),
+                    selected_idx: 0,
+                    custom_input: String::new(),
+                    is_custom: false,
+                },
             },
         }
     }
@@ -285,6 +310,26 @@ impl App {
         }))
     }
 
+    pub fn handle_bash_stdout(&mut self, chunk: String) {
+        if let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
+            if msg.text.ends_with("\nRunning...\n") {
+                msg.text.truncate(msg.text.len() - 11);
+            }
+            msg.text.push_str(&chunk);
+            *msg.cached_wrapped.borrow_mut() = None;
+        }
+    }
+
+    pub fn handle_bash_stderr(&mut self, chunk: String) {
+        if let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
+            if msg.text.ends_with("\nRunning...\n") {
+                msg.text.truncate(msg.text.len() - 11);
+            }
+            msg.text.push_str(&chunk);
+            *msg.cached_wrapped.borrow_mut() = None;
+        }
+    }
+
     pub fn handle_stream_chunk(&mut self, response: GeminiResponse) {
         if !matches!(self.pending, Some(PendingTask::Generating)) {
             return;
@@ -308,25 +353,42 @@ impl App {
                     && !text.is_empty() {
                         if show_thoughts {
                             let last_is_thinking = self.chat.messages.last().is_some_and(|m| {
-                                m.author == "Darwin" && !m.pending && !m.is_shell && !m.is_tool && m.text.starts_with("░ Thinking:")
+                                m.author == "Darwin" && !m.pending && !m.is_shell && !m.is_tool && m.text.starts_with("Thinking:")
                             });
                             if last_is_thinking {
                                 self.append_to_chat_messages("Darwin", text.to_owned());
                             } else {
-                                self.append_to_chat_messages("Darwin", format!("░ Thinking: {}", text));
+                                self.append_to_chat_messages("Darwin", format!("Thinking: {}", text));
                             }
                         } else {
-                            if self.chat.messages.last().is_none_or(|m| m.text != "░ Thinking...") {
-                                self.chat.messages.push(MessageLine::assistant("░ Thinking...".to_owned()));
+                            if self.chat.messages.last().is_none_or(|m| m.text != "Thinking...") {
+                                self.chat.messages.push(MessageLine::assistant("Thinking...".to_owned()));
                             }
                         }
                     }
+                self.chat.last_chunk_was_thought = true;
                 continue;
             }
 
             if let Some(text) = part.get("text").and_then(|v| v.as_str())
                 && !text.is_empty() {
-                    self.append_to_chat_messages("Darwin", text.to_owned());
+                    if self.chat.last_chunk_was_thought {
+                        if show_thoughts {
+                            let clean_text = text.trim_start_matches('\n').trim_start_matches('\r');
+                            self.append_to_chat_messages("Darwin", format!("\n\n{}", clean_text));
+                        } else {
+                            if let Some(msg) = self.chat.messages.last_mut()
+                                && msg.author == "Darwin" && msg.text == "Thinking..." {
+                                    msg.text = text.trim_start_matches('\n').trim_start_matches('\r').to_owned();
+                                    *msg.cached_wrapped.borrow_mut() = None;
+                                } else {
+                                    self.append_to_chat_messages("Darwin", text.to_owned());
+                                }
+                        }
+                    } else {
+                        self.append_to_chat_messages("Darwin", text.to_owned());
+                    }
+                    self.chat.last_chunk_was_thought = false;
                 }
         }
         
@@ -900,6 +962,7 @@ impl App {
         }
         self.chat.streaming_parts.clear();
         self.chat.message_queue.clear();
+        self.chat.last_chunk_was_thought = false;
         let _ = crate::app::session::save_session(&self.chat);
     }
 
