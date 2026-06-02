@@ -25,6 +25,7 @@ pub(crate) fn get_theme(app: &App) -> crate::config::Theme {
 }
 
 pub(crate) fn render(frame: &mut Frame, app: &App) {
+    frame.render_widget(ratatui::widgets::Clear, frame.area());
     match app.screen {
         Screen::Setup => setup::render_setup(frame, app),
         Screen::Chat => chat::render_chat(frame, app),
