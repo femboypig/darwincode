@@ -125,6 +125,8 @@ fn render_setup(frame: &mut Frame, app: &App) {
             | SetupField::EnableBash
             | SetupField::PermissionLevel
             | SetupField::ShowThoughts
+            | SetupField::Theme
+            | SetupField::RespectGitignore
     );
 
     // Left Column: Provider & Connection
@@ -216,6 +218,13 @@ fn render_setup(frame: &mut Frame, app: &App) {
             app.setup.theme.label(),
             app.setup.active_field == SetupField::Theme,
             Color::Rgb(251, 146, 60),
+        ),
+        Line::from(""),
+        draw_setup_field(
+            "Respect .gitignore",
+            if app.setup.respect_gitignore { icons::CHECK_ENABLED } else { icons::CROSS_DISABLED },
+            app.setup.active_field == SetupField::RespectGitignore,
+            Color::Rgb(168, 85, 247), // Purple
         ),
     ];
 
