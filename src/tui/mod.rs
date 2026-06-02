@@ -24,6 +24,8 @@ use crate::gemini::{GeminiClient, GeminiResponse};
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 pub static RUNNING_PROCESS_PID: std::sync::Mutex<Option<u32>> = std::sync::Mutex::new(None);
+pub static RUNNING_PROCESS_STDIN: std::sync::Mutex<Option<std::process::ChildStdin>> = std::sync::Mutex::new(None);
+pub static ASK_USER_CHANNEL: std::sync::Mutex<Option<(std::sync::mpsc::Sender<String>, String, Vec<String>)>> = std::sync::Mutex::new(None);
 
 pub(crate) enum WorkerEvent {
     StreamChunk(usize, GeminiResponse),
@@ -32,6 +34,8 @@ pub(crate) enum WorkerEvent {
     Models(Result<Vec<String>, String>),
     ToolResult(String, serde_json::Value),
     ResetStream(usize),
+    BashStdout(String),
+    BashStderr(String),
 }
 
 pub fn run(mut app: App) -> Result<()> {
@@ -64,6 +68,20 @@ fn run_loop(
     receiver: &Receiver<WorkerEvent>,
 ) -> Result<()> {
     while !app.should_quit {
+        if let Ok(guard) = crate::tui::ASK_USER_CHANNEL.lock() {
+            if let Some((_, ref question, ref options)) = *guard {
+                if app.screen != crate::app::Screen::AskUser {
+                    app.screen = crate::app::Screen::AskUser;
+                    app.ask_user.question = question.clone();
+                    app.ask_user.options = options.clone();
+                    app.ask_user.selected_idx = 0;
+                    app.ask_user.custom_input.clear();
+                    app.ask_user.is_custom = options.is_empty();
+                    app.status = "Answer the question. Enter to submit.".to_owned();
+                }
+            }
+        }
+
         app.advance_tick();
         while let Ok(event) = receiver.try_recv() {
             handle_worker_event(app, event, sender);
@@ -135,6 +153,12 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
             if id == app.generation_id {
                 app.chat.streaming_parts.clear();
             }
+        }
+        WorkerEvent::BashStdout(chunk) => {
+            app.handle_bash_stdout(chunk);
+        }
+        WorkerEvent::BashStderr(chunk) => {
+            app.handle_bash_stderr(chunk);
         }
     }
 }
@@ -479,28 +503,87 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                         let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
                         
                         let run_result = (|| -> Result<serde_json::Value, std::io::Error> {
-                            let child = std::process::Command::new("bash")
-                                .arg("-c")
+                            use std::os::unix::process::CommandExt;
+                            let mut command = std::process::Command::new("bash");
+                            command.arg("-c")
                                 .arg(cmd)
+                                .stdin(std::process::Stdio::piped())
                                 .stdout(std::process::Stdio::piped())
-                                .stderr(std::process::Stdio::piped())
-                                .spawn()?;
+                                .stderr(std::process::Stdio::piped());
+                            unsafe {
+                                command.pre_exec(|| {
+                                    unsafe extern "C" {
+                                        fn setpgid(pid: i32, pgid: i32) -> i32;
+                                    }
+                                    setpgid(0, 0);
+                                    Ok(())
+                                });
+                            }
+                            let mut child = command.spawn()?;
                             
                             let pid = child.id();
                             if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
                                 *guard = Some(pid);
                             }
                             
-                            let output = child.wait_with_output();
+                            let stdin = child.stdin.take().unwrap();
+                            if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock() {
+                                *guard = Some(stdin);
+                            }
+                            
+                            let stdout = child.stdout.take().unwrap();
+                            let stderr = child.stderr.take().unwrap();
+
+                            let stdout_accumulator = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+                            let stderr_accumulator = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+
+                            let sender_stdout = sender.clone();
+                            let stdout_acc_clone = stdout_accumulator.clone();
+                            let stdout_handle = std::thread::spawn(move || {
+                                use std::io::Read;
+                                let mut buffer = [0; 1024];
+                                let mut reader = stdout;
+                                while let Ok(n) = reader.read(&mut buffer) {
+                                    if n == 0 { break; }
+                                    let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
+                                    if let Ok(mut guard) = stdout_acc_clone.lock() {
+                                        guard.push_str(&chunk);
+                                    }
+                                    let _ = sender_stdout.send(WorkerEvent::BashStdout(chunk));
+                                }
+                            });
+
+                            let sender_stderr = sender.clone();
+                            let stderr_acc_clone = stderr_accumulator.clone();
+                            let stderr_handle = std::thread::spawn(move || {
+                                use std::io::Read;
+                                let mut buffer = [0; 1024];
+                                let mut reader = stderr;
+                                while let Ok(n) = reader.read(&mut buffer) {
+                                    if n == 0 { break; }
+                                    let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
+                                    if let Ok(mut guard) = stderr_acc_clone.lock() {
+                                        guard.push_str(&chunk);
+                                    }
+                                    let _ = sender_stderr.send(WorkerEvent::BashStderr(chunk));
+                                }
+                            });
+
+                            let status = child.wait()?;
                             
                             if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
                                 *guard = None;
                             }
+                            if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock() {
+                                *guard = None;
+                            }
                             
-                            let output = output?;
-                            let stdout_content = String::from_utf8_lossy(&output.stdout).into_owned();
-                            let stderr_content = String::from_utf8_lossy(&output.stderr).into_owned();
-                            let status_code = output.status.code();
+                            let _ = stdout_handle.join();
+                            let _ = stderr_handle.join();
+
+                            let stdout_content = stdout_accumulator.lock().map(|g| g.clone()).unwrap_or_default();
+                            let stderr_content = stderr_accumulator.lock().map(|g| g.clone()).unwrap_or_default();
+                            let status_code = status.code();
                             let mut err_val = serde_json::Value::Null;
                             
                             if status_code.is_none() {
@@ -519,6 +602,59 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                             Ok(val) => val,
                             Err(e) => serde_json::json!({ "error": e.to_string() })
                         }
+                    }
+                    "web_search" => {
+                        let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                        let res = if query.starts_with("http://") || query.starts_with("https://") {
+                            (|| -> Result<serde_json::Value, ureq::Error> {
+                                let body: String = ureq::get(query)
+                                    .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                                    .call()?
+                                    .into_string()?;
+                                let plain_text = html_to_plain_text(&body);
+                                let truncated: String = plain_text.chars().take(8000).collect();
+                                Ok(serde_json::json!({ "content": truncated }))
+                            })()
+                        } else {
+                            (|| -> Result<serde_json::Value, ureq::Error> {
+                                let encoded_query = url_encode(query);
+                                let search_url = format!("https://html.duckduckgo.com/html/?q={}", encoded_query);
+                                let body: String = ureq::get(&search_url)
+                                    .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                                    .call()?
+                                    .into_string()?;
+                                let results = parse_ddg_html(&body);
+                                Ok(serde_json::json!({ "results": results }))
+                            })()
+                        };
+                        match res {
+                            Ok(val) => val,
+                            Err(e) => serde_json::json!({ "error": e.to_string() }),
+                        }
+                    }
+                    "ask_user" => {
+                        let question = args.get("question").and_then(|v| v.as_str()).unwrap_or("");
+                        let options = args.get("options")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_owned()))
+                                    .collect::<Vec<String>>()
+                            })
+                            .unwrap_or_default();
+                            
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
+                            *guard = Some((tx, question.to_owned(), options));
+                        }
+                        
+                        let answer = rx.recv().unwrap_or_default();
+                        
+                        if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
+                            *guard = None;
+                        }
+                        
+                        serde_json::json!({ "answer": answer })
                     }
                     _ => serde_json::json!({ "error": "Unknown function" }),
                 };
@@ -586,4 +722,155 @@ pub(crate) fn spawn_models_worker(config: StoredConfig, sender: Sender<WorkerEve
             .map_err(|error| error.to_string());
         let _ = sender.send(WorkerEvent::Models(result));
     });
+}
+
+fn url_encode(input: &str) -> String {
+    let mut encoded = String::new();
+    for b in input.bytes() {
+        match b {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(b as char);
+            }
+            b' ' => {
+                encoded.push('+');
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    encoded
+}
+
+fn percent_decode(input: &str) -> String {
+    let mut decoded = String::new();
+    let mut bytes = input.as_bytes().iter();
+    while let Some(&b) = bytes.next() {
+        if b == b'%' {
+            if let Some(&h1) = bytes.next() {
+                if let Some(&h2) = bytes.next() {
+                    let hex = vec![h1, h2];
+                    if let Ok(hex_str) = std::str::from_utf8(&hex) {
+                        if let Ok(val) = u8::from_str_radix(hex_str, 16) {
+                            decoded.push(val as char);
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        decoded.push(b as char);
+    }
+    decoded
+}
+
+fn strip_html_tags(input: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in input.chars() {
+        if c == '<' {
+            in_tag = true;
+        } else if c == '>' {
+            in_tag = false;
+        } else if !in_tag {
+            out.push(c);
+        }
+    }
+    out.replace("&amp;", "&")
+       .replace("&lt;", "<")
+       .replace("&gt;", ">")
+       .replace("&quot;", "\"")
+       .replace("&#x27;", "'")
+       .replace("&#39;", "'")
+       .trim()
+       .to_owned()
+}
+
+fn html_to_plain_text(html: &str) -> String {
+    let mut cleaned = html.to_owned();
+    while let Some(start) = cleaned.find("<script") {
+        let rest = &cleaned[start..];
+        if let Some(end) = rest.find("</script>") {
+            cleaned.replace_range(start..start + end + 9, " ");
+        } else {
+            break;
+        }
+    }
+    while let Some(start) = cleaned.find("<style") {
+        let rest = &cleaned[start..];
+        if let Some(end) = rest.find("</style>") {
+            cleaned.replace_range(start..start + end + 8, " ");
+        } else {
+            break;
+        }
+    }
+    strip_html_tags(&cleaned)
+}
+
+fn parse_ddg_html(html: &str) -> Vec<serde_json::Value> {
+    let mut results = Vec::new();
+    for block in html.split("<div class=\"result").skip(1) {
+        if results.len() >= 6 { break; }
+        
+        let href = if let Some(href_start) = block.find("href=\"") {
+            let rest = &block[href_start + 6..];
+            if let Some(href_end) = rest.find("\"") {
+                let raw_url = &rest[..href_end];
+                if let Some(uddg_idx) = raw_url.find("uddg=") {
+                    let encoded_url = &raw_url[uddg_idx + 5..];
+                    let decoded_url = percent_decode(encoded_url);
+                    if let Some(amp_idx) = decoded_url.find('&') {
+                        decoded_url[..amp_idx].to_owned()
+                    } else {
+                        decoded_url
+                    }
+                } else {
+                    raw_url.to_owned()
+                }
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+
+        let title = if let Some(title_start) = block.find("class=\"result__a\"") {
+            let rest = &block[title_start..];
+            if let Some(tag_close) = rest.find('>') {
+                let rest_text = &rest[tag_close + 1..];
+                if let Some(tag_open) = rest_text.find("</a>") {
+                    strip_html_tags(&rest_text[..tag_open])
+                } else {
+                    "Untitled".to_owned()
+                }
+            } else {
+                "Untitled".to_owned()
+            }
+        } else {
+            "Untitled".to_owned()
+        };
+
+        let snippet = if let Some(snippet_start) = block.find("class=\"result__snippet\"") {
+            let rest = &block[snippet_start..];
+            if let Some(tag_close) = rest.find('>') {
+                let rest_text = &rest[tag_close + 1..];
+                if let Some(tag_open) = rest_text.find("</a>") {
+                    strip_html_tags(&rest_text[..tag_open])
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        results.push(serde_json::json!({
+            "title": title,
+            "url": href,
+            "snippet": snippet
+        }));
+    }
+    results
 }
