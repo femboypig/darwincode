@@ -232,6 +232,56 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
         return Ok(());
     }
 
+    if app.chat.shell_focused {
+        let is_ctrl_c = (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
+            || app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key);
+        let is_esc = app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key);
+        
+        if is_ctrl_c || is_esc {
+            if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+                if let Some(pid) = *guard {
+                    let _ = std::process::Command::new("kill")
+                        .arg("-9")
+                        .arg(pid.to_string())
+                        .status();
+                    *guard = None;
+                    app.status = "Command aborted by user via Ctrl+C".to_owned();
+                    return Ok(());
+                }
+            }
+            if is_ctrl_c || is_esc {
+                app.chat.shell_focused = false;
+                app.status = "Ready".to_owned();
+                return Ok(());
+            }
+        }
+
+        if key.code == KeyCode::Tab {
+            app.chat.shell_focused = false;
+            app.status = "Ready".to_owned();
+            return Ok(());
+        }
+
+        if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollUp, key) {
+            app.chat.scroll = app.chat.scroll.saturating_add(3);
+            return Ok(());
+        }
+        if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollDown, key) {
+            app.chat.scroll = app.chat.scroll.saturating_sub(3);
+            return Ok(());
+        }
+        if app.keybindings.matches(crate::tui::keybindings::TuiAction::PageUp, key) {
+            app.chat.scroll = app.chat.scroll.saturating_add(15);
+            return Ok(());
+        }
+        if app.keybindings.matches(crate::tui::keybindings::TuiAction::PageDown, key) {
+            app.chat.scroll = app.chat.scroll.saturating_sub(15);
+            return Ok(());
+        }
+
+        return Ok(());
+    }
+
     if app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key) {
         app.should_quit = true;
         return Ok(());
@@ -381,7 +431,19 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
                 app.status = "No assistant response to copy".to_owned();
             }
         }
-        (KeyCode::Tab, _) => app.accept_command_suggestion(),
+        (KeyCode::Tab, _) => {
+            let suggestions = app.command_suggestions();
+            if !suggestions.is_empty() {
+                app.accept_command_suggestion();
+            } else {
+                app.chat.shell_focused = !app.chat.shell_focused;
+                if app.chat.shell_focused {
+                    app.status = "Shell/Messages focused. Press Tab to return, or Ctrl+C to abort running command.".to_owned();
+                } else {
+                    app.status = "Ready".to_owned();
+                }
+            }
+        }
         (KeyCode::Enter, modifiers) if !modifiers.is_empty() => {
             app.chat.insert_char('\n');
         }
