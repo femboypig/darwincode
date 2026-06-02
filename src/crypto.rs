@@ -1,14 +1,14 @@
-use anyhow::{Result, bail};
-use sha2::{Sha256, Digest};
 use aes_gcm::{
+    Aes256Gcm, Nonce,
     aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce
 };
+use anyhow::{Result, bail};
+use sha2::{Digest, Sha256};
 
 /// Derive a secure, hardware-bound 256-bit symmetric key by hashing machine-id and user details.
 pub fn derive_hardware_key() -> Result<[u8; 32]> {
     let mut hasher = Sha256::new();
-    
+
     // Read local machine-id in a robust cross-platform manner
     let mut machine_id = String::new();
 
@@ -24,7 +24,12 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
     #[cfg(target_os = "windows")]
     {
         if let Ok(output) = std::process::Command::new("reg")
-            .args(&["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"])
+            .args(&[
+                "query",
+                "HKLM\\SOFTWARE\\Microsoft\\Cryptography",
+                "/v",
+                "MachineGuid",
+            ])
             .output()
         {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -56,8 +61,13 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
         let base_dir = std::env::var_os("XDG_CONFIG_HOME")
             .map(std::path::PathBuf::from)
             .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
-            .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")))
-            .or_else(|| std::env::var_os("USERPROFILE").map(|home| std::path::PathBuf::from(home).join(".config")));
+            .or_else(|| {
+                std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
+            })
+            .or_else(|| {
+                std::env::var_os("USERPROFILE")
+                    .map(|home| std::path::PathBuf::from(home).join(".config"))
+            });
 
         if let Some(base) = base_dir {
             let darwincode_dir = base.join("darwincode");
@@ -69,8 +79,11 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
                 // Generate a random stable key
                 let mut bytes = [0u8; 32];
                 rand::fill(&mut bytes);
-                let hex_id = bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-                
+                let hex_id = bytes
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<String>();
+
                 // Write with secure permissions on unix
                 #[cfg(unix)]
                 {
@@ -97,18 +110,18 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
             machine_id = "ultimate-emergency-fallback-key-998".to_owned();
         }
     }
-    
+
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "default_user".to_owned());
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| "/".to_owned());
-    
+
     hasher.update(machine_id.as_bytes());
     hasher.update(username.as_bytes());
     hasher.update(home.as_bytes());
-    
+
     let hash = hasher.finalize();
     let mut key = [0u8; 32];
     key.copy_from_slice(&hash);
@@ -119,15 +132,16 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
 pub fn encrypt_data(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| anyhow::anyhow!("failed to create cipher: {}", e))?;
-    
+
     // Generate a secure 96-bit (12-byte) nonce/IV
     let mut nonce_bytes = [0u8; 12];
     rand::fill(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
-    
-    let ciphertext = cipher.encrypt(nonce, data)
+
+    let ciphertext = cipher
+        .encrypt(nonce, data)
         .map_err(|e| anyhow::anyhow!("encryption error: {}", e))?;
-    
+
     // Output is nonce + ciphertext
     let mut output = Vec::with_capacity(12 + ciphertext.len());
     output.extend_from_slice(&nonce_bytes);
@@ -140,16 +154,17 @@ pub fn decrypt_data(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
     if data.len() < 12 {
         bail!("Invalid ciphertext (too short)");
     }
-    
+
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| anyhow::anyhow!("failed to create cipher: {}", e))?;
-    
+
     let (nonce_bytes, ciphertext) = data.split_at(12);
     let nonce = Nonce::from_slice(nonce_bytes);
-    
-    let plaintext = cipher.decrypt(nonce, ciphertext)
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
         .map_err(|e| anyhow::anyhow!("decryption error: {}", e))?;
-    
+
     Ok(plaintext)
 }
 
@@ -161,12 +176,31 @@ mod tests {
     fn test_encryption_roundtrip() {
         let key = derive_hardware_key().expect("failed to derive key");
         let plaintext = b"Hello, secure world! This is a highly confidential chat log entry.";
-        
+
         let ciphertext = encrypt_data(plaintext, &key).expect("encryption failed");
         assert_ne!(plaintext.to_vec(), ciphertext);
         assert!(ciphertext.len() > 12);
-        
+
         let decrypted = decrypt_data(&ciphertext, &key).expect("decryption failed");
         assert_eq!(plaintext.to_vec(), decrypted);
+    }
+
+    #[test]
+    fn test_decryption_with_wrong_key() {
+        let key1 = [1u8; 32];
+        let key2 = [2u8; 32];
+        let plaintext = b"Confidential info";
+
+        let ciphertext = encrypt_data(plaintext, &key1).expect("encryption failed");
+        let decrypt_result = decrypt_data(&ciphertext, &key2);
+        assert!(decrypt_result.is_err());
+    }
+
+    #[test]
+    fn test_decryption_invalid_length() {
+        let key = [1u8; 32];
+        let too_short = vec![0u8; 11];
+        let decrypt_result = decrypt_data(&too_short, &key);
+        assert!(decrypt_result.is_err());
     }
 }
