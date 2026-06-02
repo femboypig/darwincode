@@ -3,11 +3,20 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::mpsc::Sender;
 
 use crate::app::{App, SubmitAction};
-use crate::tui::{WorkerEvent, spawn_generation_worker, spawn_models_worker, handle_function_action};
 use crate::tui::events::common::{copy_to_clipboard, read_from_clipboard};
+use crate::tui::{
+    WorkerEvent, handle_function_action, spawn_generation_worker, spawn_models_worker,
+};
 
-pub(crate) fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -> Result<()> {
-    if matches!(app.pending, Some(crate::app::PendingTask::ConfirmFunction { .. })) {
+pub(crate) fn handle_chat_key(
+    app: &mut App,
+    sender: &Sender<WorkerEvent>,
+    key: KeyEvent,
+) -> Result<()> {
+    if matches!(
+        app.pending,
+        Some(crate::app::PendingTask::ConfirmFunction { .. })
+    ) {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if let Some(action) = app.answer_function_confirmation(true) {
@@ -35,9 +44,15 @@ pub(crate) fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: 
                 app.confirm_scroll = app.confirm_scroll.saturating_add(10);
             }
             _ => {
-                if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollUp, key) {
+                if app
+                    .keybindings
+                    .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
+                {
                     app.confirm_scroll = app.confirm_scroll.saturating_sub(1);
-                } else if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollDown, key) {
+                } else if app
+                    .keybindings
+                    .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
+                {
                     app.confirm_scroll = app.confirm_scroll.saturating_add(1);
                 }
             }
@@ -46,100 +61,21 @@ pub(crate) fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: 
     }
 
     if app.chat.shell_focused {
-        let is_ctrl_c = (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
-            || app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key);
-        let is_esc = app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key);
-        
+        let is_ctrl_c = (key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL))
+            || app
+                .keybindings
+                .matches(crate::tui::keybindings::TuiAction::Quit, key);
+        let is_esc = app
+            .keybindings
+            .matches(crate::tui::keybindings::TuiAction::Cancel, key);
+
         if is_ctrl_c || is_esc {
+            let mut pid = None;
             if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
-                if let Some(pid) = *guard {
-                    #[cfg(unix)]
-                    {
-                        let _ = std::process::Command::new("kill")
-                            .arg("-9")
-                            .arg(format!("-{}", pid))
-                            .status();
-                    }
-                    #[cfg(not(unix))]
-                    {
-                        let _ = std::process::Command::new("taskkill")
-                            .arg("/F")
-                            .arg("/PID")
-                            .arg(pid.to_string())
-                            .status();
-                    }
-                    *guard = None;
-                }
+                pid = guard.take();
             }
-            app.cancel_generation();
-            app.chat.shell_focused = false;
-            app.status = "Aborted by user".to_owned();
-            return Ok(());
-        }
-
-        if key.code == KeyCode::Tab {
-            app.chat.shell_focused = false;
-            app.status = "Ready".to_owned();
-            return Ok(());
-        }
-
-        if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollUp, key) {
-            app.chat.scroll = app.chat.scroll.saturating_add(3);
-            return Ok(());
-        }
-        if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollDown, key) {
-            app.chat.scroll = app.chat.scroll.saturating_sub(3);
-            return Ok(());
-        }
-        if app.keybindings.matches(crate::tui::keybindings::TuiAction::PageUp, key) {
-            app.chat.scroll = app.chat.scroll.saturating_add(15);
-            return Ok(());
-        }
-        if app.keybindings.matches(crate::tui::keybindings::TuiAction::PageDown, key) {
-            app.chat.scroll = app.chat.scroll.saturating_sub(15);
-            return Ok(());
-        }
-
-        if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock() {
-            if let Some(ref mut stdin) = *guard {
-                use std::io::Write;
-                let data = match key.code {
-                    KeyCode::Char(c) => Some(c.to_string()),
-                    KeyCode::Enter => Some("\n".to_owned()),
-                    KeyCode::Backspace => Some("\x08".to_owned()),
-                    _ => None,
-                };
-                if let Some(s) = data {
-                    let _ = stdin.write_all(s.as_bytes());
-                    let _ = stdin.flush();
-
-                    if let Some(msg) = app.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
-                        if msg.text.ends_with("\nRunning...\n") {
-                            msg.text.truncate(msg.text.len() - 11);
-                        }
-                        if key.code == KeyCode::Backspace {
-                            if !msg.text.is_empty() {
-                                msg.text.pop();
-                            }
-                        } else {
-                            msg.text.push_str(&s);
-                        }
-                        *msg.cached_wrapped.borrow_mut() = None;
-                    }
-                }
-            }
-        }
-        return Ok(());
-    }
-
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key) {
-        app.should_quit = true;
-        return Ok(());
-    }
-
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key) {
-        if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
-            if let Some(pid) = *guard {
+            if let Some(pid) = pid {
                 #[cfg(unix)]
                 {
                     let _ = std::process::Command::new("kill")
@@ -155,7 +91,110 @@ pub(crate) fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: 
                         .arg(pid.to_string())
                         .status();
                 }
-                *guard = None;
+            }
+            app.cancel_generation();
+            app.chat.shell_focused = false;
+            app.status = "Aborted by user".to_owned();
+            return Ok(());
+        }
+
+        if key.code == KeyCode::Tab {
+            app.chat.shell_focused = false;
+            app.status = "Ready".to_owned();
+            return Ok(());
+        }
+
+        if app
+            .keybindings
+            .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
+        {
+            app.chat.scroll = app.chat.scroll.saturating_add(3);
+            return Ok(());
+        }
+        if app
+            .keybindings
+            .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
+        {
+            app.chat.scroll = app.chat.scroll.saturating_sub(3);
+            return Ok(());
+        }
+        if app
+            .keybindings
+            .matches(crate::tui::keybindings::TuiAction::PageUp, key)
+        {
+            app.chat.scroll = app.chat.scroll.saturating_add(15);
+            return Ok(());
+        }
+        if app
+            .keybindings
+            .matches(crate::tui::keybindings::TuiAction::PageDown, key)
+        {
+            app.chat.scroll = app.chat.scroll.saturating_sub(15);
+            return Ok(());
+        }
+
+        let mut guard = crate::tui::RUNNING_PROCESS_STDIN.lock();
+        if let Some(ref mut stdin) = guard.as_mut().ok().and_then(|g| g.as_mut()) {
+            use std::io::Write;
+            let data = match key.code {
+                KeyCode::Char(c) => Some(c.to_string()),
+                KeyCode::Enter => Some("\n".to_owned()),
+                KeyCode::Backspace => Some("\x08".to_owned()),
+                _ => None,
+            };
+            if let Some(s) = data {
+                let _ = stdin.write_all(s.as_bytes());
+                let _ = stdin.flush();
+
+                if let Some(msg) = app.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
+                    if msg.text.ends_with("\nRunning...\n") {
+                        msg.text.truncate(msg.text.len() - 11);
+                    }
+                    if key.code == KeyCode::Backspace {
+                        if !msg.text.is_empty() {
+                            msg.text.pop();
+                        }
+                    } else {
+                        msg.text.push_str(&s);
+                    }
+                    *msg.cached_wrapped.borrow_mut() = None;
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::Quit, key)
+    {
+        app.should_quit = true;
+        return Ok(());
+    }
+
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::Cancel, key)
+    {
+        let mut pid = None;
+        if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+            pid = guard.take();
+        }
+        if let Some(pid) = pid {
+            #[cfg(unix)]
+            {
+                let _ = std::process::Command::new("kill")
+                    .arg("-9")
+                    .arg(format!("-{}", pid))
+                    .status();
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .arg("/F")
+                    .arg("/PID")
+                    .arg(pid.to_string())
+                    .status();
             }
         }
         app.cancel_generation();
@@ -163,41 +202,65 @@ pub(crate) fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: 
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ToggleSetup, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::ToggleSetup, key)
+    {
         app.open_setup();
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ToggleModels, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::ToggleModels, key)
+    {
         if let Some(config) = app.begin_load_chat_models() {
             spawn_models_worker(config, sender.clone());
         }
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ToggleSessions, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::ToggleSessions, key)
+    {
         app.open_sessions();
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Submit, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::Submit, key)
+    {
         if let Some(action) = app.submit_chat_input() {
             match action {
                 SubmitAction::Generate(request) => {
-                    spawn_generation_worker(request.config, request.history, request.cancel_token, request.generation_id, sender.clone());
+                    spawn_generation_worker(
+                        request.config,
+                        request.history,
+                        request.cancel_token,
+                        request.generation_id,
+                        sender.clone(),
+                    );
                 }
                 SubmitAction::LoadModels(config) => {
                     spawn_models_worker(config, sender.clone());
                 }
                 SubmitAction::ExecuteFunction { name, args, config } => {
-                    handle_function_action(crate::app::FunctionAction::Execute { name, args, config }, sender);
+                    handle_function_action(
+                        crate::app::FunctionAction::Execute { name, args, config },
+                        sender,
+                    );
                 }
             }
         }
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollUp, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
+    {
         if app.chat.input.contains('\n') {
             let old_cursor = app.chat.cursor;
             app.chat.move_cursor_up();
@@ -210,7 +273,10 @@ pub(crate) fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: 
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::ScrollDown, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
+    {
         if app.chat.input.contains('\n') {
             let old_cursor = app.chat.cursor;
             app.chat.move_cursor_down();
@@ -223,22 +289,34 @@ pub(crate) fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: 
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::PageUp, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::PageUp, key)
+    {
         app.chat.scroll = app.chat.scroll.saturating_add(15);
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::PageDown, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::PageDown, key)
+    {
         app.chat.scroll = app.chat.scroll.saturating_sub(15);
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::HistoryUp, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::HistoryUp, key)
+    {
         app.chat.navigate_history_up();
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::HistoryDown, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::HistoryDown, key)
+    {
         app.chat.navigate_history_down();
         return Ok(());
     }
