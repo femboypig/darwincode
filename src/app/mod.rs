@@ -19,6 +19,7 @@ pub enum FunctionAction {
     Execute {
         name: String,
         args: serde_json::Value,
+        config: StoredConfig,
     },
     ResumeGeneration(GenerationRequest),
 }
@@ -38,6 +39,7 @@ pub enum SubmitAction {
     ExecuteFunction {
         name: String,
         args: serde_json::Value,
+        config: StoredConfig,
     },
 }
 
@@ -393,7 +395,7 @@ impl App {
                 self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                 self.status = format!("Auto-executing {name}");
                 self.start_function_execution(&name, &args);
-                Some(FunctionAction::Execute { name, args })
+                Some(FunctionAction::Execute { name, args, config: self.chat.config.clone() })
             } else if permission == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files") {
                 self.pending = Some(PendingTask::Generating);
                 self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"}))
@@ -550,7 +552,7 @@ impl App {
                             self.backup_before_execution(&name, &args);
                             self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                             self.status = format!("Auto-executing {name}");
-                            return Some(SubmitAction::ExecuteFunction { name, args });
+                            return Some(SubmitAction::ExecuteFunction { name, args, config: self.chat.config.clone() });
                         } else if level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files")
                             && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
                                 return Some(SubmitAction::Generate(request));
@@ -729,7 +731,7 @@ impl App {
                     self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                     self.status = format!("Auto-executing {name}");
                     self.start_function_execution(&name, &args);
-                    ret = Some(SubmitAction::ExecuteFunction { name, args });
+                    ret = Some(SubmitAction::ExecuteFunction { name, args, config: self.chat.config.clone() });
                 } else if *level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files")
                     && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
                         ret = Some(SubmitAction::Generate(request));
@@ -791,7 +793,7 @@ impl App {
         self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
         self.status = format!("Executing {name}");
         self.start_function_execution(&name, &args);
-        Some(FunctionAction::Execute { name, args })
+        Some(FunctionAction::Execute { name, args, config: self.chat.config.clone() })
     }
 
     pub fn complete_function_execution(&mut self, name: String, response: serde_json::Value) -> Option<FunctionAction> {
