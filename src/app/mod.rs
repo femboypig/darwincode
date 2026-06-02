@@ -437,6 +437,10 @@ impl App {
         if parts.is_empty() {
             self.pending = None;
             self.status = "Ready".to_owned();
+            if self.chat.messages.last().is_some_and(|m| m.pending) {
+                self.chat.messages.pop();
+            }
+            self.chat.messages.push(MessageLine::error("Error: API returned an empty response".to_owned()));
             return None;
         }
 
