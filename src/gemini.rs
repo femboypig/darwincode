@@ -273,22 +273,7 @@ impl GeminiClient {
             let mut openai_tools = Vec::new();
             for decl in &declarations {
                 let mut params = decl.parameters.clone().unwrap_or(serde_json::json!({}));
-                if let Some(obj) = params.as_object_mut() {
-                    if let Some(t) = obj.get_mut("type")
-                        && let Some(s) = t.as_str() {
-                            *t = serde_json::json!(s.to_lowercase());
-                        }
-                    if let Some(props) = obj.get_mut("properties")
-                        && let Some(props_obj) = props.as_object_mut() {
-                            for (_, prop_val) in props_obj {
-                                if let Some(prop_obj) = prop_val.as_object_mut()
-                                    && let Some(t) = prop_obj.get_mut("type")
-                                        && let Some(s) = t.as_str() {
-                                            *t = serde_json::json!(s.to_lowercase());
-                                        }
-                            }
-                        }
-                }
+                lowercase_types(&mut params);
                 
                 openai_tools.push(serde_json::json!({
                     "type": "function",
@@ -646,6 +631,23 @@ struct Candidate {
 #[derive(Debug, Deserialize)]
 struct ResponseContent {
     parts: Vec<Part>,
+}
+
+fn lowercase_types(value: &mut serde_json::Value) {
+    if let Some(obj) = value.as_object_mut() {
+        if let Some(t) = obj.get_mut("type") {
+            if let Some(s) = t.as_str() {
+                *t = serde_json::json!(s.to_lowercase());
+            }
+        }
+        for val in obj.values_mut() {
+            lowercase_types(val);
+        }
+    } else if let Some(arr) = value.as_array_mut() {
+        for val in arr {
+            lowercase_types(val);
+        }
+    }
 }
 
 fn read_error(error: ureq::Error) -> anyhow::Error {
