@@ -12,6 +12,7 @@ pub(crate) fn handle_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEv
         Screen::Models => handle_models_key(app, key),
         Screen::Permissions => handle_permissions_key(app, sender, key),
         Screen::Sessions => handle_sessions_key(app, key),
+        Screen::AskUser => handle_ask_user_key(app, key),
     }
 }
 
@@ -266,18 +267,15 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
                 if let Some(pid) = *guard {
                     let _ = std::process::Command::new("kill")
                         .arg("-9")
-                        .arg(pid.to_string())
+                        .arg(format!("-{}", pid))
                         .status();
                     *guard = None;
-                    app.status = "Command aborted by user via Ctrl+C".to_owned();
-                    return Ok(());
                 }
             }
-            if is_ctrl_c || is_esc {
-                app.chat.shell_focused = false;
-                app.status = "Ready".to_owned();
-                return Ok(());
-            }
+            app.cancel_generation();
+            app.chat.shell_focused = false;
+            app.status = "Aborted by user".to_owned();
+            return Ok(());
         }
 
         if key.code == KeyCode::Tab {
@@ -303,6 +301,35 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
             return Ok(());
         }
 
+        if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock() {
+            if let Some(ref mut stdin) = *guard {
+                use std::io::Write;
+                let data = match key.code {
+                    KeyCode::Char(c) => Some(c.to_string()),
+                    KeyCode::Enter => Some("\n".to_owned()),
+                    KeyCode::Backspace => Some("\x08".to_owned()),
+                    _ => None,
+                };
+                if let Some(s) = data {
+                    let _ = stdin.write_all(s.as_bytes());
+                    let _ = stdin.flush();
+
+                    if let Some(msg) = app.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
+                        if msg.text.ends_with("\nRunning...\n") {
+                            msg.text.truncate(msg.text.len() - 11);
+                        }
+                        if key.code == KeyCode::Backspace {
+                            if !msg.text.is_empty() {
+                                msg.text.pop();
+                            }
+                        } else {
+                            msg.text.push_str(&s);
+                        }
+                        *msg.cached_wrapped.borrow_mut() = None;
+                    }
+                }
+            }
+        }
         return Ok(());
     }
 
@@ -312,9 +339,17 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
     }
 
     if app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key) {
-        if matches!(app.pending, Some(crate::app::PendingTask::Generating)) {
-            app.cancel_generation();
+        if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+            if let Some(pid) = *guard {
+                let _ = std::process::Command::new("kill")
+                    .arg("-9")
+                    .arg(format!("-{}", pid))
+                    .status();
+                *guard = None;
+            }
         }
+        app.cancel_generation();
+        app.status = "Stopped".to_owned();
         return Ok(());
     }
 
@@ -431,7 +466,15 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
                         text = text["(empty)".len()..].trim();
                     }
                     let mut clean_text = text.to_owned();
-                    if clean_text.starts_with("░ Thinking...") {
+                    if clean_text.starts_with("Thinking...") {
+                        clean_text = clean_text["Thinking...".len()..].to_owned();
+                    } else if clean_text.starts_with("Thinking:") {
+                        if let Some(first_newline_idx) = clean_text.find('\n') {
+                            clean_text = clean_text[first_newline_idx + 1..].to_owned();
+                        } else {
+                            clean_text = clean_text["Thinking:".len()..].to_owned();
+                        }
+                    } else if clean_text.starts_with("░ Thinking...") {
                         clean_text = clean_text["░ Thinking...".len()..].to_owned();
                     } else if clean_text.starts_with("░ Thinking:") {
                         if let Some(first_newline_idx) = clean_text.find('\n') {
@@ -462,6 +505,7 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
             } else {
                 app.chat.shell_focused = !app.chat.shell_focused;
                 if app.chat.shell_focused {
+                    app.chat.scroll = 0; // Automatically scroll to the bottom to show the last shell block
                     app.status = "Shell/Messages focused. Press Tab to return, or Ctrl+C to abort running command.".to_owned();
                 } else {
                     app.status = "Ready".to_owned();
@@ -772,4 +816,75 @@ fn try_paste_x11() -> Result<Option<String>> {
     }
 
     Ok(None)
+}
+
+fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
+            if let Some((tx, _, _)) = guard.take() {
+                let _ = tx.send("Aborted by user".to_owned());
+            }
+        }
+        app.cancel_generation();
+        app.screen = Screen::Chat;
+        app.status = "Aborted by user".to_owned();
+        return Ok(());
+    }
+
+    if app.ask_user.is_custom {
+        match key.code {
+            KeyCode::Enter => {
+                let answer = app.ask_user.custom_input.trim().to_owned();
+                if !answer.is_empty() {
+                    if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
+                        if let Some((tx, _, _)) = guard.take() {
+                            let _ = tx.send(answer);
+                        }
+                    }
+                    app.screen = Screen::Chat;
+                    app.status = "Ready".to_owned();
+                }
+            }
+            KeyCode::Esc => {
+                if !app.ask_user.options.is_empty() {
+                    app.ask_user.is_custom = false;
+                }
+            }
+            KeyCode::Backspace => {
+                app.ask_user.custom_input.pop();
+            }
+            KeyCode::Char(c) => {
+                app.ask_user.custom_input.push(c);
+            }
+            _ => {}
+        }
+    } else {
+        match key.code {
+            KeyCode::Up => {
+                app.ask_user.selected_idx = app.ask_user.selected_idx.saturating_sub(1);
+            }
+            KeyCode::Down => {
+                let max = app.ask_user.options.len();
+                if app.ask_user.selected_idx < max {
+                    app.ask_user.selected_idx += 1;
+                }
+            }
+            KeyCode::Enter => {
+                if app.ask_user.selected_idx == app.ask_user.options.len() {
+                    app.ask_user.is_custom = true;
+                } else if let Some(opt) = app.ask_user.options.get(app.ask_user.selected_idx) {
+                    let answer = opt.clone();
+                    if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
+                        if let Some((tx, _, _)) = guard.take() {
+                            let _ = tx.send(answer);
+                        }
+                    }
+                    app.screen = Screen::Chat;
+                    app.status = "Ready".to_owned();
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
