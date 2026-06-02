@@ -18,11 +18,13 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     } else {
         suggestions.len().min(3) as u16 + 2
     };
-    
+
     // Max 6 lines for input (border=2, padding=2, so inner width = area.width - 4)
     let input_inner_w = if app.chat.messages.is_empty() {
         // Centered welcome input box is 70% of screen width
-        ((area.width as u32 * 70 / 100) as u16).saturating_sub(4).max(1)
+        ((area.width as u32 * 70 / 100) as u16)
+            .saturating_sub(4)
+            .max(1)
     } else {
         area.width.saturating_sub(4).max(1)
     };
@@ -30,7 +32,15 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     let display_lines = wrapped_lines.len() as u16;
     let input_height = display_lines.clamp(1, 5) + 2;
 
-    let (messages_area, suggestions_area, queue_area, input_area, statusbar_area, logo_area, tips_area) = if app.chat.messages.is_empty() {
+    let (
+        messages_area,
+        suggestions_area,
+        queue_area,
+        input_area,
+        statusbar_area,
+        logo_area,
+        tips_area,
+    ) = if app.chat.messages.is_empty() {
         let logo_lines = logo_lines();
         let logo_fits_flag = logo_fits(&logo_lines, area.width, 5);
 
@@ -38,30 +48,34 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Percentage(25),      // Top space (centers the logo vertically)
-                    Constraint::Length(6),           // Logo (5 lines + 1 spacer)
+                    Constraint::Percentage(25), // Top space (centers the logo vertically)
+                    Constraint::Length(6),      // Logo (5 lines + 1 spacer)
                     Constraint::Length(input_height), // Input box
-                    Constraint::Length(2),           // Spacer
-                    Constraint::Length(1),           // Tips line
-                    Constraint::Min(0),              // Bottom space
-                    Constraint::Length(1),           // Status bar
+                    Constraint::Length(2),      // Spacer
+                    Constraint::Length(1),      // Tips line
+                    Constraint::Min(0),         // Bottom space
+                    Constraint::Length(1),      // Status bar
                 ])
                 .split(area)
         } else {
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Min(0),              // Top space (centers the input box vertically)
+                    Constraint::Min(0),               // Top space (centers the input box vertically)
                     Constraint::Length(input_height), // Input box
-                    Constraint::Length(2),           // Spacer
-                    Constraint::Length(1),           // Tips line
-                    Constraint::Min(0),              // Bottom space
-                    Constraint::Length(1),           // Status bar
+                    Constraint::Length(2),            // Spacer
+                    Constraint::Length(1),            // Tips line
+                    Constraint::Min(0),               // Bottom space
+                    Constraint::Length(1),            // Status bar
                 ])
                 .split(area)
         };
-            
-        let input_chunk = if logo_fits_flag { empty_chunks[2] } else { empty_chunks[1] };
+
+        let input_chunk = if logo_fits_flag {
+            empty_chunks[2]
+        } else {
+            empty_chunks[1]
+        };
         let centered_input_box = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -109,11 +123,19 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                 Constraint::Length(1),
             ])
             .split(area);
-            
+
         (
             Some(normal_chunks[0]),
-            if suggestion_height > 0 { Some(normal_chunks[1]) } else { None },
-            if queue_height > 0 { Some(normal_chunks[2]) } else { None },
+            if suggestion_height > 0 {
+                Some(normal_chunks[1])
+            } else {
+                None
+            },
+            if queue_height > 0 {
+                Some(normal_chunks[2])
+            } else {
+                None
+            },
             Some(normal_chunks[3]),
             normal_chunks[4],
             None,
@@ -128,14 +150,32 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     if let Some(tips_area) = tips_area {
         let tips_line = Line::from(vec![
-            Span::styled("Ctrl+S", Style::default().fg(Color::Rgb(236, 72, 153)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Ctrl+S",
+                Style::default()
+                    .fg(Color::Rgb(236, 72, 153))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" Setup  •  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Ctrl+P", Style::default().fg(Color::Rgb(168, 85, 247)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Ctrl+P",
+                Style::default()
+                    .fg(Color::Rgb(168, 85, 247))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" Model  •  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("/help", Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "/help",
+                Style::default()
+                    .fg(Color::Rgb(59, 130, 246))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" Help", Style::default().fg(Color::DarkGray)),
         ]);
-        frame.render_widget(Paragraph::new(tips_line).alignment(Alignment::Center), tips_area);
+        frame.render_widget(
+            Paragraph::new(tips_line).alignment(Alignment::Center),
+            tips_area,
+        );
     }
 
     if let Some(messages_area) = messages_area {
@@ -147,9 +187,12 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     }
 
     if let Some(queue_area) = queue_area {
-        let mut queue_lines = vec![
-            Line::from(Span::styled(" Queued Prompts: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)))
-        ];
+        let mut queue_lines = vec![Line::from(Span::styled(
+            " Queued Prompts: ",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        ))];
         for (idx, item) in app.chat.message_queue.iter().enumerate().take(3) {
             let truncated_item = if item.chars().count() > 60 {
                 let s: String = item.chars().take(57).collect();
@@ -158,13 +201,19 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                 item.clone()
             };
             queue_lines.push(Line::from(vec![
-                Span::styled(format!("  [{}] ", idx + 1), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("  [{}] ", idx + 1),
+                    Style::default().fg(Color::DarkGray),
+                ),
                 Span::styled(truncated_item, Style::default().fg(Color::DarkGray)),
             ]));
         }
         if app.chat.message_queue.len() > 3 {
             let remaining = app.chat.message_queue.len() - 3;
-            queue_lines.push(Line::from(Span::styled(format!("  ... and {} more", remaining), Style::default().fg(Color::DarkGray))));
+            queue_lines.push(Line::from(Span::styled(
+                format!("  ... and {} more", remaining),
+                Style::default().fg(Color::DarkGray),
+            )));
         }
         frame.render_widget(Paragraph::new(queue_lines), queue_area);
     }
@@ -234,10 +283,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     let max_y = input_box.bottom().saturating_sub(2);
 
     if !app.chat.shell_focused && target_y <= max_y && target_y > input_box.y {
-        frame.set_cursor_position((
-            input_box.x + 2 + cursor_x,
-            target_y,
-        ));
+        frame.set_cursor_position((input_box.x + 2 + cursor_x, target_y));
     }
 
     render_statusbar(frame, app, statusbar_area);
@@ -260,22 +306,33 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
         if name == "edit_file" {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            let old_str = args.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-            let new_str = args.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
-            
+            let old_str = args
+                .get("old_string")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let new_str = args
+                .get("new_string")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
             text.push(Line::from(vec![
                 Span::styled("File: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(path, Style::default().fg(Color::Cyan)),
             ]));
             text.push(Line::from(""));
-            text.push(Line::from(Span::styled("Diff Preview:", Style::default().add_modifier(Modifier::BOLD))));
-            
+            text.push(Line::from(Span::styled(
+                "Diff Preview:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+
             for line in old_str.lines() {
                 let formatted = format!("- {line}");
                 let padded = format!("{formatted:<width$}", width = inner_width);
                 text.push(Line::from(Span::styled(
                     padded,
-                    Style::default().fg(Color::Rgb(255, 180, 180)).bg(Color::Rgb(70, 20, 20))
+                    Style::default()
+                        .fg(Color::Rgb(255, 180, 180))
+                        .bg(Color::Rgb(70, 20, 20)),
                 )));
             }
             for line in new_str.lines() {
@@ -283,7 +340,9 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                 let padded = format!("{formatted:<width$}", width = inner_width);
                 text.push(Line::from(Span::styled(
                     padded,
-                    Style::default().fg(Color::Rgb(180, 255, 180)).bg(Color::Rgb(20, 60, 20))
+                    Style::default()
+                        .fg(Color::Rgb(180, 255, 180))
+                        .bg(Color::Rgb(20, 60, 20)),
                 )));
             }
             text.push(Line::from(""));
@@ -291,21 +350,32 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
                 for (idx, edit_val) in edits.iter().enumerate() {
                     let path = edit_val.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                    let old_str = edit_val.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-                    let new_str = edit_val.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
-                    
+                    let old_str = edit_val
+                        .get("old_string")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let new_str = edit_val
+                        .get("new_string")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
                     text.push(Line::from(vec![
-                        Span::styled(format!("Edit #{} (", idx + 1), Style::default().add_modifier(Modifier::BOLD)),
+                        Span::styled(
+                            format!("Edit #{} (", idx + 1),
+                            Style::default().add_modifier(Modifier::BOLD),
+                        ),
                         Span::styled(path, Style::default().fg(Color::Cyan)),
                         Span::styled("):", Style::default().add_modifier(Modifier::BOLD)),
                     ]));
-                    
+
                     for line in old_str.lines() {
                         let formatted = format!("- {line}");
                         let padded = format!("{formatted:<width$}", width = inner_width);
                         text.push(Line::from(Span::styled(
                             padded,
-                            Style::default().fg(Color::Rgb(255, 180, 180)).bg(Color::Rgb(70, 20, 20))
+                            Style::default()
+                                .fg(Color::Rgb(255, 180, 180))
+                                .bg(Color::Rgb(70, 20, 20)),
                         )));
                     }
                     for line in new_str.lines() {
@@ -313,7 +383,9 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                         let padded = format!("{formatted:<width$}", width = inner_width);
                         text.push(Line::from(Span::styled(
                             padded,
-                            Style::default().fg(Color::Rgb(180, 255, 180)).bg(Color::Rgb(20, 60, 20))
+                            Style::default()
+                                .fg(Color::Rgb(180, 255, 180))
+                                .bg(Color::Rgb(20, 60, 20)),
                         )));
                     }
                     text.push(Line::from(""));
@@ -322,20 +394,25 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         } else if name == "write_file" {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
-            
+
             text.push(Line::from(vec![
                 Span::styled("File: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(path, Style::default().fg(Color::Cyan)),
             ]));
             text.push(Line::from(""));
-            text.push(Line::from(Span::styled("Content to Write:", Style::default().add_modifier(Modifier::BOLD))));
-            
+            text.push(Line::from(Span::styled(
+                "Content to Write:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+
             for line in content.lines() {
                 let formatted = format!("+ {line}");
                 let padded = format!("{formatted:<width$}", width = inner_width);
                 text.push(Line::from(Span::styled(
                     padded,
-                    Style::default().fg(Color::Rgb(180, 255, 180)).bg(Color::Rgb(20, 60, 20))
+                    Style::default()
+                        .fg(Color::Rgb(180, 255, 180))
+                        .bg(Color::Rgb(20, 60, 20)),
                 )));
             }
             text.push(Line::from(""));
@@ -348,12 +425,20 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         }
 
         text.push(Line::from(vec![
-            Span::styled("[Y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[Y]",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" Allow   "),
-            Span::styled("[N]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[N]",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" Deny"),
         ]));
-        
+
         frame.render_widget(ratatui::widgets::Clear, popup_area);
         frame.render_widget(
             Paragraph::new(text)
@@ -373,11 +458,13 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let shell_focused = app.chat.shell_focused;
     let block_border_style = if shell_focused {
-        Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Rgb(59, 130, 246))
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    
+
     let title = if shell_focused {
         " 󰍡 Conversations (Tab to return) "
     } else {
@@ -395,7 +482,10 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         let welcome_area = block.inner(area);
         let lines = welcome_lines(welcome_area);
         frame.render_widget(block, area);
-        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), welcome_area);
+        frame.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: false }),
+            welcome_area,
+        );
         return;
     }
 
@@ -405,9 +495,10 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
     let push_margin = |lines: &mut Vec<Line<'static>>| {
         if let Some(last) = lines.last()
-            && (!last.spans.is_empty() || last.width() > 0) {
-                lines.push(Line::from(""));
-            }
+            && (!last.spans.is_empty() || last.width() > 0)
+        {
+            lines.push(Line::from(""));
+        }
     };
 
     let last_shell_idx = app.chat.messages.iter().rposition(|m| m.is_shell);
@@ -432,10 +523,10 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         // Skip completely empty assistant messages
-        if !message.pending 
-            && !is_tool 
-            && !is_shell 
-            && message.author == "Darwin" 
+        if !message.pending
+            && !is_tool
+            && !is_shell
+            && message.author == "Darwin"
             && content.trim().is_empty()
         {
             continue;
@@ -466,27 +557,39 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     Color::DarkGray
                 };
                 let border_style = Style::default().fg(border_color);
-                
+
                 let title_style = if shell_focused && is_last_shell {
-                    Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Rgb(59, 130, 246))
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().add_modifier(Modifier::BOLD)
                 };
 
-                let cmd_single_line = message.shell_cmd.replace('\n', " ").replace('\r', " ");
+                let cmd_single_line = message.shell_cmd.replace(['\n', '\r'], " ");
                 let title_w = (width as usize).saturating_sub(1);
                 let max_title_cmd_len = title_w.saturating_sub(12); // "✗ Shell " is 8 chars, some margin
                 let cmd_summary = if cmd_single_line.chars().count() > max_title_cmd_len {
-                    let truncated: String = cmd_single_line.chars().take(max_title_cmd_len.saturating_sub(3)).collect();
+                    let truncated: String = cmd_single_line
+                        .chars()
+                        .take(max_title_cmd_len.saturating_sub(3))
+                        .collect();
                     format!("{}...", truncated)
                 } else {
                     cmd_single_line
                 };
-                let icon = if message.shell_success { icons::SHELL_OK } else { icons::SHELL_ERR };
+                let icon = if message.shell_success {
+                    icons::SHELL_OK
+                } else {
+                    icons::SHELL_ERR
+                };
                 let title = format!("{icon} Shell {cmd_summary}");
-                
-                msg_lines.push(Line::from(Span::styled(format!("╭{}╮", "─".repeat(width as usize)), border_style)));
-                
+
+                msg_lines.push(Line::from(Span::styled(
+                    format!("╭{}╮", "─".repeat(width as usize)),
+                    border_style,
+                )));
+
                 let title_len = title.chars().count();
                 let title_pad = title_w.saturating_sub(title_len);
                 let padded_title = if title_len > title_w {
@@ -500,7 +603,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     Span::styled(padded_title, title_style),
                     Span::styled("│", border_style),
                 ]));
-                
+
                 let body_w = (width as usize).saturating_sub(2);
                 let wrapped_body_lines = wrap_text_to_lines(&content, body_w);
                 for line in wrapped_body_lines {
@@ -518,12 +621,19 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                         Span::styled("│", border_style),
                     ]));
                 }
-                msg_lines.push(Line::from(Span::styled(format!("╰{}╯", "─".repeat(width as usize)), border_style)));
+                msg_lines.push(Line::from(Span::styled(
+                    format!("╰{}╯", "─".repeat(width as usize)),
+                    border_style,
+                )));
             } else {
                 let lines_count = content.lines().count();
                 let limit = 500;
                 let (display_content, is_truncated) = if lines_count > limit {
-                    let truncated: String = content.lines().take(limit).collect::<Vec<&str>>().join("\n");
+                    let truncated: String = content
+                        .lines()
+                        .take(limit)
+                        .collect::<Vec<&str>>()
+                        .join("\n");
                     (truncated, true)
                 } else {
                     (content.clone(), false)
@@ -542,14 +652,21 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     "You" => {
                         let theme = get_theme(app);
                         let (user_bg, user_fg) = match theme {
-                            crate::config::Theme::Dark | crate::config::Theme::Auto => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
-                            crate::config::Theme::Light => (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)),
+                            crate::config::Theme::Dark | crate::config::Theme::Auto => {
+                                (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0))
+                            }
+                            crate::config::Theme::Light => {
+                                (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255))
+                            }
                         };
                         let user_style = Style::default().bg(user_bg).fg(user_fg);
                         let block_width = inner_area.width as usize;
-                        
-                        msg_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
-                        
+
+                        msg_lines.push(Line::from(Span::styled(
+                            " ".repeat(block_width),
+                            user_style,
+                        )));
+
                         for line in wrapped_parsed_lines {
                             let mut spans = vec![Span::styled("  ", user_style)];
                             let line_text_width = line.width();
@@ -557,15 +674,18 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                                 let style = s.style.patch(user_style);
                                 spans.push(s.clone().style(style));
                             }
-                            
+
                             let remaining = block_width.saturating_sub(line_text_width + 2);
                             if remaining > 0 {
                                 spans.push(Span::styled(" ".repeat(remaining), user_style));
                             }
                             msg_lines.push(Line::from(spans));
                         }
-                        
-                        msg_lines.push(Line::from(Span::styled(" ".repeat(block_width), user_style)));
+
+                        msg_lines.push(Line::from(Span::styled(
+                            " ".repeat(block_width),
+                            user_style,
+                        )));
                     }
                     "System" => {
                         msg_lines.push(Line::from(vec![Span::styled(
@@ -590,12 +710,19 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                 }
             }
             if !is_shell {
-                *message.cached_wrapped.borrow_mut() = Some((width as usize, get_theme(app), msg_lines.clone()));
+                *message.cached_wrapped.borrow_mut() =
+                    Some((width as usize, get_theme(app), msg_lines.clone()));
             }
             msg_lines
         };
 
-        if !all_lines.is_empty() && (is_shell || message.author == "You" || message.author == "System" || !is_tool || !prev_is_tool) {
+        if !all_lines.is_empty()
+            && (is_shell
+                || message.author == "You"
+                || message.author == "System"
+                || !is_tool
+                || !prev_is_tool)
+        {
             push_margin(&mut all_lines);
         }
 
@@ -606,7 +733,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     // Line-by-line scrolling
     let total_lines = all_lines.len();
     let viewport_height = inner_area.height as usize;
-    
+
     let max_scroll = total_lines.saturating_sub(viewport_height);
     let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
     let scroll_y = max_scroll.saturating_sub(scroll_offset);
@@ -616,10 +743,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let visible_lines = all_lines[start_idx..end_idx].to_vec();
 
     frame.render_widget(block, area);
-    frame.render_widget(
-        Paragraph::new(visible_lines),
-        inner_area,
-    );
+    frame.render_widget(Paragraph::new(visible_lines), inner_area);
 }
 
 fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
