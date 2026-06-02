@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crate::app::{ChatState, MessageLine};
-use crate::gemini::ChatMessage;
+use crate::api::ChatMessage;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ChatSession {
