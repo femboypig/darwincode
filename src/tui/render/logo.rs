@@ -1,6 +1,6 @@
 use ratatui::layout::Rect;
-use ratatui::text::{Line, Span};
 use ratatui::style::Style;
+use ratatui::text::{Line, Span};
 
 pub(crate) fn logo_lines() -> Vec<Line<'static>> {
     let lines = vec![
@@ -13,12 +13,7 @@ pub(crate) fn logo_lines() -> Vec<Line<'static>> {
 
     lines
         .into_iter()
-        .map(|line| {
-            Line::from(Span::styled(
-                line,
-                Style::default(),
-            ))
-        })
+        .map(|line| Line::from(Span::styled(line, Style::default())))
         .collect()
 }
 

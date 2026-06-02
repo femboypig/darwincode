@@ -1,7 +1,7 @@
+use anyhow::{Context, Result};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use anyhow::{Context, Result};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, KeyEventKind, KeyEventState};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TuiAction {
@@ -31,8 +31,14 @@ impl Default for KeyBindings {
         bindings.insert(TuiAction::Quit, vec!["ctrl+c".to_owned()]);
         bindings.insert(TuiAction::Cancel, vec!["esc".to_owned()]);
         bindings.insert(TuiAction::Submit, vec!["enter".to_owned()]);
-        bindings.insert(TuiAction::ScrollUp, vec!["up".to_owned(), "alt+k".to_owned()]);
-        bindings.insert(TuiAction::ScrollDown, vec!["down".to_owned(), "alt+j".to_owned()]);
+        bindings.insert(
+            TuiAction::ScrollUp,
+            vec!["up".to_owned(), "alt+k".to_owned()],
+        );
+        bindings.insert(
+            TuiAction::ScrollDown,
+            vec!["down".to_owned(), "alt+j".to_owned()],
+        );
         bindings.insert(TuiAction::PageUp, vec!["pageup".to_owned()]);
         bindings.insert(TuiAction::PageDown, vec!["pagedown".to_owned()]);
         bindings.insert(TuiAction::HistoryUp, vec!["ctrl+up".to_owned()]);

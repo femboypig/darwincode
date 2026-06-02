@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::config::{PermissionLevel, StoredConfig, Theme};
+use anyhow::Result;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SetupField {
@@ -99,7 +99,6 @@ impl SetupState {
         config.validate()?;
         Ok(config)
     }
-
 
     pub fn push_char(&mut self, value: char) {
         match self.active_field {

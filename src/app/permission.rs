@@ -8,8 +8,16 @@ pub struct PermissionPickerState {
 impl PermissionPickerState {
     pub fn options() -> Vec<(&'static str, &'static str, PermissionLevel)> {
         vec![
-            ("Safe", "Read-only access to codebase", PermissionLevel::Safe),
-            ("Guardian", "Always ask for confirmation", PermissionLevel::Guardian),
+            (
+                "Safe",
+                "Read-only access to codebase",
+                PermissionLevel::Safe,
+            ),
+            (
+                "Guardian",
+                "Always ask for confirmation",
+                PermissionLevel::Guardian,
+            ),
             ("Chaos", "Auto-execute everything", PermissionLevel::Chaos),
         ]
     }
@@ -19,6 +27,9 @@ impl PermissionPickerState {
     }
 
     pub fn select_previous(&mut self) {
-        self.selected = self.selected.checked_sub(1).unwrap_or(Self::options().len() - 1);
+        self.selected = self
+            .selected
+            .checked_sub(1)
+            .unwrap_or(Self::options().len() - 1);
     }
 }

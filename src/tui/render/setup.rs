@@ -17,7 +17,11 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
     } else {
         Vec::new()
     };
-    let logo_height = if logo.is_empty() { 0 } else { logo.len() as u16 + 1 };
+    let logo_height = if logo.is_empty() {
+        0
+    } else {
+        logo.len() as u16 + 1
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(vec![
@@ -69,9 +73,13 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(if app.setup.is_editing {
-            Style::default().fg(Color::Rgb(16, 185, 129)).add_modifier(Modifier::BOLD) // Emerald Green when editing
+            Style::default()
+                .fg(Color::Rgb(16, 185, 129))
+                .add_modifier(Modifier::BOLD) // Emerald Green when editing
         } else {
-            Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD) // Vibrant Blue normally
+            Style::default()
+                .fg(Color::Rgb(59, 130, 246))
+                .add_modifier(Modifier::BOLD) // Vibrant Blue normally
         })
         .title(Span::styled(
             format!(" {} DarwinCode Assistant Settings ", icons::SETTINGS_MODE),
@@ -106,13 +114,23 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
         ),
         (
             "Codebase Tools",
-            (if app.setup.enable_codebase_tools { icons::CHECK_ENABLED } else { icons::CROSS_DISABLED }).to_owned(),
+            (if app.setup.enable_codebase_tools {
+                icons::CHECK_ENABLED
+            } else {
+                icons::CROSS_DISABLED
+            })
+            .to_owned(),
             SetupField::EnableCodebase,
             Color::Rgb(16, 185, 129),
         ),
         (
             "Bash Execution",
-            (if app.setup.enable_bash_tools { icons::CHECK_ENABLED } else { icons::CROSS_DISABLED }).to_owned(),
+            (if app.setup.enable_bash_tools {
+                icons::CHECK_ENABLED
+            } else {
+                icons::CROSS_DISABLED
+            })
+            .to_owned(),
             SetupField::EnableBash,
             Color::Rgb(245, 158, 11),
         ),
@@ -124,7 +142,12 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
         ),
         (
             "Thoughts View",
-            (if app.setup.show_thoughts { icons::CHECK_SHOW_FULL } else { icons::CROSS_LABEL_ONLY }).to_owned(),
+            (if app.setup.show_thoughts {
+                icons::CHECK_SHOW_FULL
+            } else {
+                icons::CROSS_LABEL_ONLY
+            })
+            .to_owned(),
             SetupField::ShowThoughts,
             Color::Rgb(6, 182, 212),
         ),
@@ -136,7 +159,12 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
         ),
         (
             "Respect .gitignore",
-            (if app.setup.respect_gitignore { icons::CHECK_ENABLED } else { icons::CROSS_DISABLED }).to_owned(),
+            (if app.setup.respect_gitignore {
+                icons::CHECK_ENABLED
+            } else {
+                icons::CROSS_DISABLED
+            })
+            .to_owned(),
             SetupField::RespectGitignore,
             Color::Rgb(168, 85, 247),
         ),
@@ -145,20 +173,37 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
     let mut all_lines = Vec::new();
     for (label, value, field, color) in fields {
         let is_active = app.setup.active_field == field;
-        all_lines.push(draw_setup_field(label, &value, is_active, app.setup.is_editing, color));
+        all_lines.push(draw_setup_field(
+            label,
+            &value,
+            is_active,
+            app.setup.is_editing,
+            color,
+        ));
     }
 
     let save_active = app.setup.active_field == SetupField::Save;
-    let save_marker = if save_active { icons::ACTIVE_MARKER } else { icons::INACTIVE_MARKER };
+    let save_marker = if save_active {
+        icons::ACTIVE_MARKER
+    } else {
+        icons::INACTIVE_MARKER
+    };
     let save_marker_style = if save_active {
-        Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Rgb(59, 130, 246))
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };
     let save_style = if save_active {
-        Style::default().bg(Color::Rgb(59, 130, 246)).fg(Color::White).add_modifier(Modifier::BOLD)
+        Style::default()
+            .bg(Color::Rgb(59, 130, 246))
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Rgb(59, 130, 246))
+            .add_modifier(Modifier::BOLD)
     };
     let save_text = if save_active {
         format!(" {}SAVE AND START ASSISTANT ", icons::SAVE)
@@ -187,16 +232,23 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
     let visible_lines = all_lines[scroll_offset..end_idx].to_vec();
 
     frame.render_widget(block, settings_area);
-    frame.render_widget(
-        Paragraph::new(visible_lines),
-        inner_area,
-    );
+    frame.render_widget(Paragraph::new(visible_lines), inner_area);
 
     if has_tip {
         let tip_paragraph = Paragraph::new(Line::from(vec![
-            Span::styled(icons::TIP, Style::default().fg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                icons::TIP,
+                Style::default()
+                    .fg(Color::Rgb(245, 158, 11))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("OpenAI key detected. Press ", Style::default()),
-            Span::styled("Ctrl+A", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Ctrl+A",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" to auto-apply OmniRoute defaults.", Style::default()),
         ]))
         .alignment(Alignment::Center);
@@ -213,24 +265,30 @@ fn draw_setup_field(
     is_editing: bool,
     color: Color,
 ) -> Line<'static> {
-    let marker = if active { icons::ACTIVE_MARKER } else { icons::INACTIVE_MARKER };
+    let marker = if active {
+        icons::ACTIVE_MARKER
+    } else {
+        icons::INACTIVE_MARKER
+    };
     let marker_style = if active {
         Style::default().fg(color).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    
+
     // Active label is bold default terminal text. Inactive is DarkGray.
     let label_style = if active {
         Style::default().add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    
+
     // Active value uses the theme accent color. Inactive uses default terminal text.
     let value_style = if active {
         if is_editing {
-            Style::default().fg(Color::Rgb(16, 185, 129)).add_modifier(Modifier::BOLD) // Emerald Green when typing!
+            Style::default()
+                .fg(Color::Rgb(16, 185, 129))
+                .add_modifier(Modifier::BOLD) // Emerald Green when typing!
         } else {
             Style::default().fg(color).add_modifier(Modifier::BOLD)
         }

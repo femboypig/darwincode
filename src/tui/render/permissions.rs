@@ -28,14 +28,28 @@ pub(crate) fn render_permissions(frame: &mut Frame, app: &App) {
         .map(|(i, (label, desc, _))| {
             if i == app.permissions.selected {
                 ListItem::new(Line::from(vec![
-                    Span::styled("> ", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow)),
-                    Span::styled(format!("{label}: "), Style::default().add_modifier(Modifier::BOLD).fg(Color::White)),
+                    Span::styled(
+                        "> ",
+                        Style::default()
+                            .add_modifier(Modifier::BOLD)
+                            .fg(Color::Yellow),
+                    ),
+                    Span::styled(
+                        format!("{label}: "),
+                        Style::default()
+                            .add_modifier(Modifier::BOLD)
+                            .fg(Color::White),
+                    ),
                     Span::styled(*desc, Style::default().fg(Color::White)),
-                ])).style(Style::default().bg(Color::Rgb(60, 60, 75)))
+                ]))
+                .style(Style::default().bg(Color::Rgb(60, 60, 75)))
             } else {
                 ListItem::new(Line::from(vec![
                     Span::raw("  "),
-                    Span::styled(format!("{label}: "), Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("{label}: "),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(*desc),
                 ]))
             }

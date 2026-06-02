@@ -1,18 +1,18 @@
 pub mod chat;
 pub mod model;
 pub mod permission;
-pub mod setup;
 pub mod session;
+pub mod setup;
 
-pub use chat::{ChatState, MessageLine, ChatCommand, CommandSuggestion};
+pub use chat::{ChatCommand, ChatState, CommandSuggestion, MessageLine};
 pub use model::ModelPickerState;
 pub use permission::PermissionPickerState;
-pub use setup::{SetupState, SetupField};
 pub use session::SessionPickerState;
+pub use setup::{SetupField, SetupState};
 
-use anyhow::Result;
-use crate::config::{PermissionLevel, StoredConfig};
 use crate::api::{ChatMessage, GeminiResponse};
+use crate::config::{PermissionLevel, StoredConfig};
+use anyhow::Result;
 
 #[derive(Clone, Debug)]
 pub enum FunctionAction {
@@ -223,20 +223,21 @@ impl App {
 
         // Special case: If user enters exit or permissions command, execute it immediately even if busy!
         if let Some(command) = ChatCommand::parse(&input)
-            && matches!(command, ChatCommand::Exit | ChatCommand::Permissions(_)) {
-                self.chat.input.clear();
-                self.chat.cursor = 0;
-                self.chat.input_scroll = 0;
-                self.chat.scroll = 0;
-                return self.run_command(command);
-            }
+            && matches!(command, ChatCommand::Exit | ChatCommand::Permissions(_))
+        {
+            self.chat.input.clear();
+            self.chat.cursor = 0;
+            self.chat.input_scroll = 0;
+            self.chat.scroll = 0;
+            return self.run_command(command);
+        }
 
         if self.is_busy() {
             self.chat.input.clear();
             self.chat.cursor = 0;
             self.chat.input_scroll = 0;
             self.chat.scroll = 0;
-            
+
             // Queue prompt in memory only (rendered in gray below the messages box)
             self.chat.message_queue.push(input);
             return None;
@@ -289,7 +290,7 @@ impl App {
         self.chat.messages.push(MessageLine::user(input));
         self.chat.messages.push(MessageLine::pending());
         self.pending = Some(PendingTask::Generating);
-        
+
         let queue_len = self.chat.message_queue.len();
         if queue_len > 0 {
             self.status = format!("Working... ({} in queue)", queue_len);
@@ -345,64 +346,89 @@ impl App {
         for part in parts {
             self.chat.streaming_parts.push(part.clone());
 
-            let is_thought = part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false)
+            let is_thought = part
+                .get("thought")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
                 || part.get("thought_signature").is_some();
 
             if is_thought {
                 if let Some(text) = part.get("text").and_then(|v| v.as_str())
-                    && !text.is_empty() {
-                        if show_thoughts {
-                            let last_is_thinking = self.chat.messages.last().is_some_and(|m| {
-                                m.author == "Darwin" && !m.pending && !m.is_shell && !m.is_tool && m.text.starts_with("Thinking:")
-                            });
-                            if last_is_thinking {
-                                self.append_to_chat_messages("Darwin", text.to_owned());
-                            } else {
-                                self.append_to_chat_messages("Darwin", format!("Thinking: {}", text));
-                            }
+                    && !text.is_empty()
+                {
+                    if show_thoughts {
+                        let last_is_thinking = self.chat.messages.last().is_some_and(|m| {
+                            m.author == "Darwin"
+                                && !m.pending
+                                && !m.is_shell
+                                && !m.is_tool
+                                && m.text.starts_with("Thinking:")
+                        });
+                        if last_is_thinking {
+                            self.append_to_chat_messages("Darwin", text.to_owned());
                         } else {
-                            if self.chat.messages.last().is_none_or(|m| m.text != "Thinking...") {
-                                self.chat.messages.push(MessageLine::assistant("Thinking...".to_owned()));
-                            }
+                            self.append_to_chat_messages("Darwin", format!("Thinking: {}", text));
+                        }
+                    } else {
+                        if self
+                            .chat
+                            .messages
+                            .last()
+                            .is_none_or(|m| m.text != "Thinking...")
+                        {
+                            self.chat
+                                .messages
+                                .push(MessageLine::assistant("Thinking...".to_owned()));
                         }
                     }
+                }
                 self.chat.last_chunk_was_thought = true;
                 continue;
             }
 
             if let Some(text) = part.get("text").and_then(|v| v.as_str())
-                && !text.is_empty() {
-                    if self.chat.last_chunk_was_thought {
-                        if show_thoughts {
-                            let clean_text = text.trim_start_matches('\n').trim_start_matches('\r');
-                            self.append_to_chat_messages("Darwin", format!("\n\n{}", clean_text));
-                        } else {
-                            if let Some(msg) = self.chat.messages.last_mut()
-                                && msg.author == "Darwin" && msg.text == "Thinking..." {
-                                    msg.text = text.trim_start_matches('\n').trim_start_matches('\r').to_owned();
-                                    *msg.cached_wrapped.borrow_mut() = None;
-                                } else {
-                                    self.append_to_chat_messages("Darwin", text.to_owned());
-                                }
-                        }
+                && !text.is_empty()
+            {
+                if self.chat.last_chunk_was_thought {
+                    if show_thoughts {
+                        let clean_text = text.trim_start_matches('\n').trim_start_matches('\r');
+                        self.append_to_chat_messages("Darwin", format!("\n\n{}", clean_text));
                     } else {
-                        self.append_to_chat_messages("Darwin", text.to_owned());
+                        if let Some(msg) = self.chat.messages.last_mut()
+                            && msg.author == "Darwin"
+                            && msg.text == "Thinking..."
+                        {
+                            msg.text = text
+                                .trim_start_matches('\n')
+                                .trim_start_matches('\r')
+                                .to_owned();
+                            *msg.cached_wrapped.borrow_mut() = None;
+                        } else {
+                            self.append_to_chat_messages("Darwin", text.to_owned());
+                        }
                     }
-                    self.chat.last_chunk_was_thought = false;
+                } else {
+                    self.append_to_chat_messages("Darwin", text.to_owned());
                 }
+                self.chat.last_chunk_was_thought = false;
+            }
         }
-        
+
         self.chat.scroll = 0;
     }
 
     fn append_to_chat_messages(&mut self, author: &'static str, text: String) {
         if let Some(msg) = self.chat.messages.last_mut()
-            && msg.author == author && !msg.pending && !msg.is_shell && !msg.is_tool {
-                msg.text.push_str(&text);
-                *msg.cached_wrapped.borrow_mut() = None;
-                return;
-            }
-        
+            && msg.author == author
+            && !msg.pending
+            && !msg.is_shell
+            && !msg.is_tool
+        {
+            msg.text.push_str(&text);
+            *msg.cached_wrapped.borrow_mut() = None;
+            return;
+        }
+
         self.chat.messages.push(MessageLine {
             author,
             text,
@@ -417,9 +443,10 @@ impl App {
 
     pub fn handle_stream_error(&mut self, error: String) {
         if let Some(m) = self.chat.messages.last_mut()
-            && m.pending {
-                self.chat.messages.pop();
-            }
+            && m.pending
+        {
+            self.chat.messages.pop();
+        }
         self.chat.messages.push(MessageLine::error(error));
         self.chat.streaming_parts.clear();
         self.chat.scroll = 0;
@@ -440,7 +467,9 @@ impl App {
             if self.chat.messages.last().is_some_and(|m| m.pending) {
                 self.chat.messages.pop();
             }
-            self.chat.messages.push(MessageLine::error("Error: API returned an empty response".to_owned()));
+            self.chat.messages.push(MessageLine::error(
+                "Error: API returned an empty response".to_owned(),
+            ));
             return None;
         }
 
@@ -454,24 +483,43 @@ impl App {
         for part in &parts {
             if let Some(call) = part.get("functionCall")
                 && first_call.is_none()
-                    && let (Some(name), Some(args)) = (call.get("name").and_then(|v| v.as_str()), call.get("args")) {
-                        first_call = Some((name.to_owned(), args.clone()));
-                    }
+                && let (Some(name), Some(args)) =
+                    (call.get("name").and_then(|v| v.as_str()), call.get("args"))
+            {
+                first_call = Some((name.to_owned(), args.clone()));
+            }
         }
 
         if let Some((name, args)) = first_call {
             let permission = self.chat.config.permission_level;
-            let auto_allowed = permission == PermissionLevel::Chaos || (permission == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files" || name == "read_files"));
-            
+            let auto_allowed = permission == PermissionLevel::Chaos
+                || (permission == PermissionLevel::Safe
+                    && (name == "read_file"
+                        || name == "list_directory"
+                        || name == "search_files"
+                        || name == "read_files"));
+
             if auto_allowed {
                 self.backup_before_execution(&name, &args);
                 self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                 self.status = format!("Auto-executing {name}");
                 self.start_function_execution(&name, &args);
-                Some(FunctionAction::Execute { name, args, config: self.chat.config.clone() })
-            } else if permission == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files") {
+                Some(FunctionAction::Execute {
+                    name,
+                    args,
+                    config: self.chat.config.clone(),
+                })
+            } else if permission == PermissionLevel::Safe
+                && (name == "run_bash_command"
+                    || name == "edit_file"
+                    || name == "write_file"
+                    || name == "edit_files")
+            {
                 self.pending = Some(PendingTask::Generating);
-                self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"}))
+                self.complete_function_execution(
+                    name,
+                    serde_json::json!({"error": "Permission denied: restricted mode"}),
+                )
             } else {
                 self.confirm_scroll = 0;
                 self.pending = Some(PendingTask::ConfirmFunction { name, args });
@@ -505,10 +553,14 @@ impl App {
                 self.sessions.selected = 0;
                 self.sessions.query = String::new();
                 self.screen = Screen::Sessions;
-                self.status = "Select a session to resume. Enter to apply, Esc to cancel.".to_owned();
+                self.status =
+                    "Select a session to resume. Enter to apply, Esc to cancel.".to_owned();
             }
             Err(e) => {
-                self.chat.messages.push(MessageLine::error(format!("Failed to list sessions: {}", e)));
+                self.chat.messages.push(MessageLine::error(format!(
+                    "Failed to list sessions: {}",
+                    e
+                )));
             }
         }
     }
@@ -539,7 +591,9 @@ impl App {
             PendingTask::Generating => "Working",
             PendingTask::LoadingModels => "Loading models",
             PendingTask::ConfirmFunction { .. } => "Awaiting confirmation",
-            PendingTask::ExecutingFunction { name } => return Some(format!("Running {name}{frame}")),
+            PendingTask::ExecutingFunction { name } => {
+                return Some(format!("Running {name}{frame}"));
+            }
         };
 
         Some(format!("{label}{frame}"))
@@ -558,27 +612,28 @@ impl App {
                 ("/permissions chaos", "Auto-execute everything"),
             ];
 
-            return options.into_iter()
+            return options
+                .into_iter()
                 .filter(|(name, _)| name.starts_with(input))
-                .map(|(name, desc)| CommandSuggestion { 
-                    name: name.to_owned(), 
-                    description: desc.to_owned() 
+                .map(|(name, desc)| CommandSuggestion {
+                    name: name.to_owned(),
+                    description: desc.to_owned(),
                 })
                 .collect();
         }
 
         if (input.starts_with("/resume ") || input == "/resume")
-            && let Ok(sessions) = session::list_saved_sessions() {
-                return sessions.into_iter()
-                    .map(|meta| {
-                        CommandSuggestion { 
-                            name: format!("/resume {}", meta.id), 
-                            description: meta.snippet 
-                        }
-                    })
-                    .filter(|s| s.name.starts_with(input))
-                    .collect();
-            }
+            && let Ok(sessions) = session::list_saved_sessions()
+        {
+            return sessions
+                .into_iter()
+                .map(|meta| CommandSuggestion {
+                    name: format!("/resume {}", meta.id),
+                    description: meta.snippet,
+                })
+                .filter(|s| s.name.starts_with(input))
+                .collect();
+        }
 
         if input.contains(' ') {
             return Vec::new();
@@ -616,11 +671,19 @@ impl App {
                     if self.chat.messages.last().is_some_and(|m| m.pending) {
                         self.chat.messages.pop();
                     }
-                    self.chat.messages.push(MessageLine::info(format!("Permission level set to **{level_label}**")));
+                    self.chat.messages.push(MessageLine::info(format!(
+                        "Permission level set to **{level_label}**"
+                    )));
                     let _ = self.chat.config.save();
-                    
-                    if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone() {
-                        let auto_allowed = level == PermissionLevel::Chaos || (level == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files" || name == "read_files"));
+
+                    if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone()
+                    {
+                        let auto_allowed = level == PermissionLevel::Chaos
+                            || (level == PermissionLevel::Safe
+                                && (name == "read_file"
+                                    || name == "list_directory"
+                                    || name == "search_files"
+                                    || name == "read_files"));
                         if auto_allowed {
                             self.backup_before_execution(&name, &args);
                             self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
@@ -639,7 +702,8 @@ impl App {
                         .iter()
                         .position(|(_, _, l)| *l == current)
                         .unwrap_or(0);
-                    self.status = "Select permission level. Enter to apply, Esc to cancel.".to_owned();
+                    self.status =
+                        "Select permission level. Enter to apply, Esc to cancel.".to_owned();
                     None
                 }
             }
@@ -649,11 +713,15 @@ impl App {
                         Ok(s) => {
                             self.chat.session_id = s.id;
                             self.chat.history = s.history;
-                            self.chat.messages = session::rebuild_messages_from_history(&self.chat.history);
+                            self.chat.messages =
+                                session::rebuild_messages_from_history(&self.chat.history);
                             self.status = format!("Resumed session: {}", id);
                         }
                         Err(e) => {
-                            self.chat.messages.push(MessageLine::error(format!("Failed to load session '{}': {}", id, e)));
+                            self.chat.messages.push(MessageLine::error(format!(
+                                "Failed to load session '{}': {}",
+                                id, e
+                            )));
                         }
                     }
                 } else {
@@ -694,7 +762,9 @@ impl App {
                 match session::list_saved_sessions() {
                     Ok(list) => {
                         if list.is_empty() {
-                            self.chat.messages.push(MessageLine::info("No saved sessions found.".to_owned()));
+                            self.chat
+                                .messages
+                                .push(MessageLine::info("No saved sessions found.".to_owned()));
                         } else {
                             let mut msg = "Saved sessions:\n".to_owned();
                             for meta in list {
@@ -704,24 +774,36 @@ impl App {
                         }
                     }
                     Err(e) => {
-                        self.chat.messages.push(MessageLine::error(format!("Failed to list sessions: {}", e)));
+                        self.chat.messages.push(MessageLine::error(format!(
+                            "Failed to list sessions: {}",
+                            e
+                        )));
                     }
                 }
                 None
             }
             ChatCommand::Undo => {
                 if self.last_file_backups.is_empty() {
-                    self.chat.messages.push(MessageLine::info("No changes to undo from the last prompt.".to_owned()));
+                    self.chat.messages.push(MessageLine::info(
+                        "No changes to undo from the last prompt.".to_owned(),
+                    ));
                 } else {
-                    let undone: Vec<String> = self.last_file_backups.iter().map(|b| {
-                        if b.original_content.is_some() {
-                            format!("reverted `{}`", b.path)
-                        } else {
-                            format!("deleted new file `{}`", b.path)
-                        }
-                    }).collect();
+                    let undone: Vec<String> = self
+                        .last_file_backups
+                        .iter()
+                        .map(|b| {
+                            if b.original_content.is_some() {
+                                format!("reverted `{}`", b.path)
+                            } else {
+                                format!("deleted new file `{}`", b.path)
+                            }
+                        })
+                        .collect();
                     self.rollback_transactions();
-                    self.chat.messages.push(MessageLine::info(format!("Undo completed successfully: {}", undone.join(", "))));
+                    self.chat.messages.push(MessageLine::info(format!(
+                        "Undo completed successfully: {}",
+                        undone.join(", ")
+                    )));
                 }
                 None
             }
@@ -741,7 +823,9 @@ impl App {
                                  Hotkeys (in Chat):\n\
                                  - **Ctrl+S**: Open Setup screen\n\
                                  - **Ctrl+P**: Switch active Model instantly";
-                self.chat.messages.push(MessageLine::info(help_text.to_owned()));
+                self.chat
+                    .messages
+                    .push(MessageLine::info(help_text.to_owned()));
                 None
             }
 
@@ -794,21 +878,41 @@ impl App {
             if self.chat.messages.last().is_some_and(|m| m.pending) {
                 self.chat.messages.pop();
             }
-            self.chat.messages.push(MessageLine::info(format!("Permission level set to **{label}**")));
+            self.chat.messages.push(MessageLine::info(format!(
+                "Permission level set to **{label}**"
+            )));
             let _ = self.chat.config.save();
-            
+
             if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone() {
-                let auto_allowed = *level == PermissionLevel::Chaos || (*level == PermissionLevel::Safe && (name == "read_file" || name == "list_directory" || name == "search_files" || name == "read_files"));
+                let auto_allowed = *level == PermissionLevel::Chaos
+                    || (*level == PermissionLevel::Safe
+                        && (name == "read_file"
+                            || name == "list_directory"
+                            || name == "search_files"
+                            || name == "read_files"));
                 if auto_allowed {
                     self.backup_before_execution(&name, &args);
                     self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                     self.status = format!("Auto-executing {name}");
                     self.start_function_execution(&name, &args);
-                    ret = Some(SubmitAction::ExecuteFunction { name, args, config: self.chat.config.clone() });
-                } else if *level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files")
-                    && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
-                        ret = Some(SubmitAction::Generate(request));
-                    }
+                    ret = Some(SubmitAction::ExecuteFunction {
+                        name,
+                        args,
+                        config: self.chat.config.clone(),
+                    });
+                } else if *level == PermissionLevel::Safe
+                    && (name == "run_bash_command"
+                        || name == "edit_file"
+                        || name == "write_file"
+                        || name == "edit_files")
+                    && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self
+                        .complete_function_execution(
+                            name,
+                            serde_json::json!({"error": "Permission denied: restricted mode"}),
+                        )
+                {
+                    ret = Some(SubmitAction::Generate(request));
+                }
             }
         }
         self.screen = Screen::Chat;
@@ -852,7 +956,9 @@ impl App {
         };
 
         if !allow {
-            self.chat.messages.push(MessageLine::info("Tool execution denied. Generation stopped.".to_owned()));
+            self.chat.messages.push(MessageLine::info(
+                "Tool execution denied. Generation stopped.".to_owned(),
+            ));
             self.chat.message_queue.clear();
             self.pending = None;
             self.status = "Ready".to_owned();
@@ -866,19 +972,33 @@ impl App {
         self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
         self.status = format!("Executing {name}");
         self.start_function_execution(&name, &args);
-        Some(FunctionAction::Execute { name, args, config: self.chat.config.clone() })
+        Some(FunctionAction::Execute {
+            name,
+            args,
+            config: self.chat.config.clone(),
+        })
     }
 
-    pub fn complete_function_execution(&mut self, name: String, response: serde_json::Value) -> Option<FunctionAction> {
+    pub fn complete_function_execution(
+        &mut self,
+        name: String,
+        response: serde_json::Value,
+    ) -> Option<FunctionAction> {
         self.chat.scroll = 0;
-        let args = if let Some(ChatMessage { parts, .. }) = self.chat.history.iter().rev().find(|m| m.role == "model") {
-            parts.iter().find_map(|p| {
-                if let Some(call) = p.get("functionCall")
-                    && call.get("name").and_then(|v| v.as_str()) == Some(&name) {
+        let args = if let Some(ChatMessage { parts, .. }) =
+            self.chat.history.iter().rev().find(|m| m.role == "model")
+        {
+            parts
+                .iter()
+                .find_map(|p| {
+                    if let Some(call) = p.get("functionCall")
+                        && call.get("name").and_then(|v| v.as_str()) == Some(&name)
+                    {
                         return call.get("args").cloned();
                     }
-                None
-            }).unwrap_or(serde_json::Value::Null)
+                    None
+                })
+                .unwrap_or(serde_json::Value::Null)
         } else {
             serde_json::Value::Null
         };
@@ -897,32 +1017,46 @@ impl App {
             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let mut output = String::new();
             let mut success = true;
-            
+
             let mut is_aborted = false;
             if let Some(status) = response.get("status").and_then(|v| v.as_i64()) {
-                if status != 0 { success = false; }
+                if status != 0 {
+                    success = false;
+                }
             } else {
                 success = false;
                 is_aborted = true;
             }
-            
-            let stdout = response.get("stdout").and_then(|v| v.as_str()).unwrap_or("");
-            let stderr = response.get("stderr").and_then(|v| v.as_str()).unwrap_or("");
-            if !stdout.is_empty() { output.push_str(stdout); }
-            if !stderr.is_empty() { 
-                if !output.is_empty() { output.push('\n'); }
+
+            let stdout = response
+                .get("stdout")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let stderr = response
+                .get("stderr")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if !stdout.is_empty() {
+                output.push_str(stdout);
+            }
+            if !stderr.is_empty() {
+                if !output.is_empty() {
+                    output.push('\n');
+                }
                 output.push_str(stderr);
             }
-            
+
             if is_aborted {
-                if !output.is_empty() { output.push('\n'); }
+                if !output.is_empty() {
+                    output.push('\n');
+                }
                 output.push_str("^C\n[Process terminated by user via Ctrl+C]");
             } else if output.is_empty() {
                 output = "(empty output)".to_owned();
             }
-            
+
             let body = format!("$ {}\n{}", cmd, output);
-            
+
             if let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
                 msg.text = body;
                 msg.shell_success = success;
@@ -935,8 +1069,6 @@ impl App {
                 *msg.cached_wrapped.borrow_mut() = None;
             }
         }
-
-
 
         self.chat.messages.push(MessageLine::pending());
         self.pending = Some(PendingTask::Generating);
@@ -1026,7 +1158,9 @@ impl App {
         if name == "run_bash_command" {
             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let body = format!("$ {}\nRunning...\n", cmd);
-            self.chat.messages.push(MessageLine::shell(cmd.to_owned(), body, false));
+            self.chat
+                .messages
+                .push(MessageLine::shell(cmd.to_owned(), body, false));
         } else {
             let summary = format!("**{}** executing...", name);
             self.chat.messages.push(MessageLine::tool(summary));

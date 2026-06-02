@@ -5,14 +5,24 @@ use std::sync::mpsc::Sender;
 use crate::app::{App, SetupField};
 use crate::tui::WorkerEvent;
 
-pub(crate) fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key: KeyEvent) -> Result<()> {
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Quit, key) {
+pub(crate) fn handle_setup_key(
+    app: &mut App,
+    _sender: &Sender<WorkerEvent>,
+    key: KeyEvent,
+) -> Result<()> {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::Quit, key)
+    {
         app.should_quit = true;
         return Ok(());
     }
 
     if app.setup.is_editing {
-        if app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key) {
+        if app
+            .keybindings
+            .matches(crate::tui::keybindings::TuiAction::Cancel, key)
+        {
             app.setup.is_editing = false;
             return Ok(());
         }
@@ -36,8 +46,12 @@ pub(crate) fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key
             {
                 let old_key = app.setup.api_key.clone();
                 app.setup.push_char(value);
-                if app.setup.active_field == SetupField::ApiKey && app.setup.api_key.starts_with("sk-") && !old_key.starts_with("sk-") {
-                    app.status = "OpenAI key detected. Press Ctrl+A to apply OmniRoute defaults.".to_owned();
+                if app.setup.active_field == SetupField::ApiKey
+                    && app.setup.api_key.starts_with("sk-")
+                    && !old_key.starts_with("sk-")
+                {
+                    app.status =
+                        "OpenAI key detected. Press Ctrl+A to apply OmniRoute defaults.".to_owned();
                 }
             }
             _ => {}
@@ -45,7 +59,10 @@ pub(crate) fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key
         return Ok(());
     }
 
-    if app.keybindings.matches(crate::tui::keybindings::TuiAction::Cancel, key) {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::Cancel, key)
+    {
         app.cancel_setup();
         return Ok(());
     }
@@ -75,23 +92,31 @@ pub(crate) fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key
             SetupField::PermissionLevel => {
                 app.setup.permission_level = match app.setup.permission_level {
                     crate::config::PermissionLevel::Safe => crate::config::PermissionLevel::Chaos,
-                    crate::config::PermissionLevel::Guardian => crate::config::PermissionLevel::Safe,
-                    crate::config::PermissionLevel::Chaos => crate::config::PermissionLevel::Guardian,
+                    crate::config::PermissionLevel::Guardian => {
+                        crate::config::PermissionLevel::Safe
+                    }
+                    crate::config::PermissionLevel::Chaos => {
+                        crate::config::PermissionLevel::Guardian
+                    }
                 };
             }
             SetupField::Theme => {
                 app.setup.theme = app.setup.theme.next();
             }
             _ => {}
-        }
+        },
         (KeyCode::Right, _) => match app.setup.active_field {
             SetupField::Model => {
                 app.setup.select_next_model();
             }
             SetupField::PermissionLevel => {
                 app.setup.permission_level = match app.setup.permission_level {
-                    crate::config::PermissionLevel::Safe => crate::config::PermissionLevel::Guardian,
-                    crate::config::PermissionLevel::Guardian => crate::config::PermissionLevel::Chaos,
+                    crate::config::PermissionLevel::Safe => {
+                        crate::config::PermissionLevel::Guardian
+                    }
+                    crate::config::PermissionLevel::Guardian => {
+                        crate::config::PermissionLevel::Chaos
+                    }
                     crate::config::PermissionLevel::Chaos => crate::config::PermissionLevel::Safe,
                 };
             }
@@ -99,7 +124,7 @@ pub(crate) fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key
                 app.setup.theme = app.setup.theme.next();
             }
             _ => {}
-        }
+        },
         (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => match app.setup.active_field {
             SetupField::Save => {
                 if let Err(error) = app.save_setup() {
@@ -114,8 +139,12 @@ pub(crate) fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key
             }
             SetupField::PermissionLevel => {
                 app.setup.permission_level = match app.setup.permission_level {
-                    crate::config::PermissionLevel::Safe => crate::config::PermissionLevel::Guardian,
-                    crate::config::PermissionLevel::Guardian => crate::config::PermissionLevel::Chaos,
+                    crate::config::PermissionLevel::Safe => {
+                        crate::config::PermissionLevel::Guardian
+                    }
+                    crate::config::PermissionLevel::Guardian => {
+                        crate::config::PermissionLevel::Chaos
+                    }
                     crate::config::PermissionLevel::Chaos => crate::config::PermissionLevel::Safe,
                 };
             }
@@ -131,7 +160,7 @@ pub(crate) fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key
             SetupField::ApiKey | SetupField::Model | SetupField::BaseUrl => {
                 app.setup.is_editing = true;
             }
-        }
+        },
         (KeyCode::Char(value), modifiers)
             if !modifiers.contains(KeyModifiers::CONTROL)
                 && !modifiers.contains(KeyModifiers::ALT) =>
@@ -141,8 +170,13 @@ pub(crate) fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key
                     app.setup.is_editing = true;
                     let old_key = app.setup.api_key.clone();
                     app.setup.push_char(value);
-                    if app.setup.active_field == SetupField::ApiKey && app.setup.api_key.starts_with("sk-") && !old_key.starts_with("sk-") {
-                        app.status = "OpenAI key detected. Press Ctrl+A to apply OmniRoute defaults.".to_owned();
+                    if app.setup.active_field == SetupField::ApiKey
+                        && app.setup.api_key.starts_with("sk-")
+                        && !old_key.starts_with("sk-")
+                    {
+                        app.status =
+                            "OpenAI key detected. Press Ctrl+A to apply OmniRoute defaults."
+                                .to_owned();
                     }
                 }
                 _ => {}

@@ -1,14 +1,14 @@
-pub(crate) mod setup;
+pub(crate) mod ask_user;
 pub(crate) mod chat;
+pub(crate) mod common;
 pub(crate) mod models;
 pub(crate) mod permissions;
 pub(crate) mod sessions;
-pub(crate) mod ask_user;
-pub(crate) mod common;
+pub(crate) mod setup;
 
-use std::sync::mpsc::Sender;
 use anyhow::Result;
 use crossterm::event::KeyEvent;
+use std::sync::mpsc::Sender;
 
 use crate::app::{App, Screen};
 use crate::tui::WorkerEvent;
@@ -26,7 +26,10 @@ pub(crate) fn handle_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEv
 
 pub(crate) fn handle_paste(app: &mut App, text: String) {
     if app.screen == Screen::Chat {
-        if matches!(app.pending, Some(crate::app::PendingTask::ConfirmFunction { .. })) {
+        if matches!(
+            app.pending,
+            Some(crate::app::PendingTask::ConfirmFunction { .. })
+        ) {
             return;
         }
         app.chat.insert_text(&text);
@@ -36,7 +39,8 @@ pub(crate) fn handle_paste(app: &mut App, text: String) {
             app.setup.push_char(c);
         }
         if app.setup.api_key.starts_with("sk-") && !old_key.starts_with("sk-") {
-            app.status = "OpenAI key detected. Press Ctrl+A to apply OmniRoute defaults.".to_owned();
+            app.status =
+                "OpenAI key detected. Press Ctrl+A to apply OmniRoute defaults.".to_owned();
         }
     }
 }

@@ -1,8 +1,8 @@
 use anyhow::Result;
 
 pub(crate) fn copy_to_clipboard(text: &str) -> Result<()> {
-    use std::process::{Command, Stdio};
     use std::io::Write;
+    use std::process::{Command, Stdio};
 
     if cfg!(target_os = "macos") {
         let mut child = Command::new("pbcopy")
@@ -38,22 +38,27 @@ pub(crate) fn copy_to_clipboard(text: &str) -> Result<()> {
         let mut tried_wl = false;
 
         if is_wayland {
-            if let Ok(true) = try_copy_wl(text) { return Ok(()) }
+            if let Ok(true) = try_copy_wl(text) {
+                return Ok(());
+            }
             tried_wl = true;
         }
 
-        if let Ok(true) = try_copy_x11(text) { return Ok(()) }
+        if let Ok(true) = try_copy_x11(text) {
+            return Ok(());
+        }
 
-        if !tried_wl
-            && let Ok(true) = try_copy_wl(text) { return Ok(()) }
+        if !tried_wl && let Ok(true) = try_copy_wl(text) {
+            return Ok(());
+        }
 
         anyhow::bail!("No working clipboard tool found (tried wl-copy, xclip, xsel)")
     }
 }
 
 fn try_copy_wl(text: &str) -> Result<bool> {
-    use std::process::{Command, Stdio};
     use std::io::Write;
+    use std::process::{Command, Stdio};
 
     let mut child = match Command::new("wl-copy")
         .stdin(Stdio::piped())
@@ -75,8 +80,8 @@ fn try_copy_wl(text: &str) -> Result<bool> {
 }
 
 fn try_copy_x11(text: &str) -> Result<bool> {
-    use std::process::{Command, Stdio};
     use std::io::Write;
+    use std::process::{Command, Stdio};
 
     // Try xclip
     let child_res = Command::new("xclip")
@@ -153,14 +158,19 @@ pub(crate) fn read_from_clipboard() -> Result<String> {
         let mut tried_wl = false;
 
         if is_wayland {
-            if let Ok(Some(text)) = try_paste_wl() { return Ok(text) }
+            if let Ok(Some(text)) = try_paste_wl() {
+                return Ok(text);
+            }
             tried_wl = true;
         }
 
-        if let Ok(Some(text)) = try_paste_x11() { return Ok(text) }
+        if let Ok(Some(text)) = try_paste_x11() {
+            return Ok(text);
+        }
 
-        if !tried_wl
-            && let Ok(Some(text)) = try_paste_wl() { return Ok(text) }
+        if !tried_wl && let Ok(Some(text)) = try_paste_wl() {
+            return Ok(text);
+        }
 
         anyhow::bail!("No working clipboard tool found for pasting")
     }

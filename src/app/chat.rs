@@ -1,5 +1,5 @@
-use crate::config::{PermissionLevel, StoredConfig, Theme};
 use crate::api::{ChatMessage, Part};
+use crate::config::{PermissionLevel, StoredConfig, Theme};
 
 #[derive(Debug)]
 pub struct ChatState {
@@ -51,10 +51,12 @@ impl ChatState {
     }
 
     pub fn get_user_prompts(&self) -> Vec<String> {
-        self.history.iter()
+        self.history
+            .iter()
             .filter(|m| m.role == "user")
             .filter_map(|m| {
-                m.parts.first()
+                m.parts
+                    .first()
                     .and_then(|p| p.get("text"))
                     .and_then(|t| t.as_str())
                     .map(|s| s.to_owned())
@@ -132,14 +134,24 @@ impl ChatState {
 
     pub fn insert_char(&mut self, c: char) {
         self.save_history();
-        let byte_idx = self.input.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap_or(self.input.len());
+        let byte_idx = self
+            .input
+            .char_indices()
+            .nth(self.cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(self.input.len());
         self.input.insert(byte_idx, c);
         self.cursor += 1;
     }
 
     pub fn insert_text(&mut self, text: &str) {
         self.save_history();
-        let byte_idx = self.input.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap_or(self.input.len());
+        let byte_idx = self
+            .input
+            .char_indices()
+            .nth(self.cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(self.input.len());
         self.input.insert_str(byte_idx, text);
         self.cursor += text.chars().count();
     }
@@ -148,7 +160,12 @@ impl ChatState {
         if self.cursor > 0 {
             self.save_history();
             self.cursor -= 1;
-            let byte_idx = self.input.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap();
+            let byte_idx = self
+                .input
+                .char_indices()
+                .nth(self.cursor)
+                .map(|(i, _)| i)
+                .unwrap();
             self.input.remove(byte_idx);
         }
     }
@@ -156,7 +173,12 @@ impl ChatState {
     pub fn delete_char(&mut self) {
         if self.cursor < self.input.chars().count() {
             self.save_history();
-            let byte_idx = self.input.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap();
+            let byte_idx = self
+                .input
+                .char_indices()
+                .nth(self.cursor)
+                .map(|(i, _)| i)
+                .unwrap();
             self.input.remove(byte_idx);
         }
     }
@@ -175,14 +197,18 @@ impl ChatState {
         let text = &self.input;
         let mut lines = vec![0];
         for (i, c) in text.chars().enumerate() {
-            if c == '\n' { lines.push(i + 1); }
+            if c == '\n' {
+                lines.push(i + 1);
+            }
         }
-        
+
         let mut current_line = 0;
         for (i, &start) in lines.iter().enumerate() {
-            if self.cursor >= start { current_line = i; }
+            if self.cursor >= start {
+                current_line = i;
+            }
         }
-        
+
         if current_line > 0 {
             let col = self.cursor - lines[current_line];
             let prev_line_start = lines[current_line - 1];
@@ -198,25 +224,31 @@ impl ChatState {
         let text = &self.input;
         let mut lines = vec![0];
         for (i, c) in text.chars().enumerate() {
-            if c == '\n' { lines.push(i + 1); }
+            if c == '\n' {
+                lines.push(i + 1);
+            }
         }
         let end_idx = text.chars().count();
         lines.push(end_idx + 1);
-        
+
         let mut current_line = 0;
         for (i, &start) in lines.iter().enumerate() {
-            if self.cursor >= start && self.cursor < lines.get(i+1).copied().unwrap_or(end_idx + 1) {
+            if self.cursor >= start
+                && self.cursor < lines.get(i + 1).copied().unwrap_or(end_idx + 1)
+            {
                 current_line = i;
                 break;
             }
         }
-        
+
         if current_line + 1 < lines.len() - 1 {
             let col = self.cursor - lines[current_line];
             let next_line_start = lines[current_line + 1];
             let next_line_end = lines[current_line + 2] - 1;
             let next_line_len = next_line_end.saturating_sub(next_line_start);
-            self.cursor = (next_line_start + col).min(next_line_start + next_line_len).min(end_idx);
+            self.cursor = (next_line_start + col)
+                .min(next_line_start + next_line_len)
+                .min(end_idx);
         } else {
             self.cursor = end_idx;
         }
@@ -226,8 +258,12 @@ impl ChatState {
         let text = &self.input;
         let mut start_of_line = 0;
         for (i, c) in text.chars().enumerate() {
-            if i == self.cursor { break; }
-            if c == '\n' { start_of_line = i + 1; }
+            if i == self.cursor {
+                break;
+            }
+            if c == '\n' {
+                start_of_line = i + 1;
+            }
         }
         self.cursor = start_of_line;
     }
@@ -254,7 +290,8 @@ pub struct MessageLine {
     pub shell_success: bool,
     pub shell_cmd: String,
     pub is_tool: bool,
-    pub cached_wrapped: std::cell::RefCell<Option<(usize, Theme, Vec<ratatui::text::Line<'static>>)>>,
+    pub cached_wrapped:
+        std::cell::RefCell<Option<(usize, Theme, Vec<ratatui::text::Line<'static>>)>>,
 }
 
 impl MessageLine {
@@ -459,33 +496,35 @@ mod tests {
     fn test_chat_history_navigation() {
         let config = StoredConfig::default();
         let mut chat = ChatState::new(config);
-        
-        chat.history.push(ChatMessage::user("first prompt".to_owned()));
-        chat.history.push(ChatMessage::user("second prompt".to_owned()));
-        
+
+        chat.history
+            .push(ChatMessage::user("first prompt".to_owned()));
+        chat.history
+            .push(ChatMessage::user("second prompt".to_owned()));
+
         chat.input = "current draft".to_owned();
-        
+
         // Navigate up
         chat.navigate_history_up();
         assert_eq!(chat.input, "second prompt");
         assert_eq!(chat.sent_history_index, Some(1));
         assert_eq!(chat.input_draft, "current draft");
-        
+
         // Navigate up again
         chat.navigate_history_up();
         assert_eq!(chat.input, "first prompt");
         assert_eq!(chat.sent_history_index, Some(0));
-        
+
         // Navigate up at top (should stay at first prompt)
         chat.navigate_history_up();
         assert_eq!(chat.input, "first prompt");
         assert_eq!(chat.sent_history_index, Some(0));
-        
+
         // Navigate down
         chat.navigate_history_down();
         assert_eq!(chat.input, "second prompt");
         assert_eq!(chat.sent_history_index, Some(1));
-        
+
         // Navigate down to restore draft
         chat.navigate_history_down();
         assert_eq!(chat.input, "current draft");

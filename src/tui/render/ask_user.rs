@@ -10,7 +10,7 @@ pub(crate) fn render_ask_user(frame: &mut Frame, app: &App) {
     render_chat(frame, app);
 
     let area = frame.area();
-    
+
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -19,7 +19,7 @@ pub(crate) fn render_ask_user(frame: &mut Frame, app: &App) {
             Constraint::Min(0),
         ])
         .split(area);
-        
+
     let popup_area = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -35,7 +35,11 @@ pub(crate) fn render_ask_user(frame: &mut Frame, app: &App) {
         .title("  Clarification Required ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD))
+        .border_style(
+            Style::default()
+                .fg(Color::Rgb(245, 158, 11))
+                .add_modifier(Modifier::BOLD),
+        )
         .padding(Padding::uniform(1));
 
     let inner = block.inner(popup_area);
@@ -64,7 +68,7 @@ pub(crate) fn render_ask_user(frame: &mut Frame, app: &App) {
             .title(" Write custom response ");
         let input_inner = input_block.inner(chunks[1]);
         frame.render_widget(input_block, chunks[1]);
-        
+
         let input_text = format!("{}█", app.ask_user.custom_input);
         frame.render_widget(Paragraph::new(input_text), input_inner);
     } else {
@@ -72,22 +76,35 @@ pub(crate) fn render_ask_user(frame: &mut Frame, app: &App) {
         for (idx, opt) in app.ask_user.options.iter().enumerate() {
             let is_selected = idx == app.ask_user.selected_idx;
             let style = if is_selected {
-                Style::default().fg(Color::Black).bg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Rgb(245, 158, 11))
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
             let prefix = if is_selected { "● " } else { "○ " };
-            list_items.push(ratatui::widgets::ListItem::new(format!("{}{}", prefix, opt)).style(style));
+            list_items
+                .push(ratatui::widgets::ListItem::new(format!("{}{}", prefix, opt)).style(style));
         }
-        
+
         let custom_selected = app.ask_user.selected_idx == app.ask_user.options.len();
         let custom_style = if custom_selected {
-            Style::default().fg(Color::Black).bg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(245, 158, 11))
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
         let custom_prefix = if custom_selected { "● " } else { "○ " };
-        list_items.push(ratatui::widgets::ListItem::new(format!("{}{}", custom_prefix, "Write custom response...")).style(custom_style));
+        list_items.push(
+            ratatui::widgets::ListItem::new(format!(
+                "{}{}",
+                custom_prefix, "Write custom response..."
+            ))
+            .style(custom_style),
+        );
 
         let list = ratatui::widgets::List::new(list_items);
         frame.render_widget(list, chunks[1]);

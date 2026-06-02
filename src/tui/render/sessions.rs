@@ -27,7 +27,12 @@ pub(crate) fn render_sessions(frame: &mut Frame, app: &App) {
 
     let filter_text = format!(" {}", app.sessions.query);
     let filter_para = Paragraph::new(Line::from(vec![
-        Span::styled(" Search: ", Style::default().fg(label_color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Search: ",
+            Style::default()
+                .fg(label_color)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(filter_text, Style::default().fg(query_color)),
     ]))
     .block(
@@ -35,7 +40,7 @@ pub(crate) fn render_sessions(frame: &mut Frame, app: &App) {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::DarkGray))
-            .title(" Filter Sessions ")
+            .title(" Filter Sessions "),
     );
     frame.render_widget(filter_para, session_chunks[0]);
 
@@ -55,14 +60,23 @@ pub(crate) fn render_sessions(frame: &mut Frame, app: &App) {
         .map(|(index, session)| {
             let id = &session.id;
             let snippet = &session.snippet;
-            
+
             if index == app.sessions.selected {
                 ListItem::new(Line::from(vec![
-                    Span::styled("> ", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow)),
-                    Span::styled(format!("{:<30} ", id), Style::default().add_modifier(Modifier::BOLD).fg(sel_fg_id)),
+                    Span::styled(
+                        "> ",
+                        Style::default()
+                            .add_modifier(Modifier::BOLD)
+                            .fg(Color::Yellow),
+                    ),
+                    Span::styled(
+                        format!("{:<30} ", id),
+                        Style::default().add_modifier(Modifier::BOLD).fg(sel_fg_id),
+                    ),
                     Span::styled("│ ", Style::default().fg(Color::DarkGray)),
                     Span::styled(snippet.clone(), Style::default().fg(sel_fg_snippet)),
-                ])).style(Style::default().bg(sel_bg))
+                ]))
+                .style(Style::default().bg(sel_bg))
             } else {
                 ListItem::new(Line::from(vec![
                     Span::raw("  "),
@@ -74,7 +88,11 @@ pub(crate) fn render_sessions(frame: &mut Frame, app: &App) {
         })
         .collect::<Vec<_>>();
 
-    let selected_opt = if filtered.is_empty() { None } else { Some(app.sessions.selected) };
+    let selected_opt = if filtered.is_empty() {
+        None
+    } else {
+        Some(app.sessions.selected)
+    };
     let mut state = ListState::default().with_selected(selected_opt);
     if !filtered.is_empty() {
         keep_selected_visible(

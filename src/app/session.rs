@@ -1,6 +1,6 @@
-use anyhow::Result;
-use crate::app::{ChatState, MessageLine};
 use crate::api::ChatMessage;
+use crate::app::{ChatState, MessageLine};
+use anyhow::Result;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ChatSession {
@@ -62,7 +62,11 @@ impl SessionPickerState {
         }
     }
 }
-pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serde_json::Value) -> String {
+pub fn format_tool_summary(
+    name: &str,
+    args: &serde_json::Value,
+    response: &serde_json::Value,
+) -> String {
     let tool_label = match name {
         "read_file" | "read_files" => "Read".to_owned(),
         "edit_file" | "edit_files" => "Edit".to_owned(),
@@ -74,8 +78,9 @@ pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serd
             let mut label = String::new();
             let mut next_cap = true;
             for c in name.chars() {
-                if c == '_' { next_cap = true; }
-                else if next_cap {
+                if c == '_' {
+                    next_cap = true;
+                } else if next_cap {
                     label.push(c.to_ascii_uppercase());
                     next_cap = false;
                 } else {
@@ -88,7 +93,7 @@ pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serd
 
     let mut summary = format!("**{tool_label}** ");
     let mut res_parts = Vec::new();
-    
+
     if let Some(err) = response.get("error").and_then(|v| v.as_str()) {
         res_parts.push(format!("Error: {err}"));
     } else {
@@ -110,12 +115,20 @@ pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serd
                 }
             }
             "read_files" => {
-                let paths_len = args.get("paths").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                let paths_len = args
+                    .get("paths")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
                 let suffix = if paths_len == 1 { "file" } else { "files" };
                 res_parts.push(format!("read {paths_len} {suffix} successfully"));
             }
             "edit_files" => {
-                let edits_len = args.get("edits").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                let edits_len = args
+                    .get("edits")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
                 let suffix = if edits_len == 1 { "file" } else { "files" };
                 res_parts.push(format!("atomically edited {edits_len} {suffix}"));
                 if let Some(diff) = response.get("diff").and_then(|v| v.as_str()) {
@@ -160,7 +173,10 @@ pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serd
                             formatted.push('\n');
                         }
                         if lines.len() > limit {
-                            formatted.push_str(&format!("... and {} more matches\n", lines.len() - limit));
+                            formatted.push_str(&format!(
+                                "... and {} more matches\n",
+                                lines.len() - limit
+                            ));
                         }
                         formatted.push_str("```");
                         res_parts.push(formatted);
@@ -182,25 +198,31 @@ pub fn format_tool_summary(name: &str, args: &serde_json::Value, response: &serd
             }
         }
     }
-    
+
     if !res_parts.is_empty() {
         summary.push_str("→ ");
         summary.push_str(&res_parts.join(", "));
     }
-    
+
     summary
 }
 pub fn save_session(chat: &ChatState) -> Result<()> {
-    let sessions_dir = crate::config::config_path()?.parent().unwrap().join("sessions");
+    let sessions_dir = crate::config::config_path()?
+        .parent()
+        .unwrap()
+        .join("sessions");
     std::fs::create_dir_all(&sessions_dir)?;
-    
+
     let session = ChatSession {
         id: chat.session_id.clone(),
-        timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
         model: chat.config.model.clone(),
         history: chat.history.clone(),
     };
-    
+
     let path = sessions_dir.join(format!("{}.json", chat.session_id));
     let key = crate::crypto::derive_hardware_key()?;
     let plain_data = serde_json::to_vec(&session)?;
@@ -210,7 +232,10 @@ pub fn save_session(chat: &ChatState) -> Result<()> {
 }
 
 pub fn load_session(id: &str) -> Result<ChatSession> {
-    let sessions_dir = crate::config::config_path()?.parent().unwrap().join("sessions");
+    let sessions_dir = crate::config::config_path()?
+        .parent()
+        .unwrap()
+        .join("sessions");
     let path = sessions_dir.join(format!("{}.json", id));
     let key = crate::crypto::derive_hardware_key()?;
     let cipher_data = std::fs::read(path)?;
@@ -220,7 +245,10 @@ pub fn load_session(id: &str) -> Result<ChatSession> {
 }
 
 pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
-    let sessions_dir = crate::config::config_path()?.parent().unwrap().join("sessions");
+    let sessions_dir = crate::config::config_path()?
+        .parent()
+        .unwrap()
+        .join("sessions");
     if !sessions_dir.exists() {
         return Ok(Vec::new());
     }
@@ -232,23 +260,31 @@ pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) == Some("json")
             && let Ok(cipher_data) = std::fs::read(&path)
-                && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
-                    && let Ok(session) = serde_json::from_slice::<serde_json::Value>(&plain_data) {
-                        let id = session.get("id").and_then(|v| v.as_str()).unwrap_or("").to_owned();
-                        if id.is_empty() { continue; }
-                        
-                        let mut snippet = "Empty chat".to_owned();
-                        if let Some(history) = session.get("history").and_then(|v| v.as_array())
-                            && let Some(first_msg) = history.first()
-                                && let Some(parts) = first_msg.get("parts").and_then(|v| v.as_array())
-                                    && let Some(first_part) = parts.first()
-                                        && let Some(text) = first_part.get("text").and_then(|v| v.as_str()) {
-                                            snippet = text.chars().take(40).collect::<String>();
-                                        }
-                        result.push(SessionMeta { id, snippet });
-                    }
+            && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
+            && let Ok(session) = serde_json::from_slice::<serde_json::Value>(&plain_data)
+        {
+            let id = session
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+            if id.is_empty() {
+                continue;
+            }
+
+            let mut snippet = "Empty chat".to_owned();
+            if let Some(history) = session.get("history").and_then(|v| v.as_array())
+                && let Some(first_msg) = history.first()
+                && let Some(parts) = first_msg.get("parts").and_then(|v| v.as_array())
+                && let Some(first_part) = parts.first()
+                && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
+            {
+                snippet = text.chars().take(40).collect::<String>();
+            }
+            result.push(SessionMeta { id, snippet });
+        }
     }
-    
+
     result.sort_by(|a, b| b.id.cmp(&a.id));
     Ok(result)
 }
@@ -271,9 +307,11 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
             "model" => {
                 for part in &msg.parts {
                     if let Some(call) = part.get("functionCall")
-                        && let (Some(name), Some(args)) = (call.get("name").and_then(|v| v.as_str()), call.get("args")) {
-                            last_function_call = Some((name.to_owned(), args.clone()));
-                        }
+                        && let (Some(name), Some(args)) =
+                            (call.get("name").and_then(|v| v.as_str()), call.get("args"))
+                    {
+                        last_function_call = Some((name.to_owned(), args.clone()));
+                    }
                 }
 
                 let mut text = String::new();
@@ -290,7 +328,10 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
                 for part in &msg.parts {
                     if let Some(resp) = part.get("functionResponse") {
                         let name = resp.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                        let response = resp.get("response").cloned().unwrap_or(serde_json::Value::Null);
+                        let response = resp
+                            .get("response")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
 
                         let args = if let Some((ref c_name, ref c_args)) = last_function_call {
                             if c_name == name {
@@ -305,28 +346,42 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
                             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
                             let mut output = String::new();
                             let mut success = true;
-                            
+
                             let mut is_aborted = false;
                             if let Some(status) = response.get("status").and_then(|v| v.as_i64()) {
-                                if status != 0 { success = false; }
+                                if status != 0 {
+                                    success = false;
+                                }
                             } else {
                                 success = false;
                                 is_aborted = true;
                             }
-                            
-                            let stdout = response.get("stdout").and_then(|v| v.as_str()).unwrap_or("");
-                            let stderr = response.get("stderr").and_then(|v| v.as_str()).unwrap_or("");
-                            if !stdout.is_empty() { output.push_str(stdout); }
-                            if !stderr.is_empty() { 
-                                if !output.is_empty() { output.push('\n'); }
+
+                            let stdout = response
+                                .get("stdout")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let stderr = response
+                                .get("stderr")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if !stdout.is_empty() {
+                                output.push_str(stdout);
+                            }
+                            if !stderr.is_empty() {
+                                if !output.is_empty() {
+                                    output.push('\n');
+                                }
                                 output.push_str(stderr);
                             }
-                            
+
                             if is_aborted {
-                                if !output.is_empty() { output.push('\n'); }
+                                if !output.is_empty() {
+                                    output.push('\n');
+                                }
                                 output.push_str("^C\n[Process terminated by user via Ctrl+C]");
                             }
-                            
+
                             let body = format!("$ {}\n{}", cmd, output);
                             messages.push(MessageLine::shell(cmd.to_owned(), body, success));
                         } else {
@@ -349,13 +404,19 @@ mod tests {
 
     #[test]
     fn test_save_load_list_sessions() {
-        let temp_dir = std::env::temp_dir().join(format!("darwincode_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "darwincode_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        
+
         unsafe {
             std::env::set_var("HOME", &temp_dir);
         }
-        
+
         let config = crate::config::StoredConfig {
             api_key: "test_key".to_owned(),
             ..Default::default()
@@ -363,23 +424,23 @@ mod tests {
         let mut chat = ChatState::new(config);
         chat.session_id = "test_session_123".to_owned();
         chat.history.push(ChatMessage::user("Hello!".to_owned()));
-        
+
         save_session(&chat).unwrap();
-        
+
         let list = list_saved_sessions().unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "test_session_123");
         assert_eq!(list[0].snippet, "Hello!");
-        
+
         let loaded = load_session("test_session_123").unwrap();
         assert_eq!(loaded.id, "test_session_123");
         assert_eq!(loaded.history.len(), 1);
-        
+
         let messages = rebuild_messages_from_history(&loaded.history);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].author, "You");
         assert_eq!(messages[0].text, "Hello!");
-        
+
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
@@ -387,61 +448,53 @@ mod tests {
     fn test_rebuild_tool_and_shell() {
         let mut history = Vec::new();
         history.push(ChatMessage::user("Run command".to_owned()));
-        
+
         history.push(ChatMessage {
             role: "model".to_owned(),
-            parts: vec![
-                serde_json::json!({
-                    "functionCall": {
-                        "name": "run_bash_command",
-                        "args": { "command": "echo hello" }
-                    }
-                })
-            ],
+            parts: vec![serde_json::json!({
+                "functionCall": {
+                    "name": "run_bash_command",
+                    "args": { "command": "echo hello" }
+                }
+            })],
         });
-        
+
         history.push(ChatMessage {
             role: "function".to_owned(),
-            parts: vec![
-                serde_json::json!({
-                    "functionResponse": {
-                        "name": "run_bash_command",
-                        "response": { "status": 0, "stdout": "hello\n", "stderr": "" }
-                    }
-                })
-            ],
+            parts: vec![serde_json::json!({
+                "functionResponse": {
+                    "name": "run_bash_command",
+                    "response": { "status": 0, "stdout": "hello\n", "stderr": "" }
+                }
+            })],
         });
 
         // Add write_file message interaction
         history.push(ChatMessage {
             role: "model".to_owned(),
-            parts: vec![
-                serde_json::json!({
-                    "functionCall": {
-                        "name": "write_file",
-                        "args": { "path": "foo.txt", "content": "hello" }
-                    }
-                })
-            ],
+            parts: vec![serde_json::json!({
+                "functionCall": {
+                    "name": "write_file",
+                    "args": { "path": "foo.txt", "content": "hello" }
+                }
+            })],
         });
 
         history.push(ChatMessage {
             role: "function".to_owned(),
-            parts: vec![
-                serde_json::json!({
-                    "functionResponse": {
-                        "name": "write_file",
-                        "response": { "success": true }
-                    }
-                })
-            ],
+            parts: vec![serde_json::json!({
+                "functionResponse": {
+                    "name": "write_file",
+                    "response": { "success": true }
+                }
+            })],
         });
-        
+
         let messages = rebuild_messages_from_history(&history);
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].author, "You");
         assert_eq!(messages[0].text, "Run command");
-        
+
         assert_eq!(messages[1].author, "Shell");
         assert_eq!(messages[1].shell_cmd, "echo hello");
         assert_eq!(messages[1].text, "$ echo hello\nhello\n");
