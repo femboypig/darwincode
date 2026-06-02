@@ -16,6 +16,7 @@ mod icons {
     pub const MODELS_MODE: &str = " MODELS ";
     pub const SECURITY_MODE: &str = " SECURITY ";
     pub const SESSIONS_MODE: &str = " SESSIONS ";
+    pub const ASK_USER_MODE: &str = " ASK USER ";
     pub const CPU: &str = "";
     pub const IDLE: &str = "OK";
     pub const CHECK_ENABLED: &str = "Enabled";
@@ -37,6 +38,7 @@ mod icons {
     pub const MODELS_MODE: &str = "  MODELS ";
     pub const SECURITY_MODE: &str = "  SECURITY ";
     pub const SESSIONS_MODE: &str = "  SESSIONS ";
+    pub const ASK_USER_MODE: &str = "  ASK USER ";
     pub const CPU: &str = " ";
     pub const IDLE: &str = "";
     pub const CHECK_ENABLED: &str = "✔ Enabled";
@@ -65,6 +67,7 @@ pub(crate) fn render(frame: &mut Frame, app: &App) {
         Screen::Models => render_models(frame, app),
         Screen::Permissions => render_permissions(frame, app),
         Screen::Sessions => render_sessions(frame, app),
+        Screen::AskUser => render_ask_user(frame, app),
     }
 }
 
@@ -318,7 +321,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     };
     
     let title = if shell_focused {
-        " 󰍡 Conversations (ACTIVE FOCUS - Tab to return) "
+        " 󰍡 Conversations (Tab to return) "
     } else {
         " 󰍡 Conversations "
     };
@@ -349,9 +352,10 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
             }
     };
 
+    let last_shell_idx = app.chat.messages.iter().rposition(|m| m.is_shell);
     let mut prev_is_tool = false;
 
-    for message in &app.chat.messages {
+    for (msg_idx, message) in app.chat.messages.iter().enumerate() {
         let mut content = if message.pending {
             app.busy_label().unwrap_or_else(|| "Working...".to_owned())
         } else {
@@ -397,28 +401,41 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             let mut msg_lines = Vec::new();
             if is_shell {
-                let border_color = if shell_focused {
+                let is_last_shell = Some(msg_idx) == last_shell_idx;
+                let border_color = if shell_focused && is_last_shell {
                     Color::Rgb(59, 130, 246)
                 } else {
                     Color::DarkGray
                 };
                 let border_style = Style::default().fg(border_color);
                 
-                let title_style = if shell_focused {
+                let title_style = if shell_focused && is_last_shell {
                     Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().add_modifier(Modifier::BOLD)
                 };
 
+                let cmd_single_line = message.shell_cmd.replace('\n', " ").replace('\r', " ");
+                let title_w = (width as usize).saturating_sub(1);
+                let max_title_cmd_len = title_w.saturating_sub(12); // "✗ Shell " is 8 chars, some margin
+                let cmd_summary = if cmd_single_line.chars().count() > max_title_cmd_len {
+                    let truncated: String = cmd_single_line.chars().take(max_title_cmd_len.saturating_sub(3)).collect();
+                    format!("{}...", truncated)
+                } else {
+                    cmd_single_line
+                };
                 let icon = if message.shell_success { icons::SHELL_OK } else { icons::SHELL_ERR };
-                let title = format!("{icon} Shell {}", message.shell_cmd);
+                let title = format!("{icon} Shell {cmd_summary}");
                 
                 msg_lines.push(Line::from(Span::styled(format!("╭{}╮", "─".repeat(width as usize)), border_style)));
                 
                 let title_len = title.chars().count();
-                let title_w = (width as usize).saturating_sub(1);
                 let title_pad = title_w.saturating_sub(title_len);
-                let padded_title = format!("{}{}", title, " ".repeat(title_pad));
+                let padded_title = if title_len > title_w {
+                    title.chars().take(title_w).collect()
+                } else {
+                    format!("{}{}", title, " ".repeat(title_pad))
+                };
 
                 msg_lines.push(Line::from(vec![
                     Span::styled("│ ", border_style),
@@ -426,11 +443,16 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     Span::styled("│", border_style),
                 ]));
                 
-                for line in content.lines() {
+                let body_w = (width as usize).saturating_sub(2);
+                let wrapped_body_lines = wrap_text_to_lines(&content, body_w);
+                for line in wrapped_body_lines {
                     let line_len = line.chars().count();
-                    let body_w = (width as usize).saturating_sub(2);
                     let body_pad = body_w.saturating_sub(line_len);
-                    let padded_line = format!("{}{}", line, " ".repeat(body_pad));
+                    let padded_line = if line_len > body_w {
+                        line.chars().take(body_w).collect()
+                    } else {
+                        format!("{}{}", line, " ".repeat(body_pad))
+                    };
 
                     msg_lines.push(Line::from(vec![
                         Span::styled("│  ", border_style),
@@ -1056,6 +1078,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         Screen::Models => (icons::MODELS_MODE, Color::Rgb(168, 85, 247), Color::Black), // Purple
         Screen::Permissions => (icons::SECURITY_MODE, Color::Rgb(245, 158, 11), Color::Black), // Amber/Yellow
         Screen::Sessions => (icons::SESSIONS_MODE, Color::Rgb(16, 185, 129), Color::Black), // Emerald green
+        Screen::AskUser => (icons::ASK_USER_MODE, Color::Rgb(245, 158, 11), Color::Black), // Amber/Yellow
     };
 
     let mode_len = mode_text.chars().count() as u16;
@@ -1255,4 +1278,102 @@ fn render_sessions(frame: &mut Frame, app: &App) {
 fn welcome_lines(_app: &App, area: Rect) -> Vec<Line<'static>> {
     let max_logo_height = area.height.saturating_sub(2).max(1);
     logo_lines_for_area(area.width, max_logo_height)
+}
+
+fn render_ask_user(frame: &mut Frame, app: &App) {
+    render_chat(frame, app);
+
+    let area = frame.area();
+    
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(14),
+            Constraint::Min(0),
+        ])
+        .split(area);
+        
+    let popup_area = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(60),
+            Constraint::Min(0),
+        ])
+        .split(popup_layout[1])[1];
+
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
+
+    let block = Block::default()
+        .title("  Clarification Required ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD))
+        .padding(Padding::uniform(1));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let question_paragraph = Paragraph::new(app.ask_user.question.as_str())
+        .wrap(Wrap { trim: true })
+        .alignment(ratatui::layout::Alignment::Center)
+        .style(Style::default().add_modifier(Modifier::BOLD));
+    frame.render_widget(question_paragraph, chunks[0]);
+
+    if app.ask_user.is_custom {
+        let input_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::Rgb(59, 130, 246)))
+            .title(" Write custom response ");
+        let input_inner = input_block.inner(chunks[1]);
+        frame.render_widget(input_block, chunks[1]);
+        
+        let input_text = format!("{}█", app.ask_user.custom_input);
+        frame.render_widget(Paragraph::new(input_text), input_inner);
+    } else {
+        let mut list_items = Vec::new();
+        for (idx, opt) in app.ask_user.options.iter().enumerate() {
+            let is_selected = idx == app.ask_user.selected_idx;
+            let style = if is_selected {
+                Style::default().fg(Color::Black).bg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            let prefix = if is_selected { "● " } else { "○ " };
+            list_items.push(ratatui::widgets::ListItem::new(format!("{}{}", prefix, opt)).style(style));
+        }
+        
+        let custom_selected = app.ask_user.selected_idx == app.ask_user.options.len();
+        let custom_style = if custom_selected {
+            Style::default().fg(Color::Black).bg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let custom_prefix = if custom_selected { "● " } else { "○ " };
+        list_items.push(ratatui::widgets::ListItem::new(format!("{}{}", custom_prefix, "Write custom response...")).style(custom_style));
+
+        let list = ratatui::widgets::List::new(list_items);
+        frame.render_widget(list, chunks[1]);
+    }
+
+    let footer_text = if app.ask_user.is_custom {
+        " Enter: Submit answer • Esc: Go back to list "
+    } else {
+        " ↑/↓: Navigate • Enter: Select option • Ctrl+C: Cancel "
+    };
+    let footer = Paragraph::new(footer_text)
+        .alignment(ratatui::layout::Alignment::Center)
+        .style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(footer, chunks[2]);
 }
