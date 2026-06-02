@@ -2,6 +2,12 @@
 name = "darwincode"
 version = "1.9.50"
 edition = "2024"
+description = "The open source terminal AI coding agent"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/femboypig/darwincode"
+keywords = ["tui", "cli", "ai", "gemini", "agent", "coding"]
+categories = ["command-line-interface", "development-tools"]
 
 [dependencies]
 aes-gcm = "0.10.3"
