@@ -504,6 +504,11 @@ impl GeminiClient {
                     let chunk: serde_json::Value = serde_json::from_str(json_str)
                         .context("failed to parse stream chunk JSON")?;
                     
+                    if let Some(err) = chunk.get("error") {
+                        let msg = err.get("message").and_then(|v| v.as_str()).unwrap_or("unknown error");
+                        anyhow::bail!("API Error: {}", msg);
+                    }
+                    
                     if let Some(choices) = chunk.get("choices").and_then(|v| v.as_array())
                         && let Some(choice) = choices.first()
                             && let Some(delta) = choice.get("delta") {
@@ -598,6 +603,9 @@ impl GeminiClient {
                 if let Some(json_str) = line.strip_prefix("data: ") {
                     let chunk: GenerateContentResponse = serde_json::from_str(json_str)
                         .context("failed to parse stream chunk JSON")?;
+                    if let Some(err) = &chunk.error {
+                        anyhow::bail!("API Error ({}): {}", err.code.unwrap_or(0), err.message);
+                    }
                     if let Some(gemini_response) = chunk.into_response() {
                         on_chunk(gemini_response)?;
                     }
