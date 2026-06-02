@@ -1,7 +1,7 @@
 pub(crate) mod events;
+pub(crate) mod keybindings;
 pub(crate) mod render;
 pub(crate) mod syntax;
-pub(crate) mod keybindings;
 
 use std::io::{self, Stdout};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -9,23 +9,26 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use crossterm::execute;
 use crossterm::event::{self, Event};
+use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 
+use crate::api::{GeminiClient, GeminiResponse};
 use crate::app::App;
 use crate::config::StoredConfig;
-use crate::api::{GeminiClient, GeminiResponse};
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 pub static RUNNING_PROCESS_PID: std::sync::Mutex<Option<u32>> = std::sync::Mutex::new(None);
-pub static RUNNING_PROCESS_STDIN: std::sync::Mutex<Option<std::process::ChildStdin>> = std::sync::Mutex::new(None);
-pub static ASK_USER_CHANNEL: std::sync::Mutex<Option<(std::sync::mpsc::Sender<String>, String, Vec<String>)>> = std::sync::Mutex::new(None);
+pub static RUNNING_PROCESS_STDIN: std::sync::Mutex<Option<std::process::ChildStdin>> =
+    std::sync::Mutex::new(None);
+type AskUserChannel = (std::sync::mpsc::Sender<String>, String, Vec<String>);
+
+pub static ASK_USER_CHANNEL: std::sync::Mutex<Option<AskUserChannel>> = std::sync::Mutex::new(None);
 
 pub(crate) enum WorkerEvent {
     StreamChunk(usize, GeminiResponse),
@@ -68,18 +71,20 @@ fn run_loop(
     receiver: &Receiver<WorkerEvent>,
 ) -> Result<()> {
     while !app.should_quit {
-        if let Ok(guard) = crate::tui::ASK_USER_CHANNEL.lock() {
-            if let Some((_, ref question, ref options)) = *guard {
-                if app.screen != crate::app::Screen::AskUser {
-                    app.screen = crate::app::Screen::AskUser;
-                    app.ask_user.question = question.clone();
-                    app.ask_user.options = options.clone();
-                    app.ask_user.selected_idx = 0;
-                    app.ask_user.custom_input.clear();
-                    app.ask_user.is_custom = options.is_empty();
-                    app.status = "Answer the question. Enter to submit.".to_owned();
-                }
-            }
+        let ask_user_req = crate::tui::ASK_USER_CHANNEL
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|(_, q, opts)| (q.clone(), opts.clone())))
+            .filter(|_| app.screen != crate::app::Screen::AskUser);
+
+        if let Some((question, options)) = ask_user_req {
+            app.screen = crate::app::Screen::AskUser;
+            app.ask_user.question = question;
+            app.ask_user.options = options;
+            app.ask_user.selected_idx = 0;
+            app.ask_user.custom_input.clear();
+            app.ask_user.is_custom = app.ask_user.options.is_empty();
+            app.status = "Answer the question. Enter to submit.".to_owned();
         }
 
         app.advance_tick();
@@ -87,20 +92,32 @@ fn run_loop(
             handle_worker_event(app, event, sender);
         }
 
-        if app.screen == crate::app::Screen::Chat && !app.is_busy() && !app.chat.message_queue.is_empty()
-            && let Some(action) = app.pop_and_start_next_queue_item() {
-                match action {
-                    crate::app::SubmitAction::Generate(request) => {
-                        spawn_generation_worker(request.config, request.history, request.cancel_token, request.generation_id, sender.clone());
-                    }
-                    crate::app::SubmitAction::LoadModels(config) => {
-                        spawn_models_worker(config, sender.clone());
-                    }
-                    crate::app::SubmitAction::ExecuteFunction { name, args, config } => {
-                        handle_function_action(crate::app::FunctionAction::Execute { name, args, config }, sender);
-                    }
+        if app.screen == crate::app::Screen::Chat
+            && !app.is_busy()
+            && !app.chat.message_queue.is_empty()
+            && let Some(action) = app.pop_and_start_next_queue_item()
+        {
+            match action {
+                crate::app::SubmitAction::Generate(request) => {
+                    spawn_generation_worker(
+                        request.config,
+                        request.history,
+                        request.cancel_token,
+                        request.generation_id,
+                        sender.clone(),
+                    );
+                }
+                crate::app::SubmitAction::LoadModels(config) => {
+                    spawn_models_worker(config, sender.clone());
+                }
+                crate::app::SubmitAction::ExecuteFunction { name, args, config } => {
+                    handle_function_action(
+                        crate::app::FunctionAction::Execute { name, args, config },
+                        sender,
+                    );
                 }
             }
+        }
 
         let _ = terminal.draw(|frame| render::render(frame, app));
 
@@ -131,13 +148,12 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
                 app.handle_stream_chunk(chunk);
             }
         }
-        WorkerEvent::StreamDone(id) => {
-            if id == app.generation_id {
-                if let Some(action) = app.complete_stream() {
-                    handle_function_action(action, sender);
-                }
+        WorkerEvent::StreamDone(id) if id == app.generation_id => {
+            if let Some(action) = app.complete_stream() {
+                handle_function_action(action, sender);
             }
         }
+        WorkerEvent::StreamDone(_) => {}
         WorkerEvent::StreamError(id, err) => {
             if id == app.generation_id {
                 app.handle_stream_error(err);
@@ -145,8 +161,16 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
         }
         WorkerEvent::Models(result) => app.complete_load_models(result),
         WorkerEvent::ToolResult(name, response) => {
-            if let Some(crate::app::FunctionAction::ResumeGeneration(request)) = app.complete_function_execution(name, response) {
-                spawn_generation_worker(request.config, request.history, request.cancel_token, request.generation_id, sender.clone());
+            if let Some(crate::app::FunctionAction::ResumeGeneration(request)) =
+                app.complete_function_execution(name, response)
+            {
+                spawn_generation_worker(
+                    request.config,
+                    request.history,
+                    request.cancel_token,
+                    request.generation_id,
+                    sender.clone(),
+                );
             }
         }
         WorkerEvent::ResetStream(id) => {
@@ -176,7 +200,10 @@ fn load_gitignore_rules() -> Vec<String> {
         for line in content.lines() {
             let trimmed = line.trim();
             if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                let rule = trimmed.trim_start_matches('/').trim_end_matches('/').to_owned();
+                let rule = trimmed
+                    .trim_start_matches('/')
+                    .trim_end_matches('/')
+                    .to_owned();
                 if !rules.contains(&rule) {
                     rules.push(rule);
                 }
@@ -218,22 +245,26 @@ fn recursive_search(
             if path.is_dir() {
                 let _ = recursive_search(&path, pattern, rules, matches);
             } else if path.is_file()
-                && let Ok(content) = std::fs::read_to_string(&path) {
-                    for (line_num, line) in content.lines().enumerate() {
-                        if line.contains(pattern) {
-                            matches.push(format!("{}:{}:{}", path.display(), line_num + 1, line));
-                            if matches.len() >= 1000 {
-                                return Ok(());
-                            }
+                && let Ok(content) = std::fs::read_to_string(&path)
+            {
+                for (line_num, line) in content.lines().enumerate() {
+                    if line.contains(pattern) {
+                        matches.push(format!("{}:{}:{}", path.display(), line_num + 1, line));
+                        if matches.len() >= 1000 {
+                            return Ok(());
                         }
                     }
                 }
+            }
         }
     }
     Ok(())
 }
 
-pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender: &Sender<WorkerEvent>) {
+pub(crate) fn handle_function_action(
+    action: crate::app::FunctionAction,
+    sender: &Sender<WorkerEvent>,
+) {
     match action {
         crate::app::FunctionAction::Execute { name, args, config } => {
             let sender = sender.clone();
@@ -241,8 +272,14 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                 let result = match name.as_str() {
                     "read_file" => {
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                        let rules = if config.respect_gitignore { load_gitignore_rules() } else { Vec::new() };
-                        if config.respect_gitignore && should_ignore(std::path::Path::new(path), &rules) {
+                        let rules = if config.respect_gitignore {
+                            load_gitignore_rules()
+                        } else {
+                            Vec::new()
+                        };
+                        if config.respect_gitignore
+                            && should_ignore(std::path::Path::new(path), &rules)
+                        {
                             serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore and respect_gitignore is enabled", path) })
                         } else {
                             match std::fs::read_to_string(path) {
@@ -254,19 +291,31 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                     "read_files" => {
                         let paths = args.get("paths").and_then(|v| v.as_array());
                         if let Some(paths) = paths {
-                            let rules = if config.respect_gitignore { load_gitignore_rules() } else { Vec::new() };
+                            let rules = if config.respect_gitignore {
+                                load_gitignore_rules()
+                            } else {
+                                Vec::new()
+                            };
                             let mut results = serde_json::Map::new();
                             for path_val in paths {
                                 if let Some(path) = path_val.as_str() {
-                                    if config.respect_gitignore && should_ignore(std::path::Path::new(path), &rules) {
+                                    if config.respect_gitignore
+                                        && should_ignore(std::path::Path::new(path), &rules)
+                                    {
                                         results.insert(path.to_owned(), serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) }));
                                     } else {
                                         match std::fs::read_to_string(path) {
                                             Ok(content) => {
-                                                results.insert(path.to_owned(), serde_json::json!({ "content": content }));
+                                                results.insert(
+                                                    path.to_owned(),
+                                                    serde_json::json!({ "content": content }),
+                                                );
                                             }
                                             Err(e) => {
-                                                results.insert(path.to_owned(), serde_json::json!({ "error": e.to_string() }));
+                                                results.insert(
+                                                    path.to_owned(),
+                                                    serde_json::json!({ "error": e.to_string() }),
+                                                );
                                             }
                                         }
                                     }
@@ -280,31 +329,52 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                     "edit_files" => {
                         let edits = args.get("edits").and_then(|v| v.as_array());
                         if let Some(edits) = edits {
-                            let rules = if config.respect_gitignore { load_gitignore_rules() } else { Vec::new() };
+                            let rules = if config.respect_gitignore {
+                                load_gitignore_rules()
+                            } else {
+                                Vec::new()
+                            };
                             let mut parsed_edits = Vec::new();
                             let mut validation_errors = Vec::new();
-                            
+
                             for (idx, edit_val) in edits.iter().enumerate() {
-                                let path = edit_val.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                                let old_string = edit_val.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-                                let new_string = edit_val.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                                let path =
+                                    edit_val.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                let old_string = edit_val
+                                    .get("old_string")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let new_string = edit_val
+                                    .get("new_string")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
                                 if path.is_empty() {
-                                    validation_errors.push(format!("Edit at index {} is missing 'path'", idx));
+                                    validation_errors
+                                        .push(format!("Edit at index {} is missing 'path'", idx));
                                     continue;
                                 }
-                                if config.respect_gitignore && should_ignore(std::path::Path::new(path), &rules) {
-                                    validation_errors.push(format!("Access denied: `{}` is ignored by .gitignore", path));
+                                if config.respect_gitignore
+                                    && should_ignore(std::path::Path::new(path), &rules)
+                                {
+                                    validation_errors.push(format!(
+                                        "Access denied: `{}` is ignored by .gitignore",
+                                        path
+                                    ));
                                     continue;
                                 }
-                                parsed_edits.push((path.to_owned(), old_string.to_owned(), new_string.to_owned()));
+                                parsed_edits.push((
+                                    path.to_owned(),
+                                    old_string.to_owned(),
+                                    new_string.to_owned(),
+                                ));
                             }
-                            
+
                             if !validation_errors.is_empty() {
                                 serde_json::json!({ "error": validation_errors.join("; ") })
                             } else {
                                 let mut original_contents = std::collections::HashMap::new();
                                 let mut apply_errors = Vec::new();
-                                
+
                                 for (path, _, _) in &parsed_edits {
                                     if !original_contents.contains_key(path) {
                                         match std::fs::read_to_string(path) {
@@ -312,25 +382,29 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                                 original_contents.insert(path.clone(), content);
                                             }
                                             Err(e) => {
-                                                apply_errors.push(format!("Failed to read `{}`: {}", path, e));
+                                                apply_errors.push(format!(
+                                                    "Failed to read `{}`: {}",
+                                                    path, e
+                                                ));
                                             }
                                         }
                                     }
                                 }
-                                
+
                                 if !apply_errors.is_empty() {
                                     serde_json::json!({ "error": apply_errors.join("; ") })
                                 } else {
                                     let mut working_contents = original_contents.clone();
                                     let mut diffs = Vec::new();
-                                    
+
                                     for (path, old_string, new_string) in &parsed_edits {
-                                        let current_content = working_contents.get_mut(path).unwrap();
+                                        let current_content =
+                                            working_contents.get_mut(path).unwrap();
                                         if current_content.contains(old_string) {
                                             let mut diff = format!("--- {}\n+++ {}\n", path, path);
                                             let old_lines: Vec<&str> = old_string.lines().collect();
                                             let new_lines: Vec<&str> = new_string.lines().collect();
-                                            
+
                                             for line in &old_lines {
                                                 diff.push_str("- ");
                                                 diff.push_str(line);
@@ -342,32 +416,39 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                                 diff.push('\n');
                                             }
                                             diffs.push(diff);
-                                            
-                                            *current_content = current_content.replacen(old_string, new_string, 1);
+
+                                            *current_content =
+                                                current_content.replacen(old_string, new_string, 1);
                                         } else {
-                                            apply_errors.push(format!("old_string not found in `{}`", path));
+                                            apply_errors.push(format!(
+                                                "old_string not found in `{}`",
+                                                path
+                                            ));
                                             break;
                                         }
                                     }
-                                    
+
                                     if !apply_errors.is_empty() {
                                         serde_json::json!({ "error": apply_errors.join("; ") })
                                     } else {
                                         let mut written_files = Vec::new();
                                         let mut write_error = None;
-                                        
+
                                         for (path, new_content) in &working_contents {
                                             match std::fs::write(path, new_content) {
                                                 Ok(_) => {
                                                     written_files.push(path.clone());
                                                 }
                                                 Err(e) => {
-                                                    write_error = Some(format!("Failed to write `{}`: {}", path, e));
+                                                    write_error = Some(format!(
+                                                        "Failed to write `{}`: {}",
+                                                        path, e
+                                                    ));
                                                     break;
                                                 }
                                             }
                                         }
-                                        
+
                                         if let Some(err) = write_error {
                                             for path in written_files {
                                                 let orig = original_contents.get(&path).unwrap();
@@ -379,7 +460,7 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                             combined_diff.push_str("```diff\n");
                                             combined_diff.push_str(&diffs.join("\n"));
                                             combined_diff.push_str("```");
-                                            
+
                                             serde_json::json!({ "success": true, "diff": combined_diff })
                                         }
                                     }
@@ -391,13 +472,19 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                     }
                     "list_directory" => {
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-                        let rules = if config.respect_gitignore { load_gitignore_rules() } else { Vec::new() };
+                        let rules = if config.respect_gitignore {
+                            load_gitignore_rules()
+                        } else {
+                            Vec::new()
+                        };
                         match std::fs::read_dir(path) {
                             Ok(entries) => {
                                 let mut files = Vec::new();
                                 for entry in entries.filter_map(Result::ok) {
                                     let entry_path = entry.path();
-                                    if !config.respect_gitignore || !should_ignore(&entry_path, &rules) {
+                                    if !config.respect_gitignore
+                                        || !should_ignore(&entry_path, &rules)
+                                    {
                                         files.push(entry_path.display().to_string());
                                     }
                                 }
@@ -409,25 +496,35 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                     "search_files" => {
                         let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-                        
+
                         let mut matches = Vec::new();
                         let search_path = std::path::Path::new(path);
-                        let rules = if config.respect_gitignore { load_gitignore_rules() } else { Vec::new() };
-                        
+                        let rules = if config.respect_gitignore {
+                            load_gitignore_rules()
+                        } else {
+                            Vec::new()
+                        };
+
                         let run_res = if search_path.is_file() {
                             if (!config.respect_gitignore || !should_ignore(search_path, &rules))
-                                && let Ok(content) = std::fs::read_to_string(search_path) {
-                                    for (line_num, line) in content.lines().enumerate() {
-                                        if line.contains(pattern) {
-                                            matches.push(format!("{}:{}:{}", search_path.display(), line_num + 1, line));
-                                        }
+                                && let Ok(content) = std::fs::read_to_string(search_path)
+                            {
+                                for (line_num, line) in content.lines().enumerate() {
+                                    if line.contains(pattern) {
+                                        matches.push(format!(
+                                            "{}:{}:{}",
+                                            search_path.display(),
+                                            line_num + 1,
+                                            line
+                                        ));
                                     }
                                 }
+                            }
                             Ok(())
                         } else {
                             recursive_search(search_path, pattern, &rules, &mut matches)
                         };
-                        
+
                         match run_res {
                             Ok(_) => {
                                 let stdout = matches.join("\n");
@@ -438,20 +535,32 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                     }
                     "edit_file" => {
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                        let rules = if config.respect_gitignore { load_gitignore_rules() } else { Vec::new() };
-                        if config.respect_gitignore && should_ignore(std::path::Path::new(path), &rules) {
+                        let rules = if config.respect_gitignore {
+                            load_gitignore_rules()
+                        } else {
+                            Vec::new()
+                        };
+                        if config.respect_gitignore
+                            && should_ignore(std::path::Path::new(path), &rules)
+                        {
                             serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
                         } else {
-                            let old_string = args.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-                            let new_string = args.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                            let old_string = args
+                                .get("old_string")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let new_string = args
+                                .get("new_string")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
                             match std::fs::read_to_string(path) {
                                 Ok(content) => {
                                     if content.contains(old_string) {
                                         let mut diff = String::new();
-                                        
+
                                         let old_lines: Vec<&str> = old_string.lines().collect();
                                         let new_lines: Vec<&str> = new_string.lines().collect();
-                                        
+
                                         diff.push_str("```diff\n");
                                         for line in &old_lines {
                                             diff.push_str("- ");
@@ -465,51 +574,69 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                         }
                                         diff.push_str("```");
 
-                                        let new_content = content.replacen(old_string, new_string, 1);
+                                        let new_content =
+                                            content.replacen(old_string, new_string, 1);
                                         match std::fs::write(path, new_content) {
-                                            Ok(_) => serde_json::json!({ "success": true, "diff": diff }),
-                                            Err(e) => serde_json::json!({ "error": format!("Failed to write file: {}", e) }),
+                                            Ok(_) => {
+                                                serde_json::json!({ "success": true, "diff": diff })
+                                            }
+                                            Err(e) => {
+                                                serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                            }
                                         }
                                     } else {
                                         serde_json::json!({ "error": "old_string not found in file." })
                                     }
                                 }
-                                Err(e) => serde_json::json!({ "error": format!("Failed to read file: {}", e) }),
+                                Err(e) => {
+                                    serde_json::json!({ "error": format!("Failed to read file: {}", e) })
+                                }
                             }
                         }
                     }
                     "write_file" => {
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                        let rules = if config.respect_gitignore { load_gitignore_rules() } else { Vec::new() };
-                        if config.respect_gitignore && should_ignore(std::path::Path::new(path), &rules) {
+                        let rules = if config.respect_gitignore {
+                            load_gitignore_rules()
+                        } else {
+                            Vec::new()
+                        };
+                        if config.respect_gitignore
+                            && should_ignore(std::path::Path::new(path), &rules)
+                        {
                             serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
                         } else {
-                            let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                            let content =
+                                args.get("content").and_then(|v| v.as_str()).unwrap_or("");
                             let write_res = (|| -> Result<(), std::io::Error> {
                                 if let Some(parent) = std::path::Path::new(path).parent()
-                                    && !parent.as_os_str().is_empty() {
-                                        std::fs::create_dir_all(parent)?;
-                                    }
+                                    && !parent.as_os_str().is_empty()
+                                {
+                                    std::fs::create_dir_all(parent)?;
+                                }
                                 std::fs::write(path, content)?;
                                 Ok(())
                             })();
                             match write_res {
                                 Ok(_) => serde_json::json!({ "success": true }),
-                                Err(e) => serde_json::json!({ "error": format!("Failed to write file: {}", e) }),
+                                Err(e) => {
+                                    serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                }
                             }
                         }
                     }
                     "run_bash_command" => {
                         let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                        
+
                         let run_result = (|| -> Result<serde_json::Value, std::io::Error> {
                             let mut command = std::process::Command::new("bash");
-                            command.arg("-c")
+                            command
+                                .arg("-c")
                                 .arg(cmd)
                                 .stdin(std::process::Stdio::piped())
                                 .stdout(std::process::Stdio::piped())
                                 .stderr(std::process::Stdio::piped());
-                            
+
                             #[cfg(unix)]
                             {
                                 use std::os::unix::process::CommandExt;
@@ -523,24 +650,26 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                     });
                                 }
                             }
-                            
+
                             let mut child = command.spawn()?;
-                            
+
                             let pid = child.id();
                             if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
                                 *guard = Some(pid);
                             }
-                            
+
                             let stdin = child.stdin.take().unwrap();
                             if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock() {
                                 *guard = Some(stdin);
                             }
-                            
+
                             let stdout = child.stdout.take().unwrap();
                             let stderr = child.stderr.take().unwrap();
 
-                            let stdout_accumulator = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-                            let stderr_accumulator = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+                            let stdout_accumulator =
+                                std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+                            let stderr_accumulator =
+                                std::sync::Arc::new(std::sync::Mutex::new(String::new()));
 
                             let sender_stdout = sender.clone();
                             let stdout_acc_clone = stdout_accumulator.clone();
@@ -549,7 +678,9 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                 let mut buffer = [0; 1024];
                                 let mut reader = stdout;
                                 while let Ok(n) = reader.read(&mut buffer) {
-                                    if n == 0 { break; }
+                                    if n == 0 {
+                                        break;
+                                    }
                                     let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
                                     if let Ok(mut guard) = stdout_acc_clone.lock() {
                                         guard.push_str(&chunk);
@@ -565,7 +696,9 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                 let mut buffer = [0; 1024];
                                 let mut reader = stderr;
                                 while let Ok(n) = reader.read(&mut buffer) {
-                                    if n == 0 { break; }
+                                    if n == 0 {
+                                        break;
+                                    }
                                     let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
                                     if let Ok(mut guard) = stderr_acc_clone.lock() {
                                         guard.push_str(&chunk);
@@ -575,26 +708,33 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                             });
 
                             let status = child.wait()?;
-                            
+
                             if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
                                 *guard = None;
                             }
                             if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock() {
                                 *guard = None;
                             }
-                            
+
                             let _ = stdout_handle.join();
                             let _ = stderr_handle.join();
 
-                            let stdout_content = stdout_accumulator.lock().map(|g| g.clone()).unwrap_or_default();
-                            let stderr_content = stderr_accumulator.lock().map(|g| g.clone()).unwrap_or_default();
+                            let stdout_content = stdout_accumulator
+                                .lock()
+                                .map(|g| g.clone())
+                                .unwrap_or_default();
+                            let stderr_content = stderr_accumulator
+                                .lock()
+                                .map(|g| g.clone())
+                                .unwrap_or_default();
                             let status_code = status.code();
                             let mut err_val = serde_json::Value::Null;
-                            
+
                             if status_code.is_none() {
-                                err_val = serde_json::json!("Process terminated by user via Ctrl+C");
+                                err_val =
+                                    serde_json::json!("Process terminated by user via Ctrl+C");
                             }
-                            
+
                             Ok(serde_json::json!({
                                 "status": status_code,
                                 "stdout": stdout_content,
@@ -602,44 +742,52 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                 "error": err_val,
                             }))
                         })();
-                        
+
                         match run_result {
                             Ok(val) => val,
-                            Err(e) => serde_json::json!({ "error": e.to_string() })
+                            Err(e) => serde_json::json!({ "error": e.to_string() }),
                         }
                     }
                     "web_search" => {
                         let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
                         let res = if query.starts_with("http://") || query.starts_with("https://") {
-                            (|| -> Result<serde_json::Value, ureq::Error> {
+                            (|| -> Result<serde_json::Value, String> {
                                 let body: String = ureq::get(query)
                                     .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                                    .call()?
-                                    .into_string()?;
+                                    .call()
+                                    .map_err(|e| e.to_string())?
+                                    .into_string()
+                                    .map_err(|e| e.to_string())?;
                                 let plain_text = html_to_plain_text(&body);
                                 let truncated: String = plain_text.chars().take(8000).collect();
                                 Ok(serde_json::json!({ "content": truncated }))
                             })()
                         } else {
-                            (|| -> Result<serde_json::Value, ureq::Error> {
+                            (|| -> Result<serde_json::Value, String> {
                                 let encoded_query = url_encode(query);
-                                let search_url = format!("https://html.duckduckgo.com/html/?q={}", encoded_query);
+                                let search_url = format!(
+                                    "https://html.duckduckgo.com/html/?q={}",
+                                    encoded_query
+                                );
                                 let body: String = ureq::get(&search_url)
                                     .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                                    .call()?
-                                    .into_string()?;
+                                    .call()
+                                    .map_err(|e| e.to_string())?
+                                    .into_string()
+                                    .map_err(|e| e.to_string())?;
                                 let results = parse_ddg_html(&body);
                                 Ok(serde_json::json!({ "results": results }))
                             })()
                         };
                         match res {
                             Ok(val) => val,
-                            Err(e) => serde_json::json!({ "error": e.to_string() }),
+                            Err(e) => serde_json::json!({ "error": e }),
                         }
                     }
                     "ask_user" => {
                         let question = args.get("question").and_then(|v| v.as_str()).unwrap_or("");
-                        let options = args.get("options")
+                        let options = args
+                            .get("options")
                             .and_then(|v| v.as_array())
                             .map(|arr| {
                                 arr.iter()
@@ -647,18 +795,18 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                                     .collect::<Vec<String>>()
                             })
                             .unwrap_or_default();
-                            
+
                         let (tx, rx) = std::sync::mpsc::channel();
                         if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
                             *guard = Some((tx, question.to_owned(), options));
                         }
-                        
+
                         let answer = rx.recv().unwrap_or_default();
-                        
+
                         if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
                             *guard = None;
                         }
-                        
+
                         serde_json::json!({ "answer": answer })
                     }
                     _ => serde_json::json!({ "error": "Unknown function" }),
@@ -667,7 +815,13 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
             });
         }
         crate::app::FunctionAction::ResumeGeneration(request) => {
-            spawn_generation_worker(request.config, request.history, request.cancel_token, request.generation_id, sender.clone());
+            spawn_generation_worker(
+                request.config,
+                request.history,
+                request.cancel_token,
+                request.generation_id,
+                sender.clone(),
+            );
         }
     }
 }
@@ -682,20 +836,27 @@ pub(crate) fn spawn_generation_worker(
     thread::spawn(move || {
         let sender_clone = sender.clone();
         let cancel_clone = cancel_token.clone();
-        
+
         let mut retries = 0;
         loop {
             if cancel_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                let _ = sender.send(WorkerEvent::StreamError(generation_id, "Stream cancelled".to_owned()));
+                let _ = sender.send(WorkerEvent::StreamError(
+                    generation_id,
+                    "Stream cancelled".to_owned(),
+                ));
                 return;
             }
             let sender_c = sender_clone.clone();
             let cancel_c = cancel_clone.clone();
             let history_c = history.clone();
-            let result = GeminiClient::new(config.clone()).generate_stream(&history_c, cancel_c, move |chunk| {
-                let _ = sender_c.send(WorkerEvent::StreamChunk(generation_id, chunk));
-                Ok(())
-            });
+            let result = GeminiClient::new(config.clone()).generate_stream(
+                &history_c,
+                cancel_c,
+                move |chunk| {
+                    let _ = sender_c.send(WorkerEvent::StreamChunk(generation_id, chunk));
+                    Ok(())
+                },
+            );
             match result {
                 Ok(_) => {
                     let _ = sender.send(WorkerEvent::StreamDone(generation_id));
@@ -703,7 +864,10 @@ pub(crate) fn spawn_generation_worker(
                 }
                 Err(error) => {
                     if cancel_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                        let _ = sender.send(WorkerEvent::StreamError(generation_id, "Stream cancelled".to_owned()));
+                        let _ = sender.send(WorkerEvent::StreamError(
+                            generation_id,
+                            "Stream cancelled".to_owned(),
+                        ));
                         return;
                     }
                     retries += 1;
@@ -711,7 +875,8 @@ pub(crate) fn spawn_generation_worker(
                         let _ = sender.send(WorkerEvent::ResetStream(generation_id));
                         thread::sleep(Duration::from_millis(500));
                     } else {
-                        let _ = sender.send(WorkerEvent::StreamError(generation_id, error.to_string()));
+                        let _ =
+                            sender.send(WorkerEvent::StreamError(generation_id, error.to_string()));
                         return;
                     }
                 }
@@ -752,16 +917,15 @@ fn percent_decode(input: &str) -> String {
     let mut bytes = input.as_bytes().iter();
     while let Some(&b) = bytes.next() {
         if b == b'%' {
-            if let Some(&h1) = bytes.next() {
-                if let Some(&h2) = bytes.next() {
-                    let hex = vec![h1, h2];
-                    if let Ok(hex_str) = std::str::from_utf8(&hex) {
-                        if let Ok(val) = u8::from_str_radix(hex_str, 16) {
-                            decoded.push(val as char);
-                            continue;
-                        }
-                    }
-                }
+            let hex_opt = bytes.next().zip(bytes.next()).and_then(|(&h1, &h2)| {
+                let hex_bytes = [h1, h2];
+                std::str::from_utf8(&hex_bytes)
+                    .ok()
+                    .and_then(|s| u8::from_str_radix(s, 16).ok())
+            });
+            if let Some(val) = hex_opt {
+                decoded.push(val as char);
+                continue;
             }
         }
         decoded.push(b as char);
@@ -782,13 +946,13 @@ fn strip_html_tags(input: &str) -> String {
         }
     }
     out.replace("&amp;", "&")
-       .replace("&lt;", "<")
-       .replace("&gt;", ">")
-       .replace("&quot;", "\"")
-       .replace("&#x27;", "'")
-       .replace("&#39;", "'")
-       .trim()
-       .to_owned()
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#x27;", "'")
+        .replace("&#39;", "'")
+        .trim()
+        .to_owned()
 }
 
 fn html_to_plain_text(html: &str) -> String {
@@ -815,8 +979,10 @@ fn html_to_plain_text(html: &str) -> String {
 fn parse_ddg_html(html: &str) -> Vec<serde_json::Value> {
     let mut results = Vec::new();
     for block in html.split("<div class=\"result").skip(1) {
-        if results.len() >= 6 { break; }
-        
+        if results.len() >= 6 {
+            break;
+        }
+
         let href = if let Some(href_start) = block.find("href=\"") {
             let rest = &block[href_start + 6..];
             if let Some(href_end) = rest.find("\"") {
