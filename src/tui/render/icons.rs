@@ -1,5 +1,5 @@
 #[cfg(target_os = "windows")]
-pub(crate) mod icons {
+pub(crate) mod win {
     pub const TIP: &str = "TIP: ";
     pub const SAVE: &str = "";
     pub const CHAT_MODE: &str = " CHAT ";
@@ -19,9 +19,11 @@ pub(crate) mod icons {
     pub const ACTIVE_MARKER: &str = " > ";
     pub const INACTIVE_MARKER: &str = "   ";
 }
+#[cfg(target_os = "windows")]
+pub(crate) use win as icons;
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) mod icons {
+pub(crate) mod unix {
     pub const TIP: &str = "  TIP: ";
     pub const SAVE: &str = "  ";
     pub const CHAT_MODE: &str = " 󰍡 CHAT ";
@@ -41,3 +43,5 @@ pub(crate) mod icons {
     pub const ACTIVE_MARKER: &str = "  ";
     pub const INACTIVE_MARKER: &str = "   ";
 }
+#[cfg(not(target_os = "windows"))]
+pub(crate) use unix as icons;
