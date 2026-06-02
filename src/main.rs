@@ -1,7 +1,7 @@
+mod api;
 mod app;
 mod config;
 mod crypto;
-mod gemini;
 mod tui;
 
 use anyhow::Result;
