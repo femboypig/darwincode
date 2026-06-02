@@ -370,7 +370,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     }
 }
 
-fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
+pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let shell_focused = app.chat.shell_focused;
     let block_border_style = if shell_focused {
         Style::default().fg(Color::Rgb(59, 130, 246)).add_modifier(Modifier::BOLD)
