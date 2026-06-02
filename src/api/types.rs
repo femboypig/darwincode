@@ -71,8 +71,15 @@ impl Content {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct GeminiError {
+    pub(crate) message: String,
+    pub(crate) code: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct GenerateContentResponse {
     pub(crate) candidates: Option<Vec<Candidate>>,
+    pub(crate) error: Option<GeminiError>,
 }
 
 impl GenerateContentResponse {
