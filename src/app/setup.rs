@@ -15,6 +15,38 @@ pub enum SetupField {
     Save,
 }
 
+impl SetupField {
+    pub fn index(self) -> usize {
+        match self {
+            Self::ApiKey => 0,
+            Self::Model => 1,
+            Self::BaseUrl => 2,
+            Self::EnableCodebase => 3,
+            Self::EnableBash => 4,
+            Self::PermissionLevel => 5,
+            Self::ShowThoughts => 6,
+            Self::Theme => 7,
+            Self::RespectGitignore => 8,
+            Self::Save => 9,
+        }
+    }
+
+    pub fn from_index(idx: usize) -> Self {
+        match idx {
+            0 => Self::ApiKey,
+            1 => Self::Model,
+            2 => Self::BaseUrl,
+            3 => Self::EnableCodebase,
+            4 => Self::EnableBash,
+            5 => Self::PermissionLevel,
+            6 => Self::ShowThoughts,
+            7 => Self::Theme,
+            8 => Self::RespectGitignore,
+            _ => Self::Save,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SetupState {
     pub api_key: String,
@@ -29,6 +61,7 @@ pub struct SetupState {
     pub active_field: SetupField,
     pub models: Vec<String>,
     pub selected_model: usize,
+    pub is_editing: bool,
 }
 
 impl SetupState {
@@ -46,6 +79,7 @@ impl SetupState {
             active_field: SetupField::ApiKey,
             models: Vec::new(),
             selected_model: 0,
+            is_editing: false,
         }
     }
 
@@ -66,35 +100,6 @@ impl SetupState {
         Ok(config)
     }
 
-    pub fn next_field(&mut self) {
-        self.active_field = match self.active_field {
-            SetupField::ApiKey => SetupField::Model,
-            SetupField::Model => SetupField::BaseUrl,
-            SetupField::BaseUrl => SetupField::EnableCodebase,
-            SetupField::EnableCodebase => SetupField::EnableBash,
-            SetupField::EnableBash => SetupField::PermissionLevel,
-            SetupField::PermissionLevel => SetupField::ShowThoughts,
-            SetupField::ShowThoughts => SetupField::Theme,
-            SetupField::Theme => SetupField::RespectGitignore,
-            SetupField::RespectGitignore => SetupField::Save,
-            SetupField::Save => SetupField::ApiKey,
-        };
-    }
-
-    pub fn previous_field(&mut self) {
-        self.active_field = match self.active_field {
-            SetupField::ApiKey => SetupField::Save,
-            SetupField::Model => SetupField::ApiKey,
-            SetupField::BaseUrl => SetupField::Model,
-            SetupField::EnableCodebase => SetupField::BaseUrl,
-            SetupField::EnableBash => SetupField::EnableCodebase,
-            SetupField::PermissionLevel => SetupField::EnableBash,
-            SetupField::ShowThoughts => SetupField::PermissionLevel,
-            SetupField::Theme => SetupField::ShowThoughts,
-            SetupField::RespectGitignore => SetupField::Theme,
-            SetupField::Save => SetupField::RespectGitignore,
-        };
-    }
 
     pub fn push_char(&mut self, value: char) {
         match self.active_field {
@@ -165,6 +170,7 @@ impl Default for SetupState {
             active_field: SetupField::ApiKey,
             models: Vec::new(),
             selected_model: 0,
+            is_editing: false,
         }
     }
 }
