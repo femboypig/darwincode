@@ -19,7 +19,7 @@ use ratatui::Terminal;
 
 use crate::app::App;
 use crate::config::StoredConfig;
-use crate::gemini::{GeminiClient, GeminiResponse};
+use crate::api::{GeminiClient, GeminiResponse};
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
@@ -674,7 +674,7 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
 
 pub(crate) fn spawn_generation_worker(
     config: StoredConfig,
-    history: Vec<crate::gemini::ChatMessage>,
+    history: Vec<crate::api::ChatMessage>,
     cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
     generation_id: usize,
     sender: Sender<WorkerEvent>,
