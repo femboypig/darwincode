@@ -20,14 +20,14 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
 
     while i < n {
         // 1. C-style Block comments: /* ... */ (if it starts and ends on the same line)
-        if chars[i] == '/' && i + 1 < n && chars[i+1] == '*' {
+        if chars[i] == '/' && i + 1 < n && chars[i + 1] == '*' {
             let mut s = String::new();
             s.push('/');
             s.push('*');
             i += 2;
             while i < n {
                 s.push(chars[i]);
-                if chars[i] == '*' && i + 1 < n && chars[i+1] == '/' {
+                if chars[i] == '*' && i + 1 < n && chars[i + 1] == '/' {
                     s.push('/');
                     i += 2;
                     break;
@@ -52,7 +52,21 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                     word.push(chars[j]);
                     j += 1;
                 }
-                if matches!(word.as_str(), "include" | "define" | "undef" | "ifdef" | "ifndef" | "if" | "else" | "elif" | "endif" | "error" | "pragma" | "import") {
+                if matches!(
+                    word.as_str(),
+                    "include"
+                        | "define"
+                        | "undef"
+                        | "ifdef"
+                        | "ifndef"
+                        | "if"
+                        | "else"
+                        | "elif"
+                        | "endif"
+                        | "error"
+                        | "pragma"
+                        | "import"
+                ) {
                     is_directive = true;
                 }
             }
@@ -66,20 +80,31 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                     directive_text.push(chars[i]);
                     i += 1;
                 }
-                spans.push(Span::styled(directive_text, Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)));
+                spans.push(Span::styled(
+                    directive_text,
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ));
                 continue;
             } else {
                 // Ordinary comment
                 let comment_text: String = chars[i..].iter().collect();
-                spans.push(Span::styled(comment_text, Style::default().fg(Color::DarkGray)));
+                spans.push(Span::styled(
+                    comment_text,
+                    Style::default().fg(Color::DarkGray),
+                ));
                 break;
             }
         }
 
         // 3. Line comments: //
-        if chars[i] == '/' && i + 1 < n && chars[i+1] == '/' {
+        if chars[i] == '/' && i + 1 < n && chars[i + 1] == '/' {
             let comment_text: String = chars[i..].iter().collect();
-            spans.push(Span::styled(comment_text, Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                comment_text,
+                Style::default().fg(Color::DarkGray),
+            ));
             break;
         }
 
@@ -102,7 +127,7 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                     break;
                 }
             }
-            
+
             // JSON key heuristic: if next non-whitespace char is ':', style it as Blue instead of Green
             if quote == '"' && peek_next_non_ws(i) == Some(':') {
                 spans.push(Span::styled(s, Style::default().fg(Color::Blue)));
@@ -133,7 +158,12 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                 i += 1;
             }
             if is_keyword(&word) {
-                spans.push(Span::styled(word, Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)));
+                spans.push(Span::styled(
+                    word,
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ));
             } else if is_built_in_type(&word) {
                 spans.push(Span::styled(word, Style::default().fg(Color::Blue)));
             } else {
@@ -145,7 +175,9 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
         // 7. Number check
         if chars[i].is_ascii_digit() {
             let mut num = String::new();
-            while i < n && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i].is_alphabetic()) {
+            while i < n
+                && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i].is_alphabetic())
+            {
                 num.push(chars[i]);
                 i += 1;
             }
@@ -157,7 +189,16 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
         let mut other = String::new();
         while i < n {
             let c = chars[i];
-            if c.is_alphabetic() || c == '_' || c.is_ascii_digit() || c == '"' || c == '\'' || c == '`' || c == '#' || c == '@' || (c == '/' && i + 1 < n && (chars[i+1] == '/' || chars[i+1] == '*')) {
+            if c.is_alphabetic()
+                || c == '_'
+                || c.is_ascii_digit()
+                || c == '"'
+                || c == '\''
+                || c == '`'
+                || c == '#'
+                || c == '@'
+                || (c == '/' && i + 1 < n && (chars[i + 1] == '/' || chars[i + 1] == '*'))
+            {
                 break;
             }
             other.push(c);
@@ -174,26 +215,123 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
 fn is_keyword(word: &str) -> bool {
     matches!(
         word,
-        "fn" | "let" | "mut" | "pub" | "struct" | "impl" | "enum" | "use" | "mod" | "match"
-            | "if" | "else" | "for" | "while" | "loop" | "in" | "return" | "break" | "continue"
-            | "const" | "static" | "class" | "def" | "import" | "as" | "from" | "try" | "except"
-            | "finally" | "with" | "self" | "true" | "false" | "None" | "null" | "var" | "function"
-            | "new" | "typeof" | "instanceof" | "switch" | "case" | "default" | "type" | "interface"
-            | "package" | "func" | "go" | "select" | "chan" | "nil" | "then" | "fi" | "done" | "do"
-            | "elif" | "until" | "local" | "export" | "echo" | "printf" | "exit" | "alias" | "read"
-            | "map" | "range"
+        "fn" | "let"
+            | "mut"
+            | "pub"
+            | "struct"
+            | "impl"
+            | "enum"
+            | "use"
+            | "mod"
+            | "match"
+            | "if"
+            | "else"
+            | "for"
+            | "while"
+            | "loop"
+            | "in"
+            | "return"
+            | "break"
+            | "continue"
+            | "const"
+            | "static"
+            | "class"
+            | "def"
+            | "import"
+            | "as"
+            | "from"
+            | "try"
+            | "except"
+            | "finally"
+            | "with"
+            | "self"
+            | "true"
+            | "false"
+            | "None"
+            | "null"
+            | "var"
+            | "function"
+            | "new"
+            | "typeof"
+            | "instanceof"
+            | "switch"
+            | "case"
+            | "default"
+            | "type"
+            | "interface"
+            | "package"
+            | "func"
+            | "go"
+            | "select"
+            | "chan"
+            | "nil"
+            | "then"
+            | "fi"
+            | "done"
+            | "do"
+            | "elif"
+            | "until"
+            | "local"
+            | "export"
+            | "echo"
+            | "printf"
+            | "exit"
+            | "alias"
+            | "read"
+            | "map"
+            | "range"
     )
 }
 
 fn is_built_in_type(word: &str) -> bool {
     matches!(
         word,
-        "i8" | "i16" | "i32" | "i64" | "i128" | "u8" | "u16" | "u32" | "u64" | "u128"
-            | "isize" | "usize" | "f32" | "f64" | "str" | "String" | "Option" | "Result"
-            | "Some" | "None" | "Ok" | "Err" | "bool" | "char" | "int" | "float" | "double"
-            | "void" | "string" | "vector" | "map" | "list" | "set" | "Vec" | "HashMap"
-            | "BTreeMap" | "HashSet" | "BTreeSet" | "Box" | "Rc" | "Arc"
-            | "nil" | "null" | "undefined" | "error" | "int64" | "float64"
+        "i8" | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "isize"
+            | "usize"
+            | "f32"
+            | "f64"
+            | "str"
+            | "String"
+            | "Option"
+            | "Result"
+            | "Some"
+            | "None"
+            | "Ok"
+            | "Err"
+            | "bool"
+            | "char"
+            | "int"
+            | "float"
+            | "double"
+            | "void"
+            | "string"
+            | "vector"
+            | "map"
+            | "list"
+            | "set"
+            | "Vec"
+            | "HashMap"
+            | "BTreeMap"
+            | "HashSet"
+            | "BTreeSet"
+            | "Box"
+            | "Rc"
+            | "Arc"
+            | "nil"
+            | "null"
+            | "undefined"
+            | "error"
+            | "int64"
+            | "float64"
     )
 }
 
@@ -211,7 +349,10 @@ pub fn parse_markdown_lines(text: &str) -> Vec<Line<'static>> {
             } else if !in_code_block {
                 is_diff = false;
             }
-            lines.push(Line::from(Span::styled(raw_line.to_owned(), Style::default().fg(Color::DarkGray))));
+            lines.push(Line::from(Span::styled(
+                raw_line.to_owned(),
+                Style::default().fg(Color::DarkGray),
+            )));
             continue;
         }
 
@@ -228,7 +369,10 @@ pub fn parse_markdown_lines(text: &str) -> Vec<Line<'static>> {
                 } else if raw_line.starts_with("@@") {
                     style = Style::default().fg(Color::DarkGray);
                 }
-                lines.push(Line::from(Span::styled(format!("{prefix}{raw_line}"), style)));
+                lines.push(Line::from(Span::styled(
+                    format!("{prefix}{raw_line}"),
+                    style,
+                )));
             } else {
                 lines.push(Line::from(highlight_code_line(raw_line)));
             }
@@ -237,21 +381,39 @@ pub fn parse_markdown_lines(text: &str) -> Vec<Line<'static>> {
 
         // Headers
         if trimmed.starts_with("# ") {
-            lines.push(Line::from(Span::styled(raw_line.to_owned(), Style::default().add_modifier(Modifier::BOLD).add_modifier(Modifier::UNDERLINED).fg(Color::Yellow))));
+            lines.push(Line::from(Span::styled(
+                raw_line.to_owned(),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::UNDERLINED)
+                    .fg(Color::Yellow),
+            )));
         } else if trimmed.starts_with("## ") || trimmed.starts_with("### ") {
-            lines.push(Line::from(Span::styled(raw_line.to_owned(), Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))));
-        } else if trimmed.starts_with("* ") || trimmed.starts_with("- ") || (trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) && trimmed.contains(". ")) {
+            lines.push(Line::from(Span::styled(
+                raw_line.to_owned(),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Yellow),
+            )));
+        } else if trimmed.starts_with("* ")
+            || trimmed.starts_with("- ")
+            || (trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
+                && trimmed.contains(". "))
+        {
             // Lists: highlight the marker
             let mut spans = parse_inline_markdown(raw_line);
             if !spans.is_empty() {
-                spans[0].style = spans[0].style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
+                spans[0].style = spans[0]
+                    .style
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD);
             }
             lines.push(Line::from(spans));
         } else {
             lines.push(Line::from(parse_inline_markdown(raw_line)));
         }
     }
-    
+
     lines
 }
 
@@ -309,7 +471,7 @@ pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'
         let text = span.content.as_ref();
         let mut char_idx = 0;
         let chars: Vec<char> = text.chars().collect();
-        
+
         while char_idx < chars.len() {
             let remaining_width = max_width.saturating_sub(current_width);
             if remaining_width == 0 {
@@ -379,7 +541,7 @@ mod tests {
         let spans = highlight_code_line("\"key\": \"value\"");
         assert_eq!(spans[0].content, "\"key\"");
         assert_eq!(spans[0].style.fg, Some(Color::Blue)); // JSON key styled as blue
-        
+
         assert_eq!(spans[2].content, "\"value\"");
         assert_eq!(spans[2].style.fg, Some(Color::Green)); // String value styled as green
 
@@ -392,5 +554,34 @@ mod tests {
         let spans_decorator = highlight_code_line("@app.route('/')");
         assert_eq!(spans_decorator[0].content, "@app.route");
         assert_eq!(spans_decorator[0].style.fg, Some(Color::Magenta)); // Decorator styled as magenta
+    }
+
+    #[test]
+    fn test_wrap_text_to_lines() {
+        let text = "hello\nworld";
+        let wrapped = wrap_text_to_lines(text, 3);
+        assert_eq!(wrapped, vec!["hel", "lo", "wor", "ld"]);
+    }
+
+    #[test]
+    fn test_parse_inline_markdown_bold() {
+        let spans = parse_inline_markdown("This is **bold** text");
+        let bold_span = spans.iter().find(|s| s.content == "bold").unwrap();
+        assert!(bold_span.style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn test_parse_inline_markdown_bold_and_code() {
+        let spans = parse_inline_markdown("This is **bold and `code`** text");
+        let code_span = spans.iter().find(|s| s.content == "code").unwrap();
+        assert!(code_span.style.add_modifier.contains(Modifier::BOLD));
+        assert_eq!(code_span.style.fg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn test_parse_inline_markdown_code() {
+        let spans = parse_inline_markdown("This is `code` text");
+        let code_span = spans.iter().find(|s| s.content == "code").unwrap();
+        assert_eq!(code_span.style.fg, Some(Color::Cyan));
     }
 }
