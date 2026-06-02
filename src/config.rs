@@ -128,7 +128,6 @@ pub fn resolve_theme(theme: Theme) -> Theme {
     }
 }
 
-
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PermissionLevel {
     /// Restricted: Read-only codebase, No bash.
@@ -167,27 +166,32 @@ impl StoredConfig {
         }
 
         let key = crate::crypto::derive_hardware_key()?;
-        let cipher_data = fs::read(&path)
-            .with_context(|| format!("failed to read {}", path.display()))?;
+        let cipher_data =
+            fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
         let plain_data = crate::crypto::decrypt_data(&cipher_data, &key)
             .with_context(|| format!("failed to decrypt config {}", path.display()))?;
-        
+
         let mut config: StoredConfig = serde_json::from_slice(&plain_data)
             .with_context(|| format!("failed to parse config {}", path.display()))?;
 
         // Load secret from OS securely if available, otherwise use fallback from encrypted file
         if let Ok(entry) = keyring::Entry::new("darwincode", "api_key")
             && let Ok(secret) = entry.get_password()
-                && !secret.trim().is_empty() {
-                    config.api_key = secret;
-                }
+            && !secret.trim().is_empty()
+        {
+            config.api_key = secret;
+        }
 
         Ok(Some(config))
     }
 
     pub fn save(&self) -> Result<()> {
         let mut normalized_config = self.clone();
-        normalized_config.base_url = normalized_config.base_url.trim().trim_end_matches('/').to_owned();
+        normalized_config.base_url = normalized_config
+            .base_url
+            .trim()
+            .trim_end_matches('/')
+            .to_owned();
         normalized_config.validate()?;
 
         let path = config_path()?;
@@ -199,9 +203,10 @@ impl StoredConfig {
         // Save secret to OS keyring securely (if available)
         let mut keyring_succeeded = false;
         if let Ok(entry) = keyring::Entry::new("darwincode", "api_key")
-            && entry.set_password(&normalized_config.api_key).is_ok() {
-                keyring_succeeded = true;
-            }
+            && entry.set_password(&normalized_config.api_key).is_ok()
+        {
+            keyring_succeeded = true;
+        }
 
         // Encrypt the configuration file on disk with the secret field stripped ONLY if stored in keyring
         let mut file_config = normalized_config.clone();
@@ -244,10 +249,14 @@ impl StoredConfig {
 
         if self.api_key.starts_with("sk-") {
             if url_str_trimmed == "https://generativelanguage.googleapis.com/v1beta" {
-                bail!("For OpenAI/OmniRoute keys (starting with sk-), you must specify an OpenAI-compatible Base URL (e.g. http://localhost:20128/v1)");
+                bail!(
+                    "For OpenAI/OmniRoute keys (starting with sk-), you must specify an OpenAI-compatible Base URL (e.g. http://localhost:20128/v1)"
+                );
             }
             if self.model == "gemini-2.0-flash" {
-                bail!("For OpenAI/OmniRoute keys (starting with sk-), you must specify an OpenAI-compatible Model (e.g. claude-sonnet-4.6)");
+                bail!(
+                    "For OpenAI/OmniRoute keys (starting with sk-), you must specify an OpenAI-compatible Model (e.g. claude-sonnet-4.6)"
+                );
             }
         }
 
@@ -270,8 +279,6 @@ impl Default for StoredConfig {
         }
     }
 }
-
-
 
 pub fn config_path() -> Result<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -305,4 +312,63 @@ fn secure_config_file(path: &PathBuf) -> Result<fs::File> {
         .write(true)
         .open(path)
         .with_context(|| format!("failed to open {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_theme_transitions() {
+        assert_eq!(Theme::Auto.next(), Theme::Dark);
+        assert_eq!(Theme::Dark.next(), Theme::Light);
+        assert_eq!(Theme::Light.next(), Theme::Auto);
+    }
+
+    #[test]
+    fn test_theme_labels() {
+        assert_eq!(Theme::Auto.label(), "Auto (System/Term)");
+        assert_eq!(Theme::Dark.label(), "Dark");
+        assert_eq!(Theme::Light.label(), "Light");
+    }
+
+    #[test]
+    fn test_permission_level_labels() {
+        assert_eq!(PermissionLevel::Safe.label(), "Safe (Read-Only)");
+        assert_eq!(PermissionLevel::Guardian.label(), "Guardian (Ask)");
+        assert_eq!(PermissionLevel::Chaos.label(), "Chaos (Auto)");
+    }
+
+    #[test]
+    fn test_permission_level_transitions() {
+        assert_eq!(PermissionLevel::Safe.next(), PermissionLevel::Guardian);
+        assert_eq!(PermissionLevel::Guardian.next(), PermissionLevel::Chaos);
+        assert_eq!(PermissionLevel::Chaos.next(), PermissionLevel::Safe);
+    }
+
+    #[test]
+    fn test_resolve_explicit_themes() {
+        assert_eq!(resolve_theme(Theme::Dark), Theme::Dark);
+        assert_eq!(resolve_theme(Theme::Light), Theme::Light);
+    }
+
+    #[test]
+    fn test_stored_config_validation() {
+        let mut config = StoredConfig::default();
+        // default config with empty key should be invalid
+        assert!(config.validate().is_err());
+
+        // with a key, it should be valid
+        config.api_key = "dummy_key".to_string();
+        assert!(config.validate().is_ok());
+
+        // invalid api key starting with sk- but keeping default gemini base url / model
+        config.api_key = "sk-12345".to_string();
+        assert!(config.validate().is_err());
+
+        // valid sk- config
+        config.model = "claude-sonnet-4.6".to_string();
+        config.base_url = "http://localhost:20128/v1".to_string();
+        assert!(config.validate().is_ok());
+    }
 }
