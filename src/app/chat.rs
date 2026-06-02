@@ -1,5 +1,5 @@
 use crate::config::{PermissionLevel, StoredConfig, Theme};
-use crate::gemini::{ChatMessage, Part};
+use crate::api::{ChatMessage, Part};
 
 #[derive(Debug)]
 pub struct ChatState {
