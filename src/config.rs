@@ -5,6 +5,10 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct StoredConfig {
     pub api_key: String,
@@ -20,6 +24,8 @@ pub struct StoredConfig {
     pub permission_level: PermissionLevel,
     #[serde(default)]
     pub theme: Theme,
+    #[serde(default = "default_true")]
+    pub respect_gitignore: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -260,6 +266,7 @@ impl Default for StoredConfig {
             show_thoughts: true,
             permission_level: PermissionLevel::Guardian,
             theme: Theme::Auto,
+            respect_gitignore: true,
         }
     }
 }
