@@ -11,6 +11,7 @@ pub enum SetupField {
     PermissionLevel,
     ShowThoughts,
     Theme,
+    RespectGitignore,
     Save,
 }
 
@@ -24,6 +25,7 @@ pub struct SetupState {
     pub permission_level: PermissionLevel,
     pub show_thoughts: bool,
     pub theme: Theme,
+    pub respect_gitignore: bool,
     pub active_field: SetupField,
     pub models: Vec<String>,
     pub selected_model: usize,
@@ -40,6 +42,7 @@ impl SetupState {
             permission_level: config.permission_level,
             show_thoughts: config.show_thoughts,
             theme: config.theme,
+            respect_gitignore: config.respect_gitignore,
             active_field: SetupField::ApiKey,
             models: Vec::new(),
             selected_model: 0,
@@ -56,6 +59,7 @@ impl SetupState {
             show_thoughts: self.show_thoughts,
             permission_level: self.permission_level,
             theme: self.theme,
+            respect_gitignore: self.respect_gitignore,
         };
 
         config.validate()?;
@@ -71,7 +75,8 @@ impl SetupState {
             SetupField::EnableBash => SetupField::PermissionLevel,
             SetupField::PermissionLevel => SetupField::ShowThoughts,
             SetupField::ShowThoughts => SetupField::Theme,
-            SetupField::Theme => SetupField::Save,
+            SetupField::Theme => SetupField::RespectGitignore,
+            SetupField::RespectGitignore => SetupField::Save,
             SetupField::Save => SetupField::ApiKey,
         };
     }
@@ -86,7 +91,8 @@ impl SetupState {
             SetupField::PermissionLevel => SetupField::EnableBash,
             SetupField::ShowThoughts => SetupField::PermissionLevel,
             SetupField::Theme => SetupField::ShowThoughts,
-            SetupField::Save => SetupField::Theme,
+            SetupField::RespectGitignore => SetupField::Theme,
+            SetupField::Save => SetupField::RespectGitignore,
         };
     }
 
@@ -155,6 +161,7 @@ impl Default for SetupState {
             permission_level: config.permission_level,
             show_thoughts: config.show_thoughts,
             theme: config.theme,
+            respect_gitignore: config.respect_gitignore,
             active_field: SetupField::ApiKey,
             models: Vec::new(),
             selected_model: 0,
