@@ -661,12 +661,19 @@ fn render_chat(frame: &mut Frame, app: &App) {
 
     let paragraph_content: Vec<Line> = wrapped_lines.into_iter().map(Line::from).collect();
 
+    let border_style = if app.chat.shell_focused {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default()
+    };
+
     frame.render_widget(
         Paragraph::new(paragraph_content)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
+                    .border_style(border_style)
                     .title(" Message (Alt+Enter: newline) ")
                     .padding(Padding::horizontal(1)),
             )
@@ -679,7 +686,7 @@ fn render_chat(frame: &mut Frame, app: &App) {
     let target_y = input_box.y + 1 + cursor_y_in_box;
     let max_y = input_box.bottom().saturating_sub(2);
 
-    if target_y <= max_y && target_y > input_box.y {
+    if !app.chat.shell_focused && target_y <= max_y && target_y > input_box.y {
         frame.set_cursor_position((
             input_box.x + 2 + cursor_x,
             target_y,
