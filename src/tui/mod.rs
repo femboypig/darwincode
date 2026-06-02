@@ -470,12 +470,23 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                             
                             let output = output?;
                             let stdout_content = String::from_utf8_lossy(&output.stdout).into_owned();
-                            let stderr_content = String::from_utf8_lossy(&output.stderr).into_owned();
+                            let mut stderr_content = String::from_utf8_lossy(&output.stderr).into_owned();
+                            let status_code = output.status.code();
+                            let mut err_val = serde_json::Value::Null;
+                            
+                            if status_code.is_none() {
+                                err_val = serde_json::json!("Process terminated by user via Ctrl+C");
+                                if !stderr_content.is_empty() {
+                                    stderr_content.push('\n');
+                                }
+                                stderr_content.push_str("[Process terminated by user via Ctrl+C]");
+                            }
                             
                             Ok(serde_json::json!({
-                                "status": output.status.code(),
+                                "status": status_code,
                                 "stdout": stdout_content,
                                 "stderr": stderr_content,
+                                "error": err_val,
                             }))
                         })();
                         
