@@ -447,16 +447,11 @@ impl GeminiClient {
                                 .as_object_mut()
                                 .unwrap()
                                 .insert("content".to_owned(), serde_json::json!(content));
-                        } else if !tool_calls.is_empty() && reasoning_content.is_empty() {
-                            msg_obj
-                                .as_object_mut()
-                                .unwrap()
-                                .insert("content".to_owned(), serde_json::Value::Null);
                         } else {
                             msg_obj
                                 .as_object_mut()
                                 .unwrap()
-                                .insert("content".to_owned(), serde_json::json!(""));
+                                .insert("content".to_owned(), serde_json::Value::Null);
                         }
                         if !reasoning_content.is_empty() {
                             msg_obj.as_object_mut().unwrap().insert(
