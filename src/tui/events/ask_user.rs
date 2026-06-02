@@ -1,13 +1,15 @@
+use crate::app::{App, Screen};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crate::app::{App, Screen};
 
 pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
     if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
-            if let Some((tx, _, _)) = guard.take() {
-                let _ = tx.send("Aborted by user".to_owned());
-            }
+        let tx = crate::tui::ASK_USER_CHANNEL
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take().map(|(tx, _, _)| tx));
+        if let Some(tx) = tx {
+            let _ = tx.send("Aborted by user".to_owned());
         }
         app.cancel_generation();
         app.screen = Screen::Chat;
@@ -20,10 +22,12 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
             KeyCode::Enter => {
                 let answer = app.ask_user.custom_input.trim().to_owned();
                 if !answer.is_empty() {
-                    if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
-                        if let Some((tx, _, _)) = guard.take() {
-                            let _ = tx.send(answer);
-                        }
+                    let tx = crate::tui::ASK_USER_CHANNEL
+                        .lock()
+                        .ok()
+                        .and_then(|mut g| g.take().map(|(tx, _, _)| tx));
+                    if let Some(tx) = tx {
+                        let _ = tx.send(answer);
                     }
                     app.screen = Screen::Chat;
                     app.status = "Ready".to_owned();
@@ -58,10 +62,12 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
                     app.ask_user.is_custom = true;
                 } else if let Some(opt) = app.ask_user.options.get(app.ask_user.selected_idx) {
                     let answer = opt.clone();
-                    if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
-                        if let Some((tx, _, _)) = guard.take() {
-                            let _ = tx.send(answer);
-                        }
+                    let tx = crate::tui::ASK_USER_CHANNEL
+                        .lock()
+                        .ok()
+                        .and_then(|mut g| g.take().map(|(tx, _, _)| tx));
+                    if let Some(tx) = tx {
+                        let _ = tx.send(answer);
                     }
                     app.screen = Screen::Chat;
                     app.status = "Ready".to_owned();
