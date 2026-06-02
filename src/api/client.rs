@@ -361,7 +361,8 @@ impl GeminiClient {
                         let mut tool_calls = Vec::new();
 
                         let mut responded_names = Vec::new();
-                        if let Some(next_msg) = history.get(i + 1)
+                        let mut next_idx = i + 1;
+                        while let Some(next_msg) = history.get(next_idx)
                             && next_msg.role == "function"
                         {
                             for part in &next_msg.parts {
@@ -371,6 +372,7 @@ impl GeminiClient {
                                     responded_names.push(name.to_owned());
                                 }
                             }
+                            next_idx += 1;
                         }
 
                         for part in &msg.parts {
@@ -475,20 +477,16 @@ impl GeminiClient {
                                     .get("response")
                                     .cloned()
                                     .unwrap_or(serde_json::json!({}));
-                                let call_id = if let Some(pos) =
-                                    tool_call_ids.iter().position(|(n, _)| n == name)
+                                if let Some(pos) = tool_call_ids.iter().position(|(n, _)| n == name)
                                 {
-                                    let (_, cid) = tool_call_ids.remove(pos);
-                                    cid
-                                } else {
-                                    format!("call_unknown_{}", name)
-                                };
-                                openai_messages.push(serde_json::json!({
-                                    "role": "tool",
-                                    "tool_call_id": call_id,
-                                    "name": name,
-                                    "content": response.to_string()
-                                }));
+                                    let (_, call_id) = tool_call_ids.remove(pos);
+                                    openai_messages.push(serde_json::json!({
+                                        "role": "tool",
+                                        "tool_call_id": call_id,
+                                        "name": name,
+                                        "content": response.to_string()
+                                    }));
+                                }
                             }
                         }
                     }
