@@ -503,22 +503,27 @@ pub(crate) fn handle_function_action(action: crate::app::FunctionAction, sender:
                         let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
                         
                         let run_result = (|| -> Result<serde_json::Value, std::io::Error> {
-                            use std::os::unix::process::CommandExt;
                             let mut command = std::process::Command::new("bash");
                             command.arg("-c")
                                 .arg(cmd)
                                 .stdin(std::process::Stdio::piped())
                                 .stdout(std::process::Stdio::piped())
                                 .stderr(std::process::Stdio::piped());
-                            unsafe {
-                                command.pre_exec(|| {
-                                    unsafe extern "C" {
-                                        fn setpgid(pid: i32, pgid: i32) -> i32;
-                                    }
-                                    setpgid(0, 0);
-                                    Ok(())
-                                });
+                            
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::process::CommandExt;
+                                unsafe {
+                                    command.pre_exec(|| {
+                                        unsafe extern "C" {
+                                            fn setpgid(pid: i32, pgid: i32) -> i32;
+                                        }
+                                        setpgid(0, 0);
+                                        Ok(())
+                                    });
+                                }
                             }
+                            
                             let mut child = command.spawn()?;
                             
                             let pid = child.id();
