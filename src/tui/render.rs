@@ -563,20 +563,37 @@ fn render_chat(frame: &mut Frame, app: &App) {
     let input_height = display_lines.clamp(1, 5) + 2;
 
     let (messages_area, suggestions_area, queue_area, input_area, statusbar_area, logo_area, tips_area) = if app.chat.messages.is_empty() {
-        let empty_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(25),      // Top space (centers the logo vertically)
-                Constraint::Length(6),           // Logo (5 lines + 1 spacer)
-                Constraint::Length(input_height), // Input box
-                Constraint::Length(2),           // Spacer
-                Constraint::Length(1),           // Tips line
-                Constraint::Min(0),              // Bottom space
-                Constraint::Length(1),           // Status bar
-            ])
-            .split(area);
+        let logo_lines = logo_lines();
+        let logo_fits = logo_fits(&logo_lines, area.width, 5);
+
+        let empty_chunks = if logo_fits {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Percentage(25),      // Top space (centers the logo vertically)
+                    Constraint::Length(6),           // Logo (5 lines + 1 spacer)
+                    Constraint::Length(input_height), // Input box
+                    Constraint::Length(2),           // Spacer
+                    Constraint::Length(1),           // Tips line
+                    Constraint::Min(0),              // Bottom space
+                    Constraint::Length(1),           // Status bar
+                ])
+                .split(area)
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(0),              // Top space (centers the input box vertically)
+                    Constraint::Length(input_height), // Input box
+                    Constraint::Length(2),           // Spacer
+                    Constraint::Length(1),           // Tips line
+                    Constraint::Min(0),              // Bottom space
+                    Constraint::Length(1),           // Status bar
+                ])
+                .split(area)
+        };
             
-        // Sub-split empty_chunks[2] horizontally to make the input box beautifully centered (e.g. 70% width)
+        let input_chunk = if logo_fits { empty_chunks[2] } else { empty_chunks[1] };
         let centered_input_box = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -584,17 +601,29 @@ fn render_chat(frame: &mut Frame, app: &App) {
                 Constraint::Percentage(70),
                 Constraint::Percentage(15),
             ])
-            .split(empty_chunks[2])[1];
+            .split(input_chunk)[1];
 
-        (
-            None,
-            None,
-            None,
-            Some(centered_input_box),
-            empty_chunks[6],
-            Some(empty_chunks[1]),
-            Some(empty_chunks[4]),
-        )
+        if logo_fits {
+            (
+                None,
+                None,
+                None,
+                Some(centered_input_box),
+                empty_chunks[6],
+                Some(empty_chunks[1]),
+                Some(empty_chunks[4]),
+            )
+        } else {
+            (
+                None,
+                None,
+                None,
+                Some(centered_input_box),
+                empty_chunks[5],
+                None,
+                Some(empty_chunks[3]),
+            )
+        }
     } else {
         let queue_height = if app.chat.message_queue.is_empty() {
             0
