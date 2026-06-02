@@ -1110,10 +1110,7 @@ fn logo_lines_for_area(width: u16, max_height: u16) -> Vec<Line<'static>> {
     if logo_fits(&lines, width, max_height) {
         lines
     } else {
-        vec![Line::from(Span::styled(
-            "darwincode",
-            Style::default(),
-        ))]
+        Vec::new()
     }
 }
 
