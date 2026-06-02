@@ -819,13 +819,16 @@ impl App {
         });
         let _ = session::save_session(&self.chat);
         if name == "run_bash_command" {
+            let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let mut output = String::new();
             let mut success = true;
             
+            let mut is_aborted = false;
             if let Some(status) = response.get("status").and_then(|v| v.as_i64()) {
                 if status != 0 { success = false; }
-            } else if response.get("error").is_some() {
+            } else {
                 success = false;
+                is_aborted = true;
             }
             
             let stdout = response.get("stdout").and_then(|v| v.as_str()).unwrap_or("");
@@ -835,12 +838,18 @@ impl App {
                 if !output.is_empty() { output.push('\n'); }
                 output.push_str(stderr);
             }
-            if output.is_empty() {
+            
+            if is_aborted {
+                if !output.is_empty() { output.push('\n'); }
+                output.push_str("^C\n[Process terminated by user via Ctrl+C]");
+            } else if output.is_empty() {
                 output = "(empty output)".to_owned();
             }
             
+            let body = format!("$ {}\n{}", cmd, output);
+            
             if let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
-                msg.text = output;
+                msg.text = body;
                 msg.shell_success = success;
                 *msg.cached_wrapped.borrow_mut() = None;
             }
@@ -940,7 +949,8 @@ impl App {
     pub fn start_function_execution(&mut self, name: &str, args: &serde_json::Value) {
         if name == "run_bash_command" {
             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
-            self.chat.messages.push(MessageLine::shell(cmd.to_owned(), "Running...\n".to_owned(), false));
+            let body = format!("$ {}\nRunning...\n", cmd);
+            self.chat.messages.push(MessageLine::shell(cmd.to_owned(), body, false));
         } else {
             let summary = format!("**{}** executing...", name);
             self.chat.messages.push(MessageLine::tool(summary));
