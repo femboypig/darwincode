@@ -305,9 +305,16 @@ impl App {
 
             if is_thought {
                 if let Some(text) = part.get("text").and_then(|v| v.as_str())
-                    && !text.trim().is_empty() {
+                    && !text.is_empty() {
                         if show_thoughts {
-                            self.append_to_chat_messages("Darwin", format!("░ Thinking: {text}"));
+                            let last_is_thinking = self.chat.messages.last().is_some_and(|m| {
+                                m.author == "Darwin" && !m.pending && !m.is_shell && !m.is_tool && m.text.starts_with("░ Thinking:")
+                            });
+                            if last_is_thinking {
+                                self.append_to_chat_messages("Darwin", text.to_owned());
+                            } else {
+                                self.append_to_chat_messages("Darwin", format!("░ Thinking: {}", text));
+                            }
                         } else {
                             if self.chat.messages.last().is_none_or(|m| m.text != "░ Thinking...") {
                                 self.chat.messages.push(MessageLine::assistant("░ Thinking...".to_owned()));
