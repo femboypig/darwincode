@@ -2,7 +2,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::mpsc::Sender;
 
-use crate::app::{App, SubmitAction, PendingTask};
+use crate::app::{App, SubmitAction};
 use crate::tui::{WorkerEvent, spawn_generation_worker, spawn_models_worker, handle_function_action};
 use crate::tui::events::common::{copy_to_clipboard, read_from_clipboard};
 
