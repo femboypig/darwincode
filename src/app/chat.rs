@@ -17,6 +17,7 @@ pub struct ChatState {
     pub redo_history: Vec<(String, usize)>,
     pub sent_history_index: Option<usize>,
     pub input_draft: String,
+    pub shell_focused: bool,
 }
 
 impl ChatState {
@@ -43,6 +44,7 @@ impl ChatState {
             redo_history: Vec::new(),
             sent_history_index: None,
             input_draft: String::new(),
+            shell_focused: false,
         }
     }
 
