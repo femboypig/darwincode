@@ -58,8 +58,8 @@ fn handle_permissions_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyE
                 SubmitAction::LoadModels(config) => {
                     spawn_models_worker(config, sender.clone());
                 }
-                SubmitAction::ExecuteFunction { name, args } => {
-                    handle_function_action(crate::app::FunctionAction::Execute { name, args }, sender);
+                SubmitAction::ExecuteFunction { name, args, config } => {
+                    handle_function_action(crate::app::FunctionAction::Execute { name, args, config }, sender);
                 }
             }
         }
@@ -113,6 +113,9 @@ fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key: KeyEvent)
             SetupField::Theme => {
                 app.setup.theme = app.setup.theme.next();
             }
+            SetupField::RespectGitignore => {
+                app.setup.respect_gitignore = !app.setup.respect_gitignore;
+            }
             _ => app.setup.next_field(),
         },
         (KeyCode::Char(' '), modifiers)
@@ -138,6 +141,9 @@ fn handle_setup_key(app: &mut App, _sender: &Sender<WorkerEvent>, key: KeyEvent)
                 }
                 SetupField::Theme => {
                     app.setup.theme = app.setup.theme.next();
+                }
+                SetupField::RespectGitignore => {
+                    app.setup.respect_gitignore = !app.setup.respect_gitignore;
                 }
                 _ => app.setup.push_char(' '),
             }
@@ -320,8 +326,8 @@ fn handle_chat_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -
                 SubmitAction::LoadModels(config) => {
                     spawn_models_worker(config, sender.clone());
                 }
-                SubmitAction::ExecuteFunction { name, args } => {
-                    handle_function_action(crate::app::FunctionAction::Execute { name, args }, sender);
+                SubmitAction::ExecuteFunction { name, args, config } => {
+                    handle_function_action(crate::app::FunctionAction::Execute { name, args, config }, sender);
                 }
             }
         }
