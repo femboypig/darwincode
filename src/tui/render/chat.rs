@@ -457,41 +457,14 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
 pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let shell_focused = app.chat.shell_focused;
-    let block_border_style = if shell_focused {
-        Style::default()
-            .fg(Color::Rgb(59, 130, 246))
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-
-    let title = if shell_focused {
-        " 󰍡 Conversations (Tab to return) "
-    } else {
-        " 󰍡 Conversations "
-    };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(block_border_style)
-        .title(title)
-        .padding(Padding::horizontal(1));
-
     if app.chat.messages.is_empty() {
-        let welcome_area = block.inner(area);
-        let lines = welcome_lines(welcome_area);
-        frame.render_widget(block, area);
-        frame.render_widget(
-            Paragraph::new(lines).wrap(Wrap { trim: false }),
-            welcome_area,
-        );
+        let lines = welcome_lines(area);
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
         return;
     }
 
-    let inner_area = block.inner(area);
     let mut all_lines = Vec::new();
-    let width = inner_area.width.saturating_sub(4);
+    let width = area.width.saturating_sub(4);
 
     let push_margin = |lines: &mut Vec<Line<'static>>| {
         if let Some(last) = lines.last()
@@ -660,7 +633,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                             }
                         };
                         let user_style = Style::default().bg(user_bg).fg(user_fg);
-                        let block_width = inner_area.width as usize;
+                        let block_width = area.width as usize;
 
                         msg_lines.push(Line::from(Span::styled(
                             " ".repeat(block_width),
@@ -732,7 +705,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
     // Line-by-line scrolling
     let total_lines = all_lines.len();
-    let viewport_height = inner_area.height as usize;
+    let viewport_height = area.height as usize;
 
     let max_scroll = total_lines.saturating_sub(viewport_height);
     let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
@@ -742,8 +715,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let end_idx = (start_idx + viewport_height).min(total_lines);
     let visible_lines = all_lines[start_idx..end_idx].to_vec();
 
-    frame.render_widget(block, area);
-    frame.render_widget(Paragraph::new(visible_lines), inner_area);
+    frame.render_widget(Paragraph::new(visible_lines), area);
 }
 
 fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
