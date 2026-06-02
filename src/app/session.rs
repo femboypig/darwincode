@@ -306,10 +306,12 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
                             let mut output = String::new();
                             let mut success = true;
                             
+                            let mut is_aborted = false;
                             if let Some(status) = response.get("status").and_then(|v| v.as_i64()) {
                                 if status != 0 { success = false; }
-                            } else if response.get("error").is_some() {
+                            } else {
                                 success = false;
+                                is_aborted = true;
                             }
                             
                             let stdout = response.get("stdout").and_then(|v| v.as_str()).unwrap_or("");
@@ -320,7 +322,13 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
                                 output.push_str(stderr);
                             }
                             
-                            messages.push(MessageLine::shell(cmd.to_owned(), output, success));
+                            if is_aborted {
+                                if !output.is_empty() { output.push('\n'); }
+                                output.push_str("^C\n[Process terminated by user via Ctrl+C]");
+                            }
+                            
+                            let body = format!("$ {}\n{}", cmd, output);
+                            messages.push(MessageLine::shell(cmd.to_owned(), body, success));
                         } else {
                             let summary = format_tool_summary(name, &args, &response);
                             messages.push(MessageLine::tool(summary));
@@ -436,7 +444,7 @@ mod tests {
         
         assert_eq!(messages[1].author, "Shell");
         assert_eq!(messages[1].shell_cmd, "echo hello");
-        assert_eq!(messages[1].text, "hello\n");
+        assert_eq!(messages[1].text, "$ echo hello\nhello\n");
         assert!(messages[1].shell_success);
 
         assert_eq!(messages[2].author, "Darwin");
