@@ -325,6 +325,17 @@ impl GeminiClient {
             }
 
             let mut openai_messages = Vec::new();
+            let model_lower = model.to_lowercase();
+            let is_reasoning_model = model_lower.contains("reasoner") || model_lower.contains("r1");
+            let has_reasoning = is_reasoning_model
+                || history.iter().any(|msg| {
+                    msg.parts.iter().any(|part| {
+                        part.get("thought")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                            || part.get("reasoning_content").is_some()
+                    })
+                });
             if let Some(sys) = &system_instruction
                 && let Some(text) = sys
                     .parts
@@ -376,34 +387,36 @@ impl GeminiClient {
                         }
 
                         for part in &msg.parts {
-                            if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                                if part
+                            let text = part.get("text").and_then(|v| v.as_str());
+                            let reasoning = part.get("reasoning_content").and_then(|v| v.as_str());
+
+                            if reasoning.is_some()
+                                || part
                                     .get("thought")
                                     .and_then(|v| v.as_bool())
                                     .unwrap_or(false)
-                                    || part.get("reasoning_content").is_some()
-                                    || text.starts_with("Thinking:")
-                                    || text.starts_with("Thinking...")
-                                    || text.starts_with("░ Thinking:")
-                                    || text.starts_with("░ Thinking...")
-                                {
-                                    let mut r = part
-                                        .get("reasoning_content")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or(text);
-                                    if r.starts_with("Thinking:") {
-                                        r = &r["Thinking:".len()..];
-                                    } else if r.starts_with("Thinking...") {
-                                        r = &r["Thinking...".len()..];
-                                    } else if r.starts_with("░ Thinking:") {
-                                        r = &r["░ Thinking:".len()..];
-                                    } else if r.starts_with("░ Thinking...") {
-                                        r = &r["░ Thinking...".len()..];
-                                    }
-                                    reasoning_content.push_str(r);
-                                } else {
-                                    content.push_str(text);
+                                || text
+                                    .map(|t| {
+                                        t.starts_with("Thinking:")
+                                            || t.starts_with("Thinking...")
+                                            || t.starts_with("░ Thinking:")
+                                            || t.starts_with("░ Thinking...")
+                                    })
+                                    .unwrap_or(false)
+                            {
+                                let mut r = reasoning.or(text).unwrap_or("");
+                                if r.starts_with("Thinking:") {
+                                    r = &r["Thinking:".len()..];
+                                } else if r.starts_with("Thinking...") {
+                                    r = &r["Thinking...".len()..];
+                                } else if r.starts_with("░ Thinking:") {
+                                    r = &r["░ Thinking:".len()..];
+                                } else if r.starts_with("░ Thinking...") {
+                                    r = &r["░ Thinking...".len()..];
                                 }
+                                reasoning_content.push_str(r);
+                            } else if let Some(t) = text {
+                                content.push_str(t);
                             }
                             if let Some(call) = part.get("functionCall")
                                 && let Some(name) = call.get("name").and_then(|v| v.as_str())
@@ -465,6 +478,11 @@ impl GeminiClient {
                                 "reasoning_content".to_owned(),
                                 serde_json::json!(reasoning_content),
                             );
+                        } else if has_reasoning {
+                            msg_obj
+                                .as_object_mut()
+                                .unwrap()
+                                .insert("reasoning_content".to_owned(), serde_json::json!(""));
                         }
                         openai_messages.push(msg_obj);
                     }
