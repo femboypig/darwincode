@@ -68,26 +68,25 @@ pub fn format_tool_summary(
     response: &serde_json::Value,
 ) -> String {
     let tool_label = match name {
-        "read_file" | "read_files" => "Read".to_owned(),
-        "edit_file" | "edit_files" | "edit_file_lines" | "apply_patch" => "Edit".to_owned(),
-        "write_file" => "Write".to_owned(),
-        "search_files" => "Search".to_owned(),
-        "list_directory" => "List".to_owned(),
-        "run_bash_command" => "Run".to_owned(),
-        "check_process" => "Check".to_owned(),
-        "kill_process" => "Kill".to_owned(),
-        "get_logs" => "Logs".to_owned(),
+        "read_file" | "read_files" => "read".to_owned(),
+        "edit_file" | "edit_files" | "edit_file_lines" | "apply_patch" => "edit".to_owned(),
+        "write_file" => "write".to_owned(),
+        "search_files" => "search".to_owned(),
+        "list_directory" => "list".to_owned(),
+        "run_bash_command" => "run".to_owned(),
+        "check_process" => "proc".to_owned(),
+        "kill_process" => "kill".to_owned(),
+        "get_logs" => "logs".to_owned(),
+        "web_search" => "web".to_owned(),
+        "ask_user" => "ask".to_owned(),
+        "todowrite" => "todo".to_owned(),
         _ => {
             let mut label = String::new();
-            let mut next_cap = true;
             for c in name.chars() {
                 if c == '_' {
-                    next_cap = true;
-                } else if next_cap {
-                    label.push(c.to_ascii_uppercase());
-                    next_cap = false;
+                    label.push(' ');
                 } else {
-                    label.push(c);
+                    label.push(c.to_ascii_lowercase());
                 }
             }
             label
@@ -101,6 +100,31 @@ pub fn format_tool_summary(
         res_parts.push(format!("Error: {err}"));
     } else {
         match name {
+            "todowrite" => {
+                if let Some(todos) = args.get("todos").and_then(|v| v.as_array()) {
+                    let mut completed = 0;
+                    let mut in_progress = 0;
+                    let mut pending = 0;
+                    let mut cancelled = 0;
+                    for t in todos {
+                        if let Some(status) = t.get("status").and_then(|v| v.as_str()) {
+                            match status {
+                                "completed" => completed += 1,
+                                "in_progress" => in_progress += 1,
+                                "pending" => pending += 1,
+                                "cancelled" => cancelled += 1,
+                                _ => {}
+                            }
+                        }
+                    }
+                    res_parts.push(format!(
+                        "updated task list ({} completed, {} in progress, {} pending, {} cancelled)",
+                        completed, in_progress, pending, cancelled
+                    ));
+                } else {
+                    res_parts.push("updated task list".to_owned());
+                }
+            }
             "edit_file" => {
                 let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
                 res_parts.push(format!("`{path}` updated"));
@@ -319,6 +343,46 @@ pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
 
     result.sort_by(|a, b| b.id.cmp(&a.id));
     Ok(result)
+}
+
+pub fn rebuild_todos_from_history(history: &[ChatMessage]) -> Vec<crate::app::chat::TodoItem> {
+    let mut current_todos = Vec::new();
+    let mut proposed_todos = None;
+    for msg in history {
+        if msg.role == "model" {
+            for part in &msg.parts {
+                if let Some(call) = part.get("functionCall")
+                    && call.get("name").and_then(|v| v.as_str()) == Some("todowrite")
+                    && let Some(args) = call.get("args")
+                    && let Some(todos_val) = args.get("todos")
+                    && let Ok(todos) =
+                        serde_json::from_value::<Vec<crate::app::chat::TodoItem>>(todos_val.clone())
+                {
+                    proposed_todos = Some(todos);
+                }
+            }
+        } else if msg.role == "function" {
+            for part in &msg.parts {
+                if let Some(resp) = part.get("functionResponse")
+                    && resp.get("name").and_then(|v| v.as_str()) == Some("todowrite")
+                    && let Some(response_val) = resp.get("response")
+                {
+                    let success = response_val
+                        .get("success")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let has_error = response_val.get("error").is_some();
+                    if success
+                        && !has_error
+                        && let Some(todos) = proposed_todos.take()
+                    {
+                        current_todos = todos;
+                    }
+                }
+            }
+        }
+    }
+    current_todos
 }
 
 pub fn rebuild_messages_from_history(
@@ -613,5 +677,64 @@ mod tests {
         assert_eq!(messages[2].author, "Darwin");
         assert!(messages[2].text.contains("foo.txt"));
         assert!(messages[2].text.contains("+ hello"));
+    }
+
+    #[test]
+    fn test_rebuild_todos_from_history() {
+        let mut history = Vec::new();
+
+        // 1. A failed todowrite call
+        history.push(ChatMessage {
+            role: "model".to_owned(),
+            parts: vec![serde_json::json!({
+                "functionCall": {
+                    "name": "todowrite",
+                    "args": {
+                        "todos": [
+                            { "content": "Task 1", "status": "completed", "priority": "high" }
+                        ]
+                    }
+                }
+            })],
+        });
+        history.push(ChatMessage {
+            role: "function".to_owned(),
+            parts: vec![serde_json::json!({
+                "functionResponse": {
+                    "name": "todowrite",
+                    "response": { "success": false, "error": "Cannot start as completed" }
+                }
+            })],
+        });
+
+        // 2. A successful todowrite call
+        history.push(ChatMessage {
+            role: "model".to_owned(),
+            parts: vec![serde_json::json!({
+                "functionCall": {
+                    "name": "todowrite",
+                    "args": {
+                        "todos": [
+                            { "content": "Task 1", "status": "pending", "priority": "high" }
+                        ]
+                    }
+                }
+            })],
+        });
+        history.push(ChatMessage {
+            role: "function".to_owned(),
+            parts: vec![serde_json::json!({
+                "functionResponse": {
+                    "name": "todowrite",
+                    "response": { "success": true }
+                }
+            })],
+        });
+
+        let todos = rebuild_todos_from_history(&history);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].content, "Task 1");
+        assert_eq!(todos[0].status, "pending");
+        assert_eq!(todos[0].priority, "high");
     }
 }
