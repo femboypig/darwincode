@@ -1222,7 +1222,12 @@ impl App {
 
     pub fn backup_before_execution(&mut self, name: &str, args: &serde_json::Value) {
         let git_root = (|| -> Option<std::path::PathBuf> {
-            let out = std::process::Command::new("git")
+            let git_bin = if std::path::Path::new("/usr/bin/git").exists() {
+                "/usr/bin/git"
+            } else {
+                "git"
+            };
+            let out = std::process::Command::new(git_bin)
                 .args(["rev-parse", "--show-toplevel"])
                 .output()
                 .ok()?;
