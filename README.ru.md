@@ -19,8 +19,13 @@
 
 ### Установка
 
+Установка через cargo:
 ```bash
-# Сборка из исходников
+cargo install darwincode
+```
+
+Или сборка из исходников:
+```bash
 git clone https://github.com/femboypig/darwincode.git
 cd darwincode
 cargo install --path .
