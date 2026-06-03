@@ -70,7 +70,10 @@ pub(crate) fn render_ask_user(frame: &mut Frame, app: &App) {
         frame.render_widget(input_block, chunks[1]);
 
         let input_text = format!("{}█", app.ask_user.custom_input);
-        frame.render_widget(Paragraph::new(input_text), input_inner);
+        frame.render_widget(
+            Paragraph::new(input_text).wrap(Wrap { trim: false }),
+            input_inner,
+        );
     } else {
         let mut list_items = Vec::new();
         for (idx, opt) in app.ask_user.options.iter().enumerate() {
