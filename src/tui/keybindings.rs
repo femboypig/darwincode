@@ -17,6 +17,7 @@ pub enum TuiAction {
     ToggleSetup,
     ToggleModels,
     ToggleSessions,
+    Paste,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -86,6 +87,10 @@ impl Default for KeyBindings {
         bindings.insert(TuiAction::ToggleSetup, vec!["ctrl+s".to_owned()]);
         bindings.insert(TuiAction::ToggleModels, vec!["ctrl+p".to_owned()]);
         bindings.insert(TuiAction::ToggleSessions, vec!["ctrl+g".to_owned()]);
+        bindings.insert(
+            TuiAction::Paste,
+            vec!["ctrl+v".to_owned(), "ctrl+y".to_owned()],
+        );
         Self { bindings }
     }
 }
@@ -166,21 +171,19 @@ pub fn keybindings_path() -> Result<PathBuf> {
 }
 
 pub fn load_keybindings() -> KeyBindings {
-    match keybindings_path() {
+    let mut kb = match keybindings_path() {
         Ok(path) => {
             if path.exists() {
-                // File exists — try to load it. If parsing fails, use defaults
-                // but do NOT overwrite the user's file (that would destroy their edits).
                 match std::fs::read_to_string(&path) {
                     Ok(data) => match serde_json::from_str::<KeyBindings>(&data) {
-                        Ok(config) => return config,
+                        Ok(config) => config,
                         Err(e) => {
                             eprintln!(
                                 "[keybindings] Failed to parse {}: {}. Using defaults.",
                                 path.display(),
                                 e
                             );
-                            return KeyBindings::default();
+                            KeyBindings::default()
                         }
                     },
                     Err(e) => {
@@ -189,22 +192,36 @@ pub fn load_keybindings() -> KeyBindings {
                             path.display(),
                             e
                         );
-                        return KeyBindings::default();
+                        KeyBindings::default()
                     }
                 }
+            } else {
+                KeyBindings::default()
             }
-            // File does not exist — write defaults so the user can discover and edit them.
-            let default_bindings = KeyBindings::default();
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Ok(pretty) = serde_json::to_string_pretty(&default_bindings) {
-                let _ = std::fs::write(&path, pretty);
-            }
-            default_bindings
         }
         Err(_) => KeyBindings::default(),
+    };
+
+    // Ensure all default actions are populated
+    let defaults = KeyBindings::default();
+    let mut updated = false;
+    for (action, keys) in defaults.bindings {
+        if let std::collections::hash_map::Entry::Vacant(e) = kb.bindings.entry(action) {
+            e.insert(keys);
+            updated = true;
+        }
     }
+
+    if updated && let Ok(path) = keybindings_path() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(pretty) = serde_json::to_string_pretty(&kb) {
+            let _ = std::fs::write(&path, pretty);
+        }
+    }
+
+    kb
 }
 
 #[cfg(test)]
