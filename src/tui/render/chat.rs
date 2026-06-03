@@ -592,7 +592,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         let cached_ok = {
             let cache = message.cached_wrapped.borrow();
             if let Some((w, t, ref cached_lines)) = *cache {
-                if w == width as usize && t == get_theme(app) && !is_shell {
+                if w == width as usize && t == get_theme(app) {
                     Some(cached_lines.clone())
                 } else {
                     None
@@ -803,10 +803,8 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     }
                 }
             }
-            if !is_shell {
-                *message.cached_wrapped.borrow_mut() =
-                    Some((width as usize, get_theme(app), msg_lines.clone()));
-            }
+            *message.cached_wrapped.borrow_mut() =
+                Some((width as usize, get_theme(app), msg_lines.clone()));
             msg_lines
         };
 
