@@ -362,8 +362,8 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                 let lines: Vec<&str> = content.lines().collect();
                 if start_line > 0 && start_line <= lines.len() {
                     let end_idx = std::cmp::min(end_line, lines.len());
-                    for i in (start_line - 1)..end_idx {
-                        let formatted = format!("- {}", lines[i]);
+                    for line in lines.iter().take(end_idx).skip(start_line - 1) {
+                        let formatted = format!("- {line}");
                         let padded = format!("{formatted:<width$}", width = inner_width);
                         text.push(Line::from(Span::styled(
                             padded,
