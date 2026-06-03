@@ -1289,31 +1289,46 @@ pub(crate) fn handle_function_action(
                                 })
                                 .and_then(|rest| rest.split_whitespace().next());
 
-                            let file_dir = if let Some(fp) = file_path {
-                                std::path::Path::new(fp)
-                                    .parent()
-                                    .unwrap_or(std::path::Path::new(""))
+                            let start_dir = if let Some(fp) = file_path {
+                                let p = std::path::Path::new(fp);
+                                let parent = p.parent().unwrap_or(std::path::Path::new(""));
+                                if parent.as_os_str().is_empty() {
+                                    std::env::current_dir()
+                                        .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                                } else {
+                                    std::env::current_dir()
+                                        .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                                        .join(parent)
+                                }
                             } else {
-                                std::path::Path::new("")
+                                std::env::current_dir()
+                                    .unwrap_or_else(|_| std::path::PathBuf::from("/"))
                             };
 
-                            let git_root = (|| -> Result<std::path::PathBuf, String> {
-                                let mut cmd = std::process::Command::new("git");
-                                cmd.args(["rev-parse", "--show-toplevel"]);
-                                if !file_dir.as_os_str().is_empty() {
-                                    cmd.current_dir(file_dir);
+                            let mut cwd = start_dir;
+                            let mut git_root = None;
+                            loop {
+                                if cwd.join(".git").exists() {
+                                    git_root = Some(cwd.clone());
+                                    break;
                                 }
-                                let out = cmd
-                                    .output()
-                                    .map_err(|e| format!("Failed to execute git: {}", e))?;
-                                if out.status.success() {
-                                    let path_str =
-                                        String::from_utf8_lossy(&out.stdout).trim().to_owned();
-                                    Ok(std::path::PathBuf::from(path_str))
+                                if let Some(parent) = cwd.parent() {
+                                    cwd = parent.to_path_buf();
                                 } else {
-                                    Err("Not a git repository".to_owned())
+                                    break;
                                 }
-                            })()?;
+                            }
+
+                            let git_root = match git_root {
+                                Some(root) => root,
+                                None => return Err("Not a git repository".to_owned()),
+                            };
+
+                            let git_bin = if std::path::Path::new("/usr/bin/git").exists() {
+                                "/usr/bin/git"
+                            } else {
+                                "git"
+                            };
 
                             let random_val = {
                                 let mut bytes = [0u8; 8];
@@ -1335,7 +1350,7 @@ pub(crate) fn handle_function_action(
                                 let _ = std::fs::remove_file(path);
                             };
 
-                            let mut cmd = std::process::Command::new("git");
+                            let mut cmd = std::process::Command::new(git_bin);
                             cmd.current_dir(&git_root);
                             cmd.args(["apply", &temp_path.to_string_lossy()]);
                             cmd.stdout(std::process::Stdio::piped());
@@ -1355,7 +1370,7 @@ pub(crate) fn handle_function_action(
                             cleanup(&temp_path);
 
                             // Optional git diff
-                            let diff_out = std::process::Command::new("git")
+                            let diff_out = std::process::Command::new(git_bin)
                                 .current_dir(&git_root)
                                 .args(["diff", "--cached"])
                                 .output();
@@ -1366,7 +1381,7 @@ pub(crate) fn handle_function_action(
                                 _ => String::new(),
                             };
                             if diff_str.is_empty() {
-                                let diff_uncached = std::process::Command::new("git")
+                                let diff_uncached = std::process::Command::new(git_bin)
                                     .current_dir(&git_root)
                                     .arg("diff")
                                     .output();
