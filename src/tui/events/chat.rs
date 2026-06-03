@@ -108,14 +108,14 @@ pub(crate) fn handle_chat_key(
             .keybindings
             .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
         {
-            app.chat.scroll = app.chat.scroll.saturating_add(3);
+            app.chat.scroll = app.chat.scroll.saturating_add(1);
             return Ok(());
         }
         if app
             .keybindings
             .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
         {
-            app.chat.scroll = app.chat.scroll.saturating_sub(3);
+            app.chat.scroll = app.chat.scroll.saturating_sub(1);
             return Ok(());
         }
         if app
@@ -209,8 +209,35 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
-        app.should_quit = true;
-        return Ok(());
+        if app.pending.is_some() {
+            let mut pid = None;
+            if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+                pid = guard.take();
+            }
+            if let Some(pid) = pid {
+                #[cfg(unix)]
+                {
+                    let _ = std::process::Command::new("kill")
+                        .arg("-9")
+                        .arg(format!("-{}", pid))
+                        .status();
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = std::process::Command::new("taskkill")
+                        .arg("/F")
+                        .arg("/PID")
+                        .arg(pid.to_string())
+                        .status();
+                }
+            }
+            app.cancel_generation();
+            app.status = "Aborted by user".to_owned();
+            return Ok(());
+        } else {
+            app.should_quit = true;
+            return Ok(());
+        }
     }
 
     if app
