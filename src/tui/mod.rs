@@ -1720,6 +1720,9 @@ pub(crate) fn handle_function_action(
 
                         serde_json::json!({ "answer": answer })
                     }
+                    "todowrite" => {
+                        serde_json::json!({ "success": true })
+                    }
                     _ => serde_json::json!({ "error": "Unknown function" }),
                 };
                 let _ = sender.send(WorkerEvent::ToolResult(name, result));
