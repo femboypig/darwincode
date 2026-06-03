@@ -1265,7 +1265,24 @@ pub(crate) fn handle_function_action(
                     "apply_patch" => {
                         let patch = args.get("patch").and_then(|v| v.as_str()).unwrap_or("");
                         let run_res = (|| -> Result<(), String> {
+                            let git_root = (|| -> Option<std::path::PathBuf> {
+                                let out = std::process::Command::new("git")
+                                    .args(["rev-parse", "--show-toplevel"])
+                                    .output()
+                                    .ok()?;
+                                if out.status.success() {
+                                    let path_str =
+                                        String::from_utf8_lossy(&out.stdout).trim().to_owned();
+                                    Some(std::path::PathBuf::from(path_str))
+                                } else {
+                                    None
+                                }
+                            })();
+
                             let mut cmd = std::process::Command::new("git");
+                            if let Some(ref root) = git_root {
+                                cmd.current_dir(root);
+                            }
                             cmd.arg("apply").arg("-");
                             cmd.stdin(std::process::Stdio::piped());
                             cmd.stdout(std::process::Stdio::piped());
