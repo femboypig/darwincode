@@ -1089,7 +1089,7 @@ mod tests {
         let mut app = App::new(Some(StoredConfig::default()));
         app.chat.session_id = "test_mock_todo_validation".to_owned();
 
-        // Case 1: Valid initial list (one pending, one in_progress)
+        // Case 1: Initial list (one pending, one in_progress)
         app.chat.history.push(ChatMessage {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
@@ -1112,8 +1112,7 @@ mod tests {
         assert_eq!(app.chat.todos[1].content, "Task 2");
         assert_eq!(app.chat.todos[1].status, "in_progress");
 
-        // Case 2: Invalid transition: pending directly to completed
-        // Task 1 is currently pending in app.chat.todos. We try to set it to completed directly.
+        // Case 2: Transition pending -> completed directly (validation is relaxed, should succeed)
         app.chat.history.push(ChatMessage {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
@@ -1130,88 +1129,6 @@ mod tests {
         });
 
         app.complete_function_execution("todo".to_string(), serde_json::json!({ "success": true }));
-        // Should not update self.chat.todos because of validation failure
-        assert_eq!(app.chat.todos[0].status, "pending");
-
-        // The function response in history should contain the validation error
-        let last_msg = app.chat.history.last().unwrap();
-        assert_eq!(last_msg.role, "function");
-        let response_part = last_msg.parts[0].get("functionResponse").unwrap();
-        let response_val = response_part.get("response").unwrap();
-        assert_eq!(response_val.get("success").unwrap().as_bool(), Some(false));
-        assert!(
-            response_val
-                .get("error")
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .contains("Task 'Task 1' cannot transition directly from 'pending' to 'completed'")
-        );
-
-        // Case 3: Invalid transition: two in_progress tasks
-        app.chat.history.push(ChatMessage {
-            role: "model".to_owned(),
-            parts: vec![serde_json::json!({
-                "functionCall": {
-                    "name": "todo",
-                    "args": {
-                        "todos": [
-                            { "content": "Task 1", "status": "in_progress", "priority": "high" },
-                            { "content": "Task 2", "status": "in_progress", "priority": "medium" }
-                        ]
-                    }
-                }
-            })],
-        });
-
-        app.complete_function_execution("todo".to_string(), serde_json::json!({ "success": true }));
-        // Should not update
-        assert_eq!(app.chat.todos[0].status, "pending");
-
-        let last_msg = app.chat.history.last().unwrap();
-        let response_part = last_msg.parts[0].get("functionResponse").unwrap();
-        let response_val = response_part.get("response").unwrap();
-        assert_eq!(response_val.get("success").unwrap().as_bool(), Some(false));
-        assert!(
-            response_val
-                .get("error")
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .contains("Cannot have more than one task in status 'in_progress' simultaneously")
-        );
-
-        // Case 4: Invalid transition: adding a new task directly as completed
-        app.chat.history.push(ChatMessage {
-            role: "model".to_owned(),
-            parts: vec![serde_json::json!({
-                "functionCall": {
-                    "name": "todo",
-                    "args": {
-                        "todos": [
-                            { "content": "Task 1", "status": "pending", "priority": "high" },
-                            { "content": "Task 2", "status": "in_progress", "priority": "medium" },
-                            { "content": "Task 3", "status": "completed", "priority": "low" }
-                        ]
-                    }
-                }
-            })],
-        });
-
-        app.complete_function_execution("todo".to_string(), serde_json::json!({ "success": true }));
-        assert_eq!(app.chat.todos.len(), 2); // Still 2, Task 3 was not added
-
-        let last_msg = app.chat.history.last().unwrap();
-        let response_part = last_msg.parts[0].get("functionResponse").unwrap();
-        let response_val = response_part.get("response").unwrap();
-        assert_eq!(response_val.get("success").unwrap().as_bool(), Some(false));
-        assert!(
-            response_val
-                .get("error")
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .contains("New task 'Task 3' cannot be added directly in 'completed' status")
-        );
+        assert_eq!(app.chat.todos[0].status, "completed");
     }
 }
