@@ -1319,6 +1319,35 @@ pub(crate) fn handle_function_action(
                                 }
                             }
 
+                            // If not found by ascending search, check subdirectories (first level)
+                            if git_root.is_none() {
+                                let original_cwd = std::env::current_dir()
+                                    .unwrap_or_else(|_| std::path::PathBuf::from("/"));
+                                if let Ok(entries) = std::fs::read_dir(&original_cwd) {
+                                    let mut candidates = Vec::new();
+                                    for entry in entries.flatten() {
+                                        let path = entry.path();
+                                        if path.is_dir() && path.join(".git").exists() {
+                                            candidates.push(path);
+                                        }
+                                    }
+
+                                    if !candidates.is_empty() {
+                                        // Try to find one containing the file
+                                        let found = if let Some(fp) = file_path {
+                                            candidates.iter().find(|cand| cand.join(fp).exists())
+                                        } else {
+                                            None
+                                        };
+
+                                        git_root = Some(match found {
+                                            Some(cand) => cand.clone(),
+                                            None => candidates[0].clone(),
+                                        });
+                                    }
+                                }
+                            }
+
                             let git_root = match git_root {
                                 Some(root) => root,
                                 None => return Err("Not a git repository".to_owned()),
