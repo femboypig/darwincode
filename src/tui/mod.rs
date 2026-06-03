@@ -1272,12 +1272,12 @@ pub(crate) fn handle_function_action(
                                 let pid = child.id();
 
                                 let mut child_stdin = child.stdin.take();
-                                if let Some(ref mut stdin) = child_stdin.as_mut() {
-                                    if let Some(inp) = input {
-                                        use std::io::Write;
-                                        let _ = stdin.write_all(inp.as_bytes());
-                                        let _ = stdin.flush();
-                                    }
+                                if let Some(ref mut stdin) = child_stdin.as_mut()
+                                    && let Some(inp) = input
+                                {
+                                    use std::io::Write;
+                                    let _ = stdin.write_all(inp.as_bytes());
+                                    let _ = stdin.flush();
                                 }
                                 if !background
                                     && let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock()
