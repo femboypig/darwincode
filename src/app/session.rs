@@ -484,7 +484,16 @@ pub fn rebuild_messages_from_history(
                             }
 
                             let body = format!("$ {}\n{}", cmd, output);
-                            messages.push(MessageLine::shell(cmd.to_owned(), body, success));
+                            let persistent_session_id = args
+                                .get("persistent_session_id")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_owned());
+                            messages.push(MessageLine::shell(
+                                cmd.to_owned(),
+                                body,
+                                success,
+                                persistent_session_id,
+                            ));
                         } else {
                             let summary = format_tool_summary(name, &args, &response);
                             messages.push(MessageLine::tool(summary));
