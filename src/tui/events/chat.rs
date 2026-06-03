@@ -3,7 +3,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::mpsc::Sender;
 
 use crate::app::{App, SubmitAction};
-use crate::tui::events::common::{copy_to_clipboard, read_from_clipboard};
+use crate::tui::events::common::{
+    copy_to_clipboard, pasted_images_dir, read_from_clipboard, read_image_from_clipboard,
+    uuid_or_timestamp,
+};
 use crate::tui::{
     WorkerEvent, handle_function_action, spawn_generation_worker, spawn_models_worker,
 };
@@ -491,6 +494,28 @@ pub(crate) fn handle_chat_key(
         return Ok(());
     }
 
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::Paste, key)
+    {
+        if let Ok(Some(image_bytes)) = read_image_from_clipboard()
+            && let Ok(dir) = pasted_images_dir()
+        {
+            let filename = format!("image_{}.png", uuid_or_timestamp());
+            let path = dir.join(&filename);
+            if std::fs::write(&path, &image_bytes).is_ok() {
+                let ref_str = format!(" @{} ", filename);
+                app.chat.insert_text(&ref_str);
+                app.status = format!("Pasted image saved to {}", filename);
+                return Ok(());
+            }
+        }
+        if let Ok(text) = read_from_clipboard() {
+            app.chat.insert_text(&text);
+        }
+        return Ok(());
+    }
+
     match (key.code, key.modifiers) {
         (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
             app.chat.undo();
@@ -508,11 +533,6 @@ pub(crate) fn handle_chat_key(
                 app.chat.input.clear();
                 app.chat.cursor = 0;
                 app.chat.input_scroll = 0;
-            }
-        }
-        (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
-            if let Ok(text) = read_from_clipboard() {
-                app.chat.insert_text(&text);
             }
         }
         (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
