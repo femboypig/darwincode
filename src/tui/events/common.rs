@@ -236,3 +236,118 @@ fn try_paste_x11() -> Result<Option<String>> {
 
     Ok(None)
 }
+
+pub(crate) fn pasted_images_dir() -> Result<std::path::PathBuf> {
+    use anyhow::Context;
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
+        })
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(|home| std::path::PathBuf::from(home).join(".config"))
+        })
+        .context("could not find HOME, USERPROFILE, APPDATA, or XDG_CONFIG_HOME")?;
+
+    let dir = base.join("darwincode").join("pasted_images");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+pub(crate) fn uuid_or_timestamp() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| format!("{}_{}", d.as_secs(), d.subsec_nanos()))
+        .unwrap_or_else(|_| "temp".to_owned())
+}
+
+pub(crate) fn read_image_from_clipboard() -> Result<Option<Vec<u8>>> {
+    use std::process::{Command, Stdio};
+
+    if cfg!(target_os = "macos") {
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join(format!("darwin_paste_{}.png", uuid_or_timestamp()));
+
+        let script = format!(
+            "try\n\
+             set theFile to a reference to (POSIX file \"{}\")\n\
+             set pngData to the clipboard as «class PNGf»\n\
+             open for access theFile with write permission\n\
+             set eof of theFile to 0\n\
+             write pngData to theFile\n\
+             close access theFile\n\
+             on error\n\
+             try\n\
+             close access theFile\n\
+             end try\n\
+             end try",
+            temp_file.display()
+        );
+
+        let _ = Command::new("osascript").args(["-e", &script]).output()?;
+
+        if temp_file.exists() {
+            let bytes = std::fs::read(&temp_file)?;
+            let _ = std::fs::remove_file(&temp_file);
+            return Ok(Some(bytes));
+        }
+        Ok(None)
+    } else if cfg!(target_os = "windows") {
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join(format!("darwin_paste_{}.png", uuid_or_timestamp()));
+
+        let cmd = format!(
+            "Add-Type -AssemblyName System.Windows.Forms; \
+             if ([System.Windows.Forms.Clipboard]::ContainsImage()) {{ \
+                 [System.Windows.Forms.Clipboard]::GetImage().Save('{}', [System.Drawing.Imaging.ImageFormat]::Png) \
+             }}",
+            temp_file.display()
+        );
+
+        let _ = Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", &cmd])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+
+        if temp_file.exists() {
+            let bytes = std::fs::read(&temp_file)?;
+            let _ = std::fs::remove_file(&temp_file);
+            return Ok(Some(bytes));
+        }
+        Ok(None)
+    } else {
+        // Linux / Unix
+        let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+        if is_wayland {
+            let output = Command::new("wl-paste")
+                .args(["--type", "image/png"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .output();
+            if let Ok(output) = output
+                && output.status.success()
+                && !output.stdout.is_empty()
+            {
+                return Ok(Some(output.stdout));
+            }
+        }
+
+        // Try xclip
+        let output = Command::new("xclip")
+            .args(["-selection", "clipboard", "-t", "image/png", "-o"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output();
+        if let Ok(output) = output
+            && output.status.success()
+            && !output.stdout.is_empty()
+        {
+            return Ok(Some(output.stdout));
+        }
+
+        Ok(None)
+    }
+}
