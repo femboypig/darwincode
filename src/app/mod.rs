@@ -1171,10 +1171,10 @@ impl App {
                 if let Some(patch) = args.get("patch").and_then(|v| v.as_str()) {
                     for line in patch.lines() {
                         if line.starts_with("+++ b/") || line.starts_with("+++ ") {
-                            let path = if line.starts_with("+++ b/") {
-                                &line[6..]
+                            let path = if let Some(stripped) = line.strip_prefix("+++ b/") {
+                                stripped
                             } else {
-                                &line[4..]
+                                line.strip_prefix("+++ ").unwrap_or(line)
                             };
                             let path = path.split_whitespace().next().unwrap_or(path);
                             if path != "/dev/null" {
@@ -1182,10 +1182,10 @@ impl App {
                             }
                         }
                         if line.starts_with("--- a/") || line.starts_with("--- ") {
-                            let path = if line.starts_with("--- a/") {
-                                &line[6..]
+                            let path = if let Some(stripped) = line.strip_prefix("--- a/") {
+                                stripped
                             } else {
-                                &line[4..]
+                                line.strip_prefix("--- ").unwrap_or(line)
                             };
                             let path = path.split_whitespace().next().unwrap_or(path);
                             if path != "/dev/null" && !paths_to_backup.contains(&path.to_owned()) {
