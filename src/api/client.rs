@@ -322,6 +322,40 @@ impl GeminiClient {
                     "required": ["patch"]
                 })),
             });
+            declarations.push(FunctionDeclaration {
+                name: "todowrite".to_owned(),
+                description: "Write or update the session task list (TODO). Use this to track progress for multi-step tasks (3+ steps). Always provide the full list reflecting the current state.".to_owned(),
+                parameters: Some(serde_json::json!({
+                    "type": "OBJECT",
+                    "properties": {
+                        "todos": {
+                            "type": "ARRAY",
+                            "description": "The complete, updated list of todo items",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "content": {
+                                        "type": "STRING",
+                                        "description": "Detailed description of the task step"
+                                    },
+                                    "status": {
+                                        "type": "STRING",
+                                        "enum": ["pending", "in_progress", "completed", "cancelled"],
+                                        "description": "Task status"
+                                    },
+                                    "priority": {
+                                        "type": "STRING",
+                                        "enum": ["high", "medium", "low"],
+                                        "description": "Task priority"
+                                    }
+                                },
+                                "required": ["content", "status", "priority"]
+                            }
+                        }
+                    },
+                    "required": ["todos"]
+                })),
+            });
         }
 
         if self.config.enable_bash_tools {
