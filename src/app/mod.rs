@@ -1301,11 +1301,15 @@ impl App {
             &self.chat.history,
             self.chat.config.show_thoughts,
         );
+        self.chat.todos = session::rebuild_todos_from_history(&self.chat.history);
         self.status = format!("Resumed session: {}", id);
         Ok(())
     }
 
     pub fn save_session(&mut self) {
+        if self.chat.session_id.starts_with("test_mock") {
+            return;
+        }
         let _ = session::save_session(&self.chat);
 
         let mut cache = self.sessions_cache.borrow_mut();
@@ -1394,6 +1398,65 @@ impl App {
         } else {
             serde_json::Value::Null
         };
+
+        let mut response = response;
+        if name == "todowrite"
+            && let Some(todos_val) = args.get("todos")
+        {
+            if let Ok(new_todos) =
+                serde_json::from_value::<Vec<crate::app::chat::TodoItem>>(todos_val.clone())
+            {
+                let mut validation_error = None;
+                let in_progress_count = new_todos
+                    .iter()
+                    .filter(|t| t.status == "in_progress")
+                    .count();
+                if in_progress_count > 1 {
+                    validation_error = Some("Validation failed: Cannot have more than one task in status 'in_progress' simultaneously.".to_owned());
+                }
+                if validation_error.is_none() {
+                    for new_todo in &new_todos {
+                        if new_todo.status == "completed" {
+                            let old_todo = self
+                                .chat
+                                .todos
+                                .iter()
+                                .find(|t| t.content == new_todo.content);
+                            match old_todo {
+                                Some(old) => {
+                                    if old.status == "pending" {
+                                        validation_error = Some(format!(
+                                            "Validation failed: Task '{}' cannot transition directly from 'pending' to 'completed'. It must be 'in_progress' first.",
+                                            new_todo.content
+                                        ));
+                                        break;
+                                    }
+                                }
+                                None => {
+                                    validation_error = Some(format!(
+                                        "Validation failed: New task '{}' cannot be added directly in 'completed' status. It must start as 'pending' or 'in_progress'.",
+                                        new_todo.content
+                                    ));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                match validation_error {
+                    None => {
+                        self.chat.todos = new_todos;
+                        response = serde_json::json!({ "success": true });
+                    }
+                    Some(err_msg) => {
+                        response = serde_json::json!({ "success": false, "error": err_msg });
+                    }
+                }
+            } else {
+                response =
+                    serde_json::json!({ "success": false, "error": "Invalid todos format." });
+            }
+        }
 
         self.chat.history.push(ChatMessage {
             role: "function".to_owned(),
