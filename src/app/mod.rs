@@ -257,7 +257,7 @@ impl App {
 
         self.last_file_backups.clear();
         self.chat.history.push(ChatMessage::user(input.clone()));
-        let _ = session::save_session(&self.chat);
+        self.save_session();
         self.chat.messages.push(MessageLine::user(input));
         self.chat.messages.push(MessageLine::pending());
         self.pending = Some(PendingTask::Generating);
@@ -289,7 +289,7 @@ impl App {
 
         self.last_file_backups.clear();
         self.chat.history.push(ChatMessage::user(input.clone()));
-        let _ = session::save_session(&self.chat);
+        self.save_session();
         self.chat.messages.push(MessageLine::user(input));
         self.chat.messages.push(MessageLine::pending());
         self.pending = Some(PendingTask::Generating);
@@ -455,7 +455,7 @@ impl App {
         self.chat.scroll = 0;
         self.pending = None;
         self.status = "Ready".to_owned();
-        let _ = session::save_session(&self.chat);
+        self.save_session();
     }
 
     pub fn complete_stream(&mut self) -> Option<FunctionAction> {
@@ -480,7 +480,7 @@ impl App {
             role: "model".to_owned(),
             parts: parts.clone(),
         });
-        let _ = session::save_session(&self.chat);
+        self.save_session();
 
         let mut first_call = None;
         for part in &parts {
@@ -604,10 +604,6 @@ impl App {
 
     pub fn command_suggestions(&self) -> Vec<CommandSuggestion> {
         let input = self.chat.input.trim_start();
-        if !input.starts_with("/resume") {
-            *self.sessions_cache.borrow_mut() = None;
-        }
-
         if !input.starts_with('/') {
             return Vec::new();
         }
@@ -740,7 +736,7 @@ impl App {
                 self.chat.message_queue.clear();
                 self.chat.sent_history_index = None;
                 self.chat.input_draft.clear();
-                let _ = session::save_session(&self.chat);
+                self.save_session();
                 self.status = "Chat history cleared".to_owned();
                 None
             }
@@ -758,7 +754,7 @@ impl App {
                         .unwrap_or_default()
                         .as_secs()
                 );
-                let _ = session::save_session(&self.chat);
+                self.save_session();
                 self.status = "New chat started".to_owned();
                 None
             }
@@ -943,6 +939,27 @@ impl App {
         Ok(())
     }
 
+    pub fn save_session(&mut self) {
+        let _ = session::save_session(&self.chat);
+
+        let mut cache = self.sessions_cache.borrow_mut();
+        if let Some(ref mut list) = *cache {
+            let id = self.chat.session_id.clone();
+            let snippet = if let Some(first_msg) = self.chat.history.first()
+                && let Some(first_part) = first_msg.parts.first()
+                && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
+            {
+                text.chars().take(40).collect::<String>()
+            } else {
+                "Empty chat".to_owned()
+            };
+
+            list.retain(|s| s.id != id);
+            list.insert(0, crate::app::session::SessionMeta { id, snippet });
+            list.sort_by(|a, b| b.id.cmp(&a.id));
+        }
+    }
+
     pub fn apply_selected_session(&mut self) {
         if let Some(meta) = self.sessions.selected_session() {
             match self.resume_session(&meta.id) {
@@ -974,7 +991,7 @@ impl App {
             if self.chat.messages.last().is_some_and(|m| m.pending) {
                 self.chat.messages.pop();
             }
-            let _ = crate::app::session::save_session(&self.chat);
+            self.save_session();
             return None;
         }
 
@@ -1021,7 +1038,7 @@ impl App {
                 }
             })],
         });
-        let _ = session::save_session(&self.chat);
+        self.save_session();
         if name == "run_bash_command" {
             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let mut output = String::new();
@@ -1108,7 +1125,7 @@ impl App {
         self.chat.streaming_parts.clear();
         self.chat.message_queue.clear();
         self.chat.last_chunk_was_thought = false;
-        let _ = crate::app::session::save_session(&self.chat);
+        self.save_session();
     }
 
     pub fn rollback_transactions(&mut self) {
