@@ -81,6 +81,8 @@ pub(crate) fn handle_chat_key(
                     let _ = std::process::Command::new("kill")
                         .arg("-9")
                         .arg(format!("-{}", pid))
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
                         .status();
                 }
                 #[cfg(not(unix))]
@@ -89,11 +91,15 @@ pub(crate) fn handle_chat_key(
                         .arg("/F")
                         .arg("/PID")
                         .arg(pid.to_string())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
                         .status();
                 }
             }
             app.cancel_generation();
             app.chat.shell_focused = false;
+            app.chat.focused_shell_session_id = None;
+            app.chat.focused_shell_pid = None;
             for m in &mut app.chat.messages {
                 if m.is_shell {
                     *m.cached_wrapped.borrow_mut() = None;
@@ -147,8 +153,16 @@ pub(crate) fn handle_chat_key(
         let mut written_pid = None;
 
         // 1. Try to write to active persistent session stdin
-        if let Ok(session_id_guard) = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock()
-            && let Some(ref session_id) = *session_id_guard
+        let active_session_id = if app.chat.shell_focused {
+            app.chat.focused_shell_session_id.clone()
+        } else {
+            crate::tui::ACTIVE_PERSISTENT_SESSION_ID
+                .lock()
+                .ok()
+                .and_then(|g| g.clone())
+        };
+
+        if let Some(ref session_id) = active_session_id
             && let Some(registry_mutex) = crate::tui::PERSISTENT_SESSIONS.get()
             && let Ok(mut registry_guard) = registry_mutex.lock()
             && let Some(session) = registry_guard.get_mut(session_id)
@@ -190,10 +204,47 @@ pub(crate) fn handle_chat_key(
             }
         }
 
+        // 3. Try to write to non-persistent background process stdin
+        if !written
+            && app.chat.shell_focused
+            && let Some(pid) = app.chat.focused_shell_pid
+        {
+            let bg_registry = crate::tui::BACKGROUND_PROCESSES.get();
+            if let Some(registry_mutex) = bg_registry
+                && let Ok(mut registry_guard) = registry_mutex.lock()
+                && let Some(proc) = registry_guard.get_mut(&pid)
+                && let Some(ref mut stdin) = proc.stdin
+            {
+                use std::io::Write;
+                let data = match key.code {
+                    KeyCode::Char(c) => Some(c.to_string()),
+                    KeyCode::Enter => Some("\n".to_owned()),
+                    KeyCode::Backspace => Some("\x08".to_owned()),
+                    _ => None,
+                };
+                if let Some(s) = data {
+                    let _ = stdin.write_all(s.as_bytes());
+                    let _ = stdin.flush();
+                    written = true;
+                    written_pid = Some(pid);
+                }
+            }
+        }
+
         if written {
             // Find the shell message line and truncate "\nRunning...\n" if it's there
             let mut found_msg = None;
-            if let Some(wp) = written_pid {
+            if let Some(ref session_id) = active_session_id {
+                found_msg = app
+                    .chat
+                    .messages
+                    .iter_mut()
+                    .rev()
+                    .find(|m| m.is_shell && m.shell_session_id.as_ref() == Some(session_id));
+            }
+            if found_msg.is_none()
+                && let Some(wp) = written_pid
+            {
                 found_msg = app
                     .chat
                     .messages
@@ -204,10 +255,22 @@ pub(crate) fn handle_chat_key(
             if found_msg.is_none() {
                 found_msg = app.chat.messages.iter_mut().rev().find(|m| m.is_shell);
             }
-            if let Some(msg) = found_msg
-                && msg.text.ends_with("\nRunning...\n")
-            {
-                msg.text.truncate(msg.text.len() - 11);
+            if let Some(msg) = found_msg {
+                if msg.text.ends_with("\nRunning...\n") {
+                    msg.text.truncate(msg.text.len() - 11);
+                }
+                match key.code {
+                    KeyCode::Char(c) => {
+                        msg.text.push(c);
+                    }
+                    KeyCode::Enter => {
+                        msg.text.push('\n');
+                    }
+                    KeyCode::Backspace => {
+                        msg.text.pop();
+                    }
+                    _ => {}
+                }
                 *msg.cached_wrapped.borrow_mut() = None;
             }
         }
@@ -219,10 +282,13 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
-        if app.pending.is_some() {
+        if app.pending.is_some() || app.chat.focused_shell_pid.is_some() {
             let mut pid = None;
             if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
                 pid = guard.take();
+            }
+            if pid.is_none() {
+                pid = app.chat.focused_shell_pid;
             }
             if let Some(pid) = pid {
                 #[cfg(unix)]
@@ -230,6 +296,8 @@ pub(crate) fn handle_chat_key(
                     let _ = std::process::Command::new("kill")
                         .arg("-9")
                         .arg(format!("-{}", pid))
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
                         .status();
                 }
                 #[cfg(not(unix))]
@@ -238,10 +306,15 @@ pub(crate) fn handle_chat_key(
                         .arg("/F")
                         .arg("/PID")
                         .arg(pid.to_string())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
                         .status();
                 }
             }
             app.cancel_generation();
+            app.chat.shell_focused = false;
+            app.chat.focused_shell_session_id = None;
+            app.chat.focused_shell_pid = None;
             app.status = "Aborted by user".to_owned();
             return Ok(());
         } else {
@@ -258,12 +331,17 @@ pub(crate) fn handle_chat_key(
         if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
             pid = guard.take();
         }
+        if pid.is_none() {
+            pid = app.chat.focused_shell_pid;
+        }
         if let Some(pid) = pid {
             #[cfg(unix)]
             {
                 let _ = std::process::Command::new("kill")
                     .arg("-9")
                     .arg(format!("-{}", pid))
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
                     .status();
             }
             #[cfg(not(unix))]
@@ -272,10 +350,15 @@ pub(crate) fn handle_chat_key(
                     .arg("/F")
                     .arg("/PID")
                     .arg(pid.to_string())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
                     .status();
             }
         }
         app.cancel_generation();
+        app.chat.shell_focused = false;
+        app.chat.focused_shell_session_id = None;
+        app.chat.focused_shell_pid = None;
         app.status = "Stopped".to_owned();
         return Ok(());
     }
@@ -476,9 +559,19 @@ pub(crate) fn handle_chat_key(
                     }
                 }
                 if app.chat.shell_focused {
+                    let last_shell = app.chat.messages.iter().rev().find(|m| m.is_shell);
+                    if let Some(msg) = last_shell {
+                        app.chat.focused_shell_session_id = msg.shell_session_id.clone();
+                        app.chat.focused_shell_pid = msg.shell_pid;
+                    } else {
+                        app.chat.focused_shell_session_id = None;
+                        app.chat.focused_shell_pid = None;
+                    }
                     app.chat.scroll = 0; // Automatically scroll to the bottom to show the last shell block
                     app.status = "Shell/Messages focused. Press Tab to return, or Ctrl+C to abort running command.".to_owned();
                 } else {
+                    app.chat.focused_shell_session_id = None;
+                    app.chat.focused_shell_pid = None;
                     app.status = "Ready".to_owned();
                 }
             }
