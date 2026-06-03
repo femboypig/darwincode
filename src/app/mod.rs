@@ -259,9 +259,12 @@ impl App {
         }
 
         self.last_file_backups.clear();
-        self.chat.history.push(ChatMessage::user(input.clone()));
+        self.chat
+            .history
+            .push(self::chat::resolve_prompt_message(&input));
         self.save_session();
-        self.chat.messages.push(MessageLine::user(input));
+        let cleaned_input = self::chat::clean_prompt_images(&input);
+        self.chat.messages.push(MessageLine::user(cleaned_input));
         self.chat.messages.push(MessageLine::pending());
         self.pending = Some(PendingTask::Generating);
         self.status = "Working...".to_owned();
@@ -291,9 +294,12 @@ impl App {
         }
 
         self.last_file_backups.clear();
-        self.chat.history.push(ChatMessage::user(input.clone()));
+        self.chat
+            .history
+            .push(self::chat::resolve_prompt_message(&input));
         self.save_session();
-        self.chat.messages.push(MessageLine::user(input));
+        let cleaned_input = self::chat::clean_prompt_images(&input);
+        self.chat.messages.push(MessageLine::user(cleaned_input));
         self.chat.messages.push(MessageLine::pending());
         self.pending = Some(PendingTask::Generating);
 
@@ -643,6 +649,12 @@ impl App {
     }
 
     pub fn command_suggestions(&self) -> Vec<CommandSuggestion> {
+        if let Some((_, path_prefix)) =
+            self::chat::get_at_word_at_cursor(&self.chat.input, self.chat.cursor)
+        {
+            return self::chat::get_path_suggestions(&path_prefix);
+        }
+
         let input = self.chat.input.trim_start();
         if !input.starts_with('/') {
             return Vec::new();
@@ -696,6 +708,25 @@ impl App {
     }
 
     pub fn accept_command_suggestion(&mut self) {
+        if let Some((start_idx, _)) =
+            self::chat::get_at_word_at_cursor(&self.chat.input, self.chat.cursor)
+        {
+            if let Some(suggestion) = self.command_suggestions().into_iter().next() {
+                let char_indices: Vec<(usize, char)> = self.chat.input.char_indices().collect();
+                let prefix: String = char_indices[..start_idx].iter().map(|&(_, c)| c).collect();
+                let suffix: String = char_indices[self.chat.cursor..]
+                    .iter()
+                    .map(|&(_, c)| c)
+                    .collect();
+
+                self.chat.input = format!("{}{}{}", prefix, suggestion.name, suffix);
+
+                let inserted_len = suggestion.name.chars().count();
+                self.chat.cursor = start_idx + inserted_len;
+            }
+            return;
+        }
+
         if let Some(suggestion) = self.command_suggestions().into_iter().next() {
             self.chat.input = format!("{} ", suggestion.name);
             self.chat.cursor = self.chat.input.chars().count();
