@@ -93,15 +93,11 @@ fn run_check_process(pid: u32) -> serde_json::Value {
     if let Ok(mut map) = registry.lock() {
         if let Some(proc) = map.get_mut(&pid) {
             let mut exit_code_guard = proc.exit_status.lock().unwrap();
-            if exit_code_guard.is_none() {
-                if let Ok(mut child_guard) = proc.child.lock() {
-                    match child_guard.try_wait() {
-                        Ok(Some(status)) => {
-                            *exit_code_guard = status.code();
-                        }
-                        _ => {}
-                    }
-                }
+            if exit_code_guard.is_none()
+                && let Ok(mut child_guard) = proc.child.lock()
+                && let Ok(Some(status)) = child_guard.try_wait()
+            {
+                *exit_code_guard = status.code();
             }
             let is_alive = exit_code_guard.is_none();
             serde_json::json!({
@@ -124,7 +120,7 @@ fn run_kill_process(pid: u32) -> serde_json::Value {
             #[cfg(unix)]
             {
                 let _ = std::process::Command::new("kill")
-                    .args(&["-9", &format!("-{}", pid)])
+                    .args(["-9", &format!("-{}", pid)])
                     .status();
             }
             serde_json::json!({ "success": true })
@@ -160,12 +156,11 @@ fn run_get_logs(pid: u32, limit: Option<usize>) -> serde_json::Value {
             };
 
             let mut exit_code_guard = proc.exit_status.lock().unwrap();
-            if exit_code_guard.is_none() {
-                if let Ok(mut child_guard) = proc.child.lock() {
-                    if let Ok(Some(status)) = child_guard.try_wait() {
-                        *exit_code_guard = status.code();
-                    }
-                }
+            if exit_code_guard.is_none()
+                && let Ok(mut child_guard) = proc.child.lock()
+                && let Ok(Some(status)) = child_guard.try_wait()
+            {
+                *exit_code_guard = status.code();
             }
 
             serde_json::json!({
@@ -181,6 +176,7 @@ fn run_get_logs(pid: u32, limit: Option<usize>) -> serde_json::Value {
     }
 }
 
+#[allow(clippy::zombie_processes)]
 fn run_persistent_bash(
     session_id: &str,
     cmd: &str,
@@ -967,15 +963,15 @@ pub(crate) fn handle_function_action(
                                 let pid = child.id();
                                 
                                 if let Some(mut stdin) = child.stdin.take() {
-                                    if let Some(ref inp) = input {
+                                    if let Some(inp) = input {
                                         use std::io::Write;
                                         let _ = stdin.write_all(inp.as_bytes());
                                         let _ = stdin.flush();
                                     }
-                                    if !background {
-                                        if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock() {
-                                            *guard = Some(stdin);
-                                        }
+                                    if !background
+                                        && let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock()
+                                    {
+                                        *guard = Some(stdin);
                                     }
                                 }
 
@@ -1129,9 +1125,9 @@ pub(crate) fn handle_function_action(
                                             
                                             let mut diff = String::new();
                                             diff.push_str("```diff\n");
-                                            for i in (start_line - 1)..end_idx {
+                                            for line in lines.iter().take(end_idx).skip(start_line - 1) {
                                                 diff.push_str("- ");
-                                                diff.push_str(lines[i]);
+                                                diff.push_str(line);
                                                 diff.push('\n');
                                             }
                                             for line in new_content.lines() {
@@ -1142,14 +1138,14 @@ pub(crate) fn handle_function_action(
                                             diff.push_str("```");
 
                                             let mut new_lines = Vec::new();
-                                            for i in 0..(start_line - 1) {
-                                                new_lines.push(lines[i]);
+                                            for line in lines.iter().take(start_line - 1) {
+                                                new_lines.push(*line);
                                             }
                                             for line in new_content.lines() {
                                                 new_lines.push(line);
                                             }
-                                            for i in end_idx..lines.len() {
-                                                new_lines.push(lines[i]);
+                                            for line in lines.iter().skip(end_idx) {
+                                                new_lines.push(*line);
                                             }
                                             let mut new_content_str = new_lines.join("\n");
                                             if content.ends_with('\n') && !new_content_str.is_empty() {
