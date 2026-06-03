@@ -1094,7 +1094,7 @@ mod tests {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
                 "functionCall": {
-                    "name": "todowrite",
+                    "name": "todo",
                     "args": {
                         "todos": [
                             { "content": "Task 1", "status": "pending", "priority": "high" },
@@ -1105,10 +1105,7 @@ mod tests {
             })],
         });
 
-        app.complete_function_execution(
-            "todowrite".to_string(),
-            serde_json::json!({ "success": true }),
-        );
+        app.complete_function_execution("todo".to_string(), serde_json::json!({ "success": true }));
         assert_eq!(app.chat.todos.len(), 2);
         assert_eq!(app.chat.todos[0].content, "Task 1");
         assert_eq!(app.chat.todos[0].status, "pending");
@@ -1121,7 +1118,7 @@ mod tests {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
                 "functionCall": {
-                    "name": "todowrite",
+                    "name": "todo",
                     "args": {
                         "todos": [
                             { "content": "Task 1", "status": "completed", "priority": "high" },
@@ -1132,10 +1129,7 @@ mod tests {
             })],
         });
 
-        app.complete_function_execution(
-            "todowrite".to_string(),
-            serde_json::json!({ "success": true }),
-        );
+        app.complete_function_execution("todo".to_string(), serde_json::json!({ "success": true }));
         // Should not update self.chat.todos because of validation failure
         assert_eq!(app.chat.todos[0].status, "pending");
 
@@ -1159,7 +1153,7 @@ mod tests {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
                 "functionCall": {
-                    "name": "todowrite",
+                    "name": "todo",
                     "args": {
                         "todos": [
                             { "content": "Task 1", "status": "in_progress", "priority": "high" },
@@ -1170,10 +1164,7 @@ mod tests {
             })],
         });
 
-        app.complete_function_execution(
-            "todowrite".to_string(),
-            serde_json::json!({ "success": true }),
-        );
+        app.complete_function_execution("todo".to_string(), serde_json::json!({ "success": true }));
         // Should not update
         assert_eq!(app.chat.todos[0].status, "pending");
 
@@ -1195,7 +1186,7 @@ mod tests {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
                 "functionCall": {
-                    "name": "todowrite",
+                    "name": "todo",
                     "args": {
                         "todos": [
                             { "content": "Task 1", "status": "pending", "priority": "high" },
@@ -1207,10 +1198,7 @@ mod tests {
             })],
         });
 
-        app.complete_function_execution(
-            "todowrite".to_string(),
-            serde_json::json!({ "success": true }),
-        );
+        app.complete_function_execution("todo".to_string(), serde_json::json!({ "success": true }));
         assert_eq!(app.chat.todos.len(), 2); // Still 2, Task 3 was not added
 
         let last_msg = app.chat.history.last().unwrap();
