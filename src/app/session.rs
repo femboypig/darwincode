@@ -122,7 +122,10 @@ pub fn format_tool_summary(
             }
             "check_process" => {
                 let pid = args.get("pid").and_then(|v| v.as_i64()).unwrap_or(0);
-                let alive = response.get("alive").and_then(|v| v.as_bool()).unwrap_or(false);
+                let alive = response
+                    .get("alive")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let status = if alive { "running" } else { "terminated" };
                 res_parts.push(format!("Process {pid} is {status}"));
             }

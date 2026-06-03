@@ -284,7 +284,12 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     render_statusbar(frame, app, statusbar_area);
 
     if let Some(PendingTask::ConfirmFunction { name, args }) = &app.pending {
-        let popup_area = if name == "edit_file" || name == "edit_files" || name == "write_file" || name == "edit_file_lines" || name == "apply_patch" {
+        let popup_area = if name == "edit_file"
+            || name == "edit_files"
+            || name == "write_file"
+            || name == "edit_file_lines"
+            || name == "apply_patch"
+        {
             centered_rect(80, 70, area)
         } else {
             centered_rect(60, 50, area)
@@ -345,7 +350,10 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let start_line = args.get("start_line").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
             let end_line = args.get("end_line").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
-            let new_str = args.get("new_content").and_then(|v| v.as_str()).unwrap_or("");
+            let new_str = args
+                .get("new_content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
 
             text.push(Line::from(vec![
                 Span::styled("File: ", Style::default().add_modifier(Modifier::BOLD)),

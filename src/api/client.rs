@@ -381,7 +381,9 @@ impl GeminiClient {
             });
             declarations.push(FunctionDeclaration {
                 name: "get_logs".to_owned(),
-                description: "Retrieve accumulated stdout and stderr logs for a background process.".to_owned(),
+                description:
+                    "Retrieve accumulated stdout and stderr logs for a background process."
+                        .to_owned(),
                 parameters: Some(serde_json::json!({
                     "type": "OBJECT",
                     "properties": {

@@ -64,7 +64,7 @@ fn register_background_process(
 
     let child_clone = child_arc.clone();
     let exit_status_clone = exit_status.clone();
-    
+
     // Spawn monitor thread to wait for process exit
     std::thread::spawn(move || {
         let mut child_guard = child_clone.lock().unwrap();
@@ -138,7 +138,7 @@ fn run_get_logs(pid: u32, limit: Option<usize>) -> serde_json::Value {
         if let Some(proc) = map.get(&pid) {
             let stdout = proc.stdout_accumulator.lock().unwrap().clone();
             let stderr = proc.stderr_accumulator.lock().unwrap().clone();
-            
+
             let stdout_lines = if let Some(lim) = limit {
                 let lines: Vec<&str> = stdout.lines().collect();
                 let start = lines.len().saturating_sub(lim);
@@ -185,7 +185,7 @@ fn run_persistent_bash(
 ) -> Result<serde_json::Value, std::io::Error> {
     let registry = PERSISTENT_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = registry.lock().unwrap();
-    
+
     let entry = map.entry(session_id.to_owned()).or_insert_with(|| {
         let mut command = std::process::Command::new("bash");
         command
@@ -262,14 +262,17 @@ fn run_persistent_bash(
     });
 
     use std::io::Write;
-    
+
     let start_stdout_len = entry.stdout_accumulator.lock().unwrap().len();
     let start_stderr_len = entry.stderr_accumulator.lock().unwrap().len();
 
-    let nonce = format!("CMD_DONE_{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis());
+    let nonce = format!(
+        "CMD_DONE_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
     let sentinel = format!("___SENTINEL_{}___", nonce);
 
     writeln!(entry.stdin, "{}", cmd)?;
@@ -925,9 +928,13 @@ pub(crate) fn handle_function_action(
                     }
                     "run_bash_command" => {
                         let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                        let background = args.get("background").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let background = args
+                            .get("background")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
                         let input = args.get("input").and_then(|v| v.as_str());
-                        let persistent_session_id = args.get("persistent_session_id").and_then(|v| v.as_str());
+                        let persistent_session_id =
+                            args.get("persistent_session_id").and_then(|v| v.as_str());
 
                         if let Some(session_id) = persistent_session_id {
                             match run_persistent_bash(session_id, cmd, input, sender.clone()) {
@@ -961,7 +968,7 @@ pub(crate) fn handle_function_action(
                                 let mut child = command.spawn()?;
 
                                 let pid = child.id();
-                                
+
                                 if let Some(mut stdin) = child.stdin.take() {
                                     if let Some(inp) = input {
                                         use std::io::Write;
@@ -969,7 +976,8 @@ pub(crate) fn handle_function_action(
                                         let _ = stdin.flush();
                                     }
                                     if !background
-                                        && let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock()
+                                        && let Ok(mut guard) =
+                                            crate::tui::RUNNING_PROCESS_STDIN.lock()
                                     {
                                         *guard = Some(stdin);
                                     }
@@ -993,7 +1001,8 @@ pub(crate) fn handle_function_action(
                                         if n == 0 {
                                             break;
                                         }
-                                        let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
+                                        let chunk =
+                                            String::from_utf8_lossy(&buffer[..n]).into_owned();
                                         if let Ok(mut guard) = stdout_acc_clone.lock() {
                                             guard.push_str(&chunk);
                                         }
@@ -1011,7 +1020,8 @@ pub(crate) fn handle_function_action(
                                         if n == 0 {
                                             break;
                                         }
-                                        let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
+                                        let chunk =
+                                            String::from_utf8_lossy(&buffer[..n]).into_owned();
                                         if let Ok(mut guard) = stderr_acc_clone.lock() {
                                             guard.push_str(&chunk);
                                         }
@@ -1043,7 +1053,8 @@ pub(crate) fn handle_function_action(
                                     if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
                                         *guard = None;
                                     }
-                                    if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock() {
+                                    if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock()
+                                    {
                                         *guard = None;
                                     }
 
@@ -1062,8 +1073,9 @@ pub(crate) fn handle_function_action(
                                     let mut err_val = serde_json::Value::Null;
 
                                     if status_code.is_none() {
-                                        err_val =
-                                            serde_json::json!("Process terminated by user via Ctrl+C");
+                                        err_val = serde_json::json!(
+                                            "Process terminated by user via Ctrl+C"
+                                        );
                                     }
 
                                     Ok(serde_json::json!({
@@ -1091,7 +1103,10 @@ pub(crate) fn handle_function_action(
                     }
                     "get_logs" => {
                         let pid = args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                        let limit = args.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+                        let limit = args
+                            .get("limit")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as usize);
                         run_get_logs(pid, limit)
                     }
                     "edit_file_lines" => {
@@ -1106,9 +1121,15 @@ pub(crate) fn handle_function_action(
                         {
                             serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
                         } else {
-                            let start_line = args.get("start_line").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
-                            let end_line = args.get("end_line").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
-                            let new_content = args.get("new_content").and_then(|v| v.as_str()).unwrap_or("");
+                            let start_line =
+                                args.get("start_line").and_then(|v| v.as_u64()).unwrap_or(1)
+                                    as usize;
+                            let end_line =
+                                args.get("end_line").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
+                            let new_content = args
+                                .get("new_content")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
 
                             if start_line == 0 {
                                 serde_json::json!({ "error": "start_line must be greater than or equal to 1" })
@@ -1122,10 +1143,12 @@ pub(crate) fn handle_function_action(
                                             serde_json::json!({ "error": format!("start_line {} is beyond file line count {}", start_line, lines.len()) })
                                         } else {
                                             let end_idx = std::cmp::min(end_line, lines.len());
-                                            
+
                                             let mut diff = String::new();
                                             diff.push_str("```diff\n");
-                                            for line in lines.iter().take(end_idx).skip(start_line - 1) {
+                                            for line in
+                                                lines.iter().take(end_idx).skip(start_line - 1)
+                                            {
                                                 diff.push_str("- ");
                                                 diff.push_str(line);
                                                 diff.push('\n');
@@ -1148,7 +1171,9 @@ pub(crate) fn handle_function_action(
                                                 new_lines.push(*line);
                                             }
                                             let mut new_content_str = new_lines.join("\n");
-                                            if content.ends_with('\n') && !new_content_str.is_empty() {
+                                            if content.ends_with('\n')
+                                                && !new_content_str.is_empty()
+                                            {
                                                 new_content_str.push('\n');
                                             }
 
@@ -1177,18 +1202,27 @@ pub(crate) fn handle_function_action(
                             cmd.stdin(std::process::Stdio::piped());
                             cmd.stdout(std::process::Stdio::piped());
                             cmd.stderr(std::process::Stdio::piped());
-                            let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn git apply: {}", e))?;
+                            let mut child = cmd
+                                .spawn()
+                                .map_err(|e| format!("Failed to spawn git apply: {}", e))?;
                             if let Some(mut stdin) = child.stdin.take() {
                                 use std::io::Write;
-                                stdin.write_all(patch.as_bytes()).map_err(|e| format!("Failed to write to stdin: {}", e))?;
+                                stdin
+                                    .write_all(patch.as_bytes())
+                                    .map_err(|e| format!("Failed to write to stdin: {}", e))?;
                             }
-                            let output = child.wait_with_output().map_err(|e| format!("Failed waiting for git apply: {}", e))?;
+                            let output = child
+                                .wait_with_output()
+                                .map_err(|e| format!("Failed waiting for git apply: {}", e))?;
                             if output.status.success() {
                                 Ok(())
                             } else {
                                 let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
                                 let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-                                Err(format!("git apply failed:\nstdout: {}\nstderr: {}", stdout, stderr))
+                                Err(format!(
+                                    "git apply failed:\nstdout: {}\nstderr: {}",
+                                    stdout, stderr
+                                ))
                             }
                         })();
                         match run_res {
