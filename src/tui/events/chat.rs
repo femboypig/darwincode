@@ -94,12 +94,22 @@ pub(crate) fn handle_chat_key(
             }
             app.cancel_generation();
             app.chat.shell_focused = false;
+            for m in &mut app.chat.messages {
+                if m.is_shell {
+                    *m.cached_wrapped.borrow_mut() = None;
+                }
+            }
             app.status = "Aborted by user".to_owned();
             return Ok(());
         }
 
         if key.code == KeyCode::Tab {
             app.chat.shell_focused = false;
+            for m in &mut app.chat.messages {
+                if m.is_shell {
+                    *m.cached_wrapped.borrow_mut() = None;
+                }
+            }
             app.status = "Ready".to_owned();
             return Ok(());
         }
@@ -333,10 +343,10 @@ pub(crate) fn handle_chat_key(
             let old_cursor = app.chat.cursor;
             app.chat.move_cursor_up();
             if app.chat.cursor == old_cursor {
-                app.chat.scroll = app.chat.scroll.saturating_add(3);
+                app.chat.scroll = app.chat.scroll.saturating_add(1);
             }
         } else {
-            app.chat.scroll = app.chat.scroll.saturating_add(3);
+            app.chat.scroll = app.chat.scroll.saturating_add(1);
         }
         return Ok(());
     }
@@ -349,10 +359,10 @@ pub(crate) fn handle_chat_key(
             let old_cursor = app.chat.cursor;
             app.chat.move_cursor_down();
             if app.chat.cursor == old_cursor {
-                app.chat.scroll = app.chat.scroll.saturating_sub(3);
+                app.chat.scroll = app.chat.scroll.saturating_sub(1);
             }
         } else {
-            app.chat.scroll = app.chat.scroll.saturating_sub(3);
+            app.chat.scroll = app.chat.scroll.saturating_sub(1);
         }
         return Ok(());
     }
@@ -460,6 +470,11 @@ pub(crate) fn handle_chat_key(
                 app.accept_command_suggestion();
             } else {
                 app.chat.shell_focused = !app.chat.shell_focused;
+                for m in &mut app.chat.messages {
+                    if m.is_shell {
+                        *m.cached_wrapped.borrow_mut() = None;
+                    }
+                }
                 if app.chat.shell_focused {
                     app.chat.scroll = 0; // Automatically scroll to the bottom to show the last shell block
                     app.status = "Shell/Messages focused. Press Tab to return, or Ctrl+C to abort running command.".to_owned();
