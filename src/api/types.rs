@@ -7,6 +7,7 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
+    #[allow(dead_code)]
     pub fn user(text: String) -> Self {
         Self {
             role: "user".to_owned(),
