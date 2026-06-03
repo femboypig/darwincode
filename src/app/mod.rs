@@ -722,20 +722,11 @@ impl App {
             }
             ChatCommand::Resume(session_id) => {
                 if let Some(id) = session_id {
-                    match session::load_session(&id) {
-                        Ok(s) => {
-                            self.chat.session_id = s.id;
-                            self.chat.history = s.history;
-                            self.chat.messages =
-                                session::rebuild_messages_from_history(&self.chat.history);
-                            self.status = format!("Resumed session: {}", id);
-                        }
-                        Err(e) => {
-                            self.chat.messages.push(MessageLine::error(format!(
-                                "Failed to load session '{}': {}",
-                                id, e
-                            )));
-                        }
+                    if let Err(e) = self.resume_session(&id) {
+                        self.chat.messages.push(MessageLine::error(format!(
+                            "Failed to load session '{}': {}",
+                            id, e
+                        )));
                     }
                 } else {
                     self.open_sessions();
@@ -943,15 +934,20 @@ impl App {
         self.status = "Ready".to_owned();
     }
 
+    pub fn resume_session(&mut self, id: &str) -> Result<()> {
+        let s = session::load_session(id)?;
+        self.chat.session_id = s.id;
+        self.chat.history = s.history;
+        self.chat.messages = session::rebuild_messages_from_history(&self.chat.history);
+        self.status = format!("Resumed session: {}", id);
+        Ok(())
+    }
+
     pub fn apply_selected_session(&mut self) {
         if let Some(meta) = self.sessions.selected_session() {
-            match session::load_session(&meta.id) {
-                Ok(s) => {
-                    self.chat.session_id = s.id;
-                    self.chat.history = s.history;
-                    self.chat.messages = session::rebuild_messages_from_history(&self.chat.history);
+            match self.resume_session(&meta.id) {
+                Ok(_) => {
                     self.screen = Screen::Chat;
-                    self.status = format!("Resumed session: {}", self.chat.session_id);
                 }
                 Err(e) => {
                     self.status = format!("Failed to load session: {e}");
