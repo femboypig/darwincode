@@ -69,11 +69,14 @@ pub fn format_tool_summary(
 ) -> String {
     let tool_label = match name {
         "read_file" | "read_files" => "Read".to_owned(),
-        "edit_file" | "edit_files" => "Edit".to_owned(),
+        "edit_file" | "edit_files" | "edit_file_lines" | "apply_patch" => "Edit".to_owned(),
         "write_file" => "Write".to_owned(),
         "search_files" => "Search".to_owned(),
         "list_directory" => "List".to_owned(),
         "run_bash_command" => "Run".to_owned(),
+        "check_process" => "Check".to_owned(),
+        "kill_process" => "Kill".to_owned(),
+        "get_logs" => "Logs".to_owned(),
         _ => {
             let mut label = String::new();
             let mut next_cap = true;
@@ -104,6 +107,32 @@ pub fn format_tool_summary(
                 if let Some(diff) = response.get("diff").and_then(|v| v.as_str()) {
                     res_parts.push(format!("\n{diff}"));
                 }
+            }
+            "edit_file_lines" => {
+                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+                let start = args.get("start_line").and_then(|v| v.as_i64()).unwrap_or(0);
+                let end = args.get("end_line").and_then(|v| v.as_i64()).unwrap_or(0);
+                res_parts.push(format!("`{path}` lines {start}-{end} updated"));
+                if let Some(diff) = response.get("diff").and_then(|v| v.as_str()) {
+                    res_parts.push(format!("\n{diff}"));
+                }
+            }
+            "apply_patch" => {
+                res_parts.push("Patch applied successfully".to_owned());
+            }
+            "check_process" => {
+                let pid = args.get("pid").and_then(|v| v.as_i64()).unwrap_or(0);
+                let alive = response.get("alive").and_then(|v| v.as_bool()).unwrap_or(false);
+                let status = if alive { "running" } else { "terminated" };
+                res_parts.push(format!("Process {pid} is {status}"));
+            }
+            "kill_process" => {
+                let pid = args.get("pid").and_then(|v| v.as_i64()).unwrap_or(0);
+                res_parts.push(format!("Process {pid} terminated"));
+            }
+            "get_logs" => {
+                let pid = args.get("pid").and_then(|v| v.as_i64()).unwrap_or(0);
+                res_parts.push(format!("Logs for process {pid} retrieved"));
             }
             "read_file" => {
                 let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
