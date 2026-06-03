@@ -1221,6 +1221,19 @@ impl App {
     }
 
     pub fn backup_before_execution(&mut self, name: &str, args: &serde_json::Value) {
+        let git_root = (|| -> Option<std::path::PathBuf> {
+            let out = std::process::Command::new("git")
+                .args(["rev-parse", "--show-toplevel"])
+                .output()
+                .ok()?;
+            if out.status.success() {
+                let path_str = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+                Some(std::path::PathBuf::from(path_str))
+            } else {
+                None
+            }
+        })();
+
         let mut paths_to_backup = Vec::new();
         match name {
             "edit_file" | "write_file" | "edit_file_lines" => {
@@ -1272,13 +1285,21 @@ impl App {
             if self.last_file_backups.iter().any(|b| b.path == path) {
                 continue;
             }
-            let original_content = if std::path::Path::new(&path).exists() {
-                std::fs::read_to_string(&path).ok()
+            let resolved_path = if let Some(ref root) = git_root
+                && !std::path::Path::new(&path).is_absolute()
+            {
+                root.join(&path)
+            } else {
+                std::path::PathBuf::from(&path)
+            };
+
+            let original_content = if resolved_path.exists() {
+                std::fs::read_to_string(&resolved_path).ok()
             } else {
                 None
             };
             self.last_file_backups.push(FileBackup {
-                path,
+                path: resolved_path.to_string_lossy().into_owned(),
                 original_content,
             });
         }
