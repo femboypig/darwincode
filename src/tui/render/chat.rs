@@ -44,12 +44,18 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         let logo_lines = logo_lines();
         let logo_fits_flag = logo_fits(&logo_lines, area.width, 5);
 
+        let remaining_height = area.height.saturating_sub(input_height + 1); // 1 for status bar
+        let half_height = remaining_height / 2;
+        let top_height = half_height;
+        let bottom_height = remaining_height.saturating_sub(half_height);
+
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(50),
+                Constraint::Length(top_height),
                 Constraint::Length(input_height),
-                Constraint::Percentage(50),
+                Constraint::Length(bottom_height),
+                Constraint::Length(1), // Status bar
             ])
             .split(area);
 
@@ -57,17 +63,16 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),
-                Constraint::Length(6), // Logo (5 lines + 1 spacer)
+                Constraint::Length(5), // Logo (5 lines)
             ])
             .split(main_chunks[0]);
 
         let bottom_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(2), // Spacer
+                Constraint::Length(1), // Spacer
                 Constraint::Length(1), // Tips line
-                Constraint::Min(0),    // Bottom space
-                Constraint::Length(1), // Status bar
+                Constraint::Min(0),
             ])
             .split(main_chunks[2]);
 
@@ -80,27 +85,27 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             ])
             .split(main_chunks[1])[1];
 
-        if logo_fits_flag {
-            (
-                None,
-                None,
-                None,
-                Some(centered_input_box),
-                bottom_chunks[3],
-                Some(top_chunks[1]),
-                Some(bottom_chunks[1]),
-            )
+        let logo_area = if logo_fits_flag && top_height >= 5 {
+            Some(top_chunks[1])
         } else {
-            (
-                None,
-                None,
-                None,
-                Some(centered_input_box),
-                bottom_chunks[3],
-                None,
-                Some(bottom_chunks[1]),
-            )
-        }
+            None
+        };
+
+        let tips_area = if bottom_height >= 2 {
+            Some(bottom_chunks[1])
+        } else {
+            None
+        };
+
+        (
+            None,
+            None,
+            None,
+            Some(centered_input_box),
+            main_chunks[3],
+            logo_area,
+            tips_area,
+        )
     } else {
         let queue_height = if app.chat.message_queue.is_empty() {
             0
@@ -658,7 +663,24 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
                 let body_w = (width as usize).saturating_sub(2);
                 let wrapped_body_lines = wrap_text_to_lines(&content, body_w);
-                for line in wrapped_body_lines {
+                let max_shell_lines = 25;
+                let (display_lines, _truncated_count) = if wrapped_body_lines.len() > max_shell_lines {
+                    let keep_start = 10;
+                    let keep_end = 12;
+                    let mut lines_to_show = Vec::new();
+                    for l in wrapped_body_lines.iter().take(keep_start) {
+                        lines_to_show.push(l.clone());
+                    }
+                    lines_to_show.push(format!("... [{} lines truncated] ...", wrapped_body_lines.len() - keep_start - keep_end));
+                    for l in wrapped_body_lines.iter().skip(wrapped_body_lines.len() - keep_end) {
+                        lines_to_show.push(l.clone());
+                    }
+                    (lines_to_show, wrapped_body_lines.len() - keep_start - keep_end)
+                } else {
+                    (wrapped_body_lines, 0)
+                };
+
+                for line in display_lines {
                     let line_len = line.chars().count();
                     let body_pad = body_w.saturating_sub(line_len);
                     let padded_line = if line_len > body_w {
@@ -667,9 +689,16 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                         format!("{}{}", line, " ".repeat(body_pad))
                     };
 
+                    let is_truncation_marker = line.starts_with("... [") && line.ends_with("] ...");
+                    let style = if is_truncation_marker {
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    };
+
                     msg_lines.push(Line::from(vec![
                         Span::styled("│  ", border_style),
-                        Span::styled(padded_line, Style::default().fg(Color::DarkGray)),
+                        Span::styled(padded_line, style),
                         Span::styled("│", border_style),
                     ]));
                 }
