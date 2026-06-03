@@ -829,6 +829,74 @@ fn should_ignore(path: &std::path::Path, rules: &[String]) -> bool {
     false
 }
 
+fn matches_wildcard(name: &str, pattern: &str) -> bool {
+    let mut pattern_parts = pattern.split('*');
+    if let Some(first) = pattern_parts.next() {
+        if !name.starts_with(first) {
+            return false;
+        }
+        let mut last_idx = first.len();
+        for part in pattern_parts {
+            if part.is_empty() {
+                return true;
+            }
+            if let Some(idx) = name[last_idx..].find(part) {
+                last_idx += idx + part.len();
+            } else {
+                return false;
+            }
+        }
+        last_idx == name.len() || pattern.ends_with('*')
+    } else {
+        name == pattern
+    }
+}
+
+fn matches_pattern(path: &std::path::Path, base_dir: &std::path::Path, pattern: &str) -> bool {
+    if pattern.contains('/') {
+        if let Ok(rel_path) = path.strip_prefix(base_dir) {
+            let rel_str = rel_path.to_string_lossy();
+            matches_wildcard(&rel_str, pattern)
+        } else {
+            false
+        }
+    } else if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+        matches_wildcard(file_name, pattern)
+    } else {
+        false
+    }
+}
+
+fn recursive_glob(
+    dir: &std::path::Path,
+    base_dir: &std::path::Path,
+    pattern: &str,
+    rules: &[String],
+    matches: &mut Vec<String>,
+) -> std::io::Result<()> {
+    if dir.is_dir() {
+        if should_ignore(dir, rules) {
+            return Ok(());
+        }
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if should_ignore(&path, rules) {
+                continue;
+            }
+            if path.is_dir() {
+                let _ = recursive_glob(&path, base_dir, pattern, rules, matches);
+            } else if path.is_file() && matches_pattern(&path, base_dir, pattern) {
+                matches.push(path.display().to_string());
+                if matches.len() >= 1000 {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn recursive_search(
     dir: &std::path::Path,
     pattern: &str,
@@ -873,50 +941,35 @@ pub(crate) fn handle_function_action(
             let sender = sender.clone();
             thread::spawn(move || {
                 let result = match name.as_str() {
-                    "read_file" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    "read" => {
+                        let path = args.get("path").and_then(|v| v.as_str());
+                        let paths = args.get("paths").and_then(|v| v.as_array());
+
                         let rules = if config.respect_gitignore {
                             load_gitignore_rules()
                         } else {
                             Vec::new()
                         };
-                        if config.respect_gitignore
-                            && should_ignore(std::path::Path::new(path), &rules)
-                        {
-                            serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore and respect_gitignore is enabled", path) })
-                        } else {
-                            match std::fs::read_to_string(path) {
-                                Ok(content) => serde_json::json!({ "content": content }),
-                                Err(e) => serde_json::json!({ "error": e.to_string() }),
-                            }
-                        }
-                    }
-                    "read_files" => {
-                        let paths = args.get("paths").and_then(|v| v.as_array());
+
                         if let Some(paths) = paths {
-                            let rules = if config.respect_gitignore {
-                                load_gitignore_rules()
-                            } else {
-                                Vec::new()
-                            };
                             let mut results = serde_json::Map::new();
                             for path_val in paths {
-                                if let Some(path) = path_val.as_str() {
+                                if let Some(p_str) = path_val.as_str() {
                                     if config.respect_gitignore
-                                        && should_ignore(std::path::Path::new(path), &rules)
+                                        && should_ignore(std::path::Path::new(p_str), &rules)
                                     {
-                                        results.insert(path.to_owned(), serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) }));
+                                        results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", p_str) }));
                                     } else {
-                                        match std::fs::read_to_string(path) {
+                                        match std::fs::read_to_string(p_str) {
                                             Ok(content) => {
                                                 results.insert(
-                                                    path.to_owned(),
+                                                    p_str.to_owned(),
                                                     serde_json::json!({ "content": content }),
                                                 );
                                             }
                                             Err(e) => {
                                                 results.insert(
-                                                    path.to_owned(),
+                                                    p_str.to_owned(),
                                                     serde_json::json!({ "error": e.to_string() }),
                                                 );
                                             }
@@ -926,177 +979,37 @@ pub(crate) fn handle_function_action(
                             }
                             serde_json::json!({ "files": results })
                         } else {
-                            serde_json::json!({ "error": "Invalid arguments: paths array is required" })
-                        }
-                    }
-                    "edit_files" => {
-                        let edits = args.get("edits").and_then(|v| v.as_array());
-                        if let Some(edits) = edits {
-                            let rules = if config.respect_gitignore {
-                                load_gitignore_rules()
+                            let target_path = path.unwrap_or(".");
+                            let p = std::path::Path::new(target_path);
+                            if config.respect_gitignore && should_ignore(p, &rules) {
+                                serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", target_path) })
+                            } else if p.is_dir() {
+                                match std::fs::read_dir(p) {
+                                    Ok(entries) => {
+                                        let mut files = Vec::new();
+                                        for entry in entries.filter_map(Result::ok) {
+                                            let entry_path = entry.path();
+                                            if !config.respect_gitignore
+                                                || !should_ignore(&entry_path, &rules)
+                                            {
+                                                files.push(entry_path.display().to_string());
+                                            }
+                                        }
+                                        serde_json::json!({ "files": files })
+                                    }
+                                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                                }
+                            } else if p.is_file() {
+                                match std::fs::read_to_string(p) {
+                                    Ok(content) => serde_json::json!({ "content": content }),
+                                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                                }
                             } else {
-                                Vec::new()
-                            };
-                            let mut parsed_edits = Vec::new();
-                            let mut validation_errors = Vec::new();
-
-                            for (idx, edit_val) in edits.iter().enumerate() {
-                                let path =
-                                    edit_val.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                                let old_string = edit_val
-                                    .get("old_string")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-                                let new_string = edit_val
-                                    .get("new_string")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-                                if path.is_empty() {
-                                    validation_errors
-                                        .push(format!("Edit at index {} is missing 'path'", idx));
-                                    continue;
-                                }
-                                if config.respect_gitignore
-                                    && should_ignore(std::path::Path::new(path), &rules)
-                                {
-                                    validation_errors.push(format!(
-                                        "Access denied: `{}` is ignored by .gitignore",
-                                        path
-                                    ));
-                                    continue;
-                                }
-                                parsed_edits.push((
-                                    path.to_owned(),
-                                    old_string.to_owned(),
-                                    new_string.to_owned(),
-                                ));
+                                serde_json::json!({ "error": format!("Path `{}` does not exist or is not readable", target_path) })
                             }
-
-                            if !validation_errors.is_empty() {
-                                serde_json::json!({ "error": validation_errors.join("; ") })
-                            } else {
-                                let mut original_contents = std::collections::HashMap::new();
-                                let mut apply_errors = Vec::new();
-
-                                for (path, _, _) in &parsed_edits {
-                                    if !original_contents.contains_key(path) {
-                                        match std::fs::read_to_string(path) {
-                                            Ok(content) => {
-                                                original_contents.insert(path.clone(), content);
-                                            }
-                                            Err(e) => {
-                                                apply_errors.push(format!(
-                                                    "Failed to read `{}`: {}",
-                                                    path, e
-                                                ));
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if !apply_errors.is_empty() {
-                                    serde_json::json!({ "error": apply_errors.join("; ") })
-                                } else {
-                                    let mut working_contents = original_contents.clone();
-                                    let mut diffs = Vec::new();
-
-                                    for (path, old_string, new_string) in &parsed_edits {
-                                        let current_content =
-                                            working_contents.get_mut(path).unwrap();
-                                        if current_content.contains(old_string) {
-                                            let mut diff = format!("--- {}\n+++ {}\n", path, path);
-                                            let old_lines: Vec<&str> = old_string.lines().collect();
-                                            let new_lines: Vec<&str> = new_string.lines().collect();
-
-                                            for line in &old_lines {
-                                                diff.push_str("- ");
-                                                diff.push_str(line);
-                                                diff.push('\n');
-                                            }
-                                            for line in &new_lines {
-                                                diff.push_str("+ ");
-                                                diff.push_str(line);
-                                                diff.push('\n');
-                                            }
-                                            diffs.push(diff);
-
-                                            *current_content =
-                                                current_content.replacen(old_string, new_string, 1);
-                                        } else {
-                                            apply_errors.push(format!(
-                                                "old_string not found in `{}`",
-                                                path
-                                            ));
-                                            break;
-                                        }
-                                    }
-
-                                    if !apply_errors.is_empty() {
-                                        serde_json::json!({ "error": apply_errors.join("; ") })
-                                    } else {
-                                        let mut written_files = Vec::new();
-                                        let mut write_error = None;
-
-                                        for (path, new_content) in &working_contents {
-                                            match std::fs::write(path, new_content) {
-                                                Ok(_) => {
-                                                    written_files.push(path.clone());
-                                                }
-                                                Err(e) => {
-                                                    write_error = Some(format!(
-                                                        "Failed to write `{}`: {}",
-                                                        path, e
-                                                    ));
-                                                    break;
-                                                }
-                                            }
-                                        }
-
-                                        if let Some(err) = write_error {
-                                            for path in written_files {
-                                                let orig = original_contents.get(&path).unwrap();
-                                                let _ = std::fs::write(&path, orig);
-                                            }
-                                            serde_json::json!({ "error": format!("Write failed, transaction rolled back. Error: {}", err) })
-                                        } else {
-                                            let mut combined_diff = String::new();
-                                            combined_diff.push_str("```diff\n");
-                                            combined_diff.push_str(&diffs.join("\n"));
-                                            combined_diff.push_str("```");
-
-                                            serde_json::json!({ "success": true, "diff": combined_diff })
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            serde_json::json!({ "error": "Invalid arguments: edits array is required" })
                         }
                     }
-                    "list_directory" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-                        let rules = if config.respect_gitignore {
-                            load_gitignore_rules()
-                        } else {
-                            Vec::new()
-                        };
-                        match std::fs::read_dir(path) {
-                            Ok(entries) => {
-                                let mut files = Vec::new();
-                                for entry in entries.filter_map(Result::ok) {
-                                    let entry_path = entry.path();
-                                    if !config.respect_gitignore
-                                        || !should_ignore(&entry_path, &rules)
-                                    {
-                                        files.push(entry_path.display().to_string());
-                                    }
-                                }
-                                serde_json::json!({ "files": files })
-                            }
-                            Err(e) => serde_json::json!({ "error": e.to_string() }),
-                        }
-                    }
-                    "search_files" => {
+                    "grep" => {
                         let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
@@ -1136,68 +1049,314 @@ pub(crate) fn handle_function_action(
                             Err(e) => serde_json::json!({ "error": e.to_string() }),
                         }
                     }
-                    "edit_file" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    "glob" => {
+                        let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+
+                        let mut matches = Vec::new();
+                        let search_path = std::path::Path::new(path);
                         let rules = if config.respect_gitignore {
                             load_gitignore_rules()
                         } else {
                             Vec::new()
                         };
-                        if config.respect_gitignore
-                            && should_ignore(std::path::Path::new(path), &rules)
-                        {
-                            serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
+
+                        match recursive_glob(
+                            search_path,
+                            search_path,
+                            pattern,
+                            &rules,
+                            &mut matches,
+                        ) {
+                            Ok(_) => {
+                                let stdout = matches.join("\n");
+                                serde_json::json!({ "matches": stdout })
+                            }
+                            Err(e) => serde_json::json!({ "error": e.to_string() }),
+                        }
+                    }
+                    "edit" => {
+                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                        let edits = args.get("edits").and_then(|v| v.as_array());
+
+                        let rules = if config.respect_gitignore {
+                            load_gitignore_rules()
                         } else {
-                            let old_string = args
-                                .get("old_string")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            let new_string = args
-                                .get("new_string")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            match std::fs::read_to_string(path) {
-                                Ok(content) => {
-                                    if content.contains(old_string) {
-                                        let mut diff = String::new();
+                            Vec::new()
+                        };
 
-                                        let old_lines: Vec<&str> = old_string.lines().collect();
-                                        let new_lines: Vec<&str> = new_string.lines().collect();
+                        if let Some(edits) = edits {
+                            let mut parsed_edits = Vec::new();
+                            let mut validation_errors = Vec::new();
 
-                                        diff.push_str("```diff\n");
-                                        for line in &old_lines {
-                                            diff.push_str("- ");
-                                            diff.push_str(line);
-                                            diff.push('\n');
-                                        }
-                                        for line in &new_lines {
-                                            diff.push_str("+ ");
-                                            diff.push_str(line);
-                                            diff.push('\n');
-                                        }
-                                        diff.push_str("```");
+                            for (idx, edit_val) in edits.iter().enumerate() {
+                                let edit_path =
+                                    edit_val.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                let old_string = edit_val
+                                    .get("old_string")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let new_string = edit_val
+                                    .get("new_string")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                if edit_path.is_empty() {
+                                    validation_errors
+                                        .push(format!("Edit at index {} is missing 'path'", idx));
+                                    continue;
+                                }
+                                if config.respect_gitignore
+                                    && should_ignore(std::path::Path::new(edit_path), &rules)
+                                {
+                                    validation_errors.push(format!(
+                                        "Access denied: `{}` is ignored by .gitignore",
+                                        edit_path
+                                    ));
+                                    continue;
+                                }
+                                parsed_edits.push((
+                                    edit_path.to_owned(),
+                                    old_string.to_owned(),
+                                    new_string.to_owned(),
+                                ));
+                            }
 
-                                        let new_content =
-                                            content.replacen(old_string, new_string, 1);
-                                        match std::fs::write(path, new_content) {
-                                            Ok(_) => {
-                                                serde_json::json!({ "success": true, "diff": diff })
+                            if !validation_errors.is_empty() {
+                                serde_json::json!({ "error": validation_errors.join("; ") })
+                            } else {
+                                let mut original_contents = std::collections::HashMap::new();
+                                let mut apply_errors = Vec::new();
+
+                                for (edit_path, _, _) in &parsed_edits {
+                                    if !original_contents.contains_key(edit_path) {
+                                        match std::fs::read_to_string(edit_path) {
+                                            Ok(content) => {
+                                                original_contents
+                                                    .insert(edit_path.clone(), content);
                                             }
                                             Err(e) => {
-                                                serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                                apply_errors.push(format!(
+                                                    "Failed to read `{}`: {}",
+                                                    edit_path, e
+                                                ));
                                             }
                                         }
-                                    } else {
-                                        serde_json::json!({ "error": "old_string not found in file." })
                                     }
                                 }
-                                Err(e) => {
-                                    serde_json::json!({ "error": format!("Failed to read file: {}", e) })
+
+                                if !apply_errors.is_empty() {
+                                    serde_json::json!({ "error": apply_errors.join("; ") })
+                                } else {
+                                    let mut working_contents = original_contents.clone();
+                                    let mut diffs = Vec::new();
+
+                                    for (edit_path, old_string, new_string) in &parsed_edits {
+                                        let current_content =
+                                            working_contents.get_mut(edit_path).unwrap();
+                                        if current_content.contains(old_string) {
+                                            let mut diff =
+                                                format!("--- {}\n+++ {}\n", edit_path, edit_path);
+                                            let old_lines: Vec<&str> = old_string.lines().collect();
+                                            let new_lines: Vec<&str> = new_string.lines().collect();
+
+                                            for line in &old_lines {
+                                                diff.push_str("- ");
+                                                diff.push_str(line);
+                                                diff.push('\n');
+                                            }
+                                            for line in &new_lines {
+                                                diff.push_str("+ ");
+                                                diff.push_str(line);
+                                                diff.push('\n');
+                                            }
+                                            diffs.push(diff);
+
+                                            *current_content =
+                                                current_content.replacen(old_string, new_string, 1);
+                                        } else {
+                                            apply_errors.push(format!(
+                                                "old_string not found in `{}`",
+                                                edit_path
+                                            ));
+                                            break;
+                                        }
+                                    }
+
+                                    if !apply_errors.is_empty() {
+                                        serde_json::json!({ "error": apply_errors.join("; ") })
+                                    } else {
+                                        let mut written_files = Vec::new();
+                                        let mut write_error = None;
+
+                                        for (edit_path, new_content) in &working_contents {
+                                            match std::fs::write(edit_path, new_content) {
+                                                Ok(_) => {
+                                                    written_files.push(edit_path.clone());
+                                                }
+                                                Err(e) => {
+                                                    write_error = Some(format!(
+                                                        "Failed to write `{}`: {}",
+                                                        edit_path, e
+                                                    ));
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        if let Some(err) = write_error {
+                                            for edit_path in written_files {
+                                                let orig =
+                                                    original_contents.get(&edit_path).unwrap();
+                                                let _ = std::fs::write(&edit_path, orig);
+                                            }
+                                            serde_json::json!({ "error": format!("Write failed, transaction rolled back. Error: {}", err) })
+                                        } else {
+                                            let mut combined_diff = String::new();
+                                            combined_diff.push_str("```diff\n");
+                                            combined_diff.push_str(&diffs.join("\n"));
+                                            combined_diff.push_str("```");
+
+                                            serde_json::json!({ "success": true, "diff": combined_diff })
+                                        }
+                                    }
+                                }
+                            }
+                        } else if args.get("start_line").is_some() {
+                            if config.respect_gitignore
+                                && should_ignore(std::path::Path::new(path), &rules)
+                            {
+                                serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
+                            } else {
+                                let start_line =
+                                    args.get("start_line").and_then(|v| v.as_u64()).unwrap_or(1)
+                                        as usize;
+                                let end_line =
+                                    args.get("end_line").and_then(|v| v.as_u64()).unwrap_or(1)
+                                        as usize;
+                                let new_content = args
+                                    .get("new_content")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+
+                                if start_line == 0 {
+                                    serde_json::json!({ "error": "start_line must be greater than or equal to 1" })
+                                } else if start_line > end_line {
+                                    serde_json::json!({ "error": "start_line cannot be greater than end_line" })
+                                } else {
+                                    match std::fs::read_to_string(path) {
+                                        Ok(content) => {
+                                            let lines: Vec<&str> = content.lines().collect();
+                                            if start_line > lines.len() {
+                                                serde_json::json!({ "error": format!("start_line {} is beyond file line count {}", start_line, lines.len()) })
+                                            } else {
+                                                let end_idx = std::cmp::min(end_line, lines.len());
+
+                                                let mut diff = String::new();
+                                                diff.push_str("```diff\n");
+                                                for line in
+                                                    lines.iter().take(end_idx).skip(start_line - 1)
+                                                {
+                                                    diff.push_str("- ");
+                                                    diff.push_str(line);
+                                                    diff.push('\n');
+                                                }
+                                                for line in new_content.lines() {
+                                                    diff.push_str("+ ");
+                                                    diff.push_str(line);
+                                                    diff.push('\n');
+                                                }
+                                                diff.push_str("```");
+
+                                                let mut new_lines = Vec::new();
+                                                for line in lines.iter().take(start_line - 1) {
+                                                    new_lines.push(*line);
+                                                }
+                                                for line in new_content.lines() {
+                                                    new_lines.push(line);
+                                                }
+                                                for line in lines.iter().skip(end_idx) {
+                                                    new_lines.push(*line);
+                                                }
+                                                let mut new_content_str = new_lines.join("\n");
+                                                if content.ends_with('\n')
+                                                    && !new_content_str.is_empty()
+                                                {
+                                                    new_content_str.push('\n');
+                                                }
+
+                                                match std::fs::write(path, new_content_str) {
+                                                    Ok(_) => {
+                                                        serde_json::json!({ "success": true, "diff": diff })
+                                                    }
+                                                    Err(e) => {
+                                                        serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            serde_json::json!({ "error": format!("Failed to read file: {}", e) })
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            if config.respect_gitignore
+                                && should_ignore(std::path::Path::new(path), &rules)
+                            {
+                                serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
+                            } else {
+                                let old_string = args
+                                    .get("old_string")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let new_string = args
+                                    .get("new_string")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                match std::fs::read_to_string(path) {
+                                    Ok(content) => {
+                                        if content.contains(old_string) {
+                                            let mut diff = String::new();
+
+                                            let old_lines: Vec<&str> = old_string.lines().collect();
+                                            let new_lines: Vec<&str> = new_string.lines().collect();
+
+                                            diff.push_str("```diff\n");
+                                            for line in &old_lines {
+                                                diff.push_str("- ");
+                                                diff.push_str(line);
+                                                diff.push('\n');
+                                            }
+                                            for line in &new_lines {
+                                                diff.push_str("+ ");
+                                                diff.push_str(line);
+                                                diff.push('\n');
+                                            }
+                                            diff.push_str("```");
+
+                                            let new_content =
+                                                content.replacen(old_string, new_string, 1);
+                                            match std::fs::write(path, new_content) {
+                                                Ok(_) => {
+                                                    serde_json::json!({ "success": true, "diff": diff })
+                                                }
+                                                Err(e) => {
+                                                    serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                                }
+                                            }
+                                        } else {
+                                            serde_json::json!({ "error": "old_string not found in file." })
+                                        }
+                                    }
+                                    Err(e) => {
+                                        serde_json::json!({ "error": format!("Failed to read file: {}", e) })
+                                    }
                                 }
                             }
                         }
                     }
-                    "write_file" => {
+                    "write" => {
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
                         let rules = if config.respect_gitignore {
                             load_gitignore_rules()
@@ -1228,7 +1387,7 @@ pub(crate) fn handle_function_action(
                             }
                         }
                     }
-                    "run_bash_command" => {
+                    "sh" => {
                         let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
                         let background = args
                             .get("background")
@@ -1398,15 +1557,15 @@ pub(crate) fn handle_function_action(
                             }
                         }
                     }
-                    "check_process" => {
+                    "ps" => {
                         let pid = args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                         run_check_process(pid)
                     }
-                    "kill_process" => {
+                    "kill" => {
                         let pid = args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                         run_kill_process(pid)
                     }
-                    "get_logs" => {
+                    "logs" => {
                         let pid = args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                         let limit = args
                             .get("limit")
@@ -1414,92 +1573,7 @@ pub(crate) fn handle_function_action(
                             .map(|v| v as usize);
                         run_get_logs(pid, limit)
                     }
-                    "edit_file_lines" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                        let rules = if config.respect_gitignore {
-                            load_gitignore_rules()
-                        } else {
-                            Vec::new()
-                        };
-                        if config.respect_gitignore
-                            && should_ignore(std::path::Path::new(path), &rules)
-                        {
-                            serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
-                        } else {
-                            let start_line =
-                                args.get("start_line").and_then(|v| v.as_u64()).unwrap_or(1)
-                                    as usize;
-                            let end_line =
-                                args.get("end_line").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
-                            let new_content = args
-                                .get("new_content")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-
-                            if start_line == 0 {
-                                serde_json::json!({ "error": "start_line must be greater than or equal to 1" })
-                            } else if start_line > end_line {
-                                serde_json::json!({ "error": "start_line cannot be greater than end_line" })
-                            } else {
-                                match std::fs::read_to_string(path) {
-                                    Ok(content) => {
-                                        let lines: Vec<&str> = content.lines().collect();
-                                        if start_line > lines.len() {
-                                            serde_json::json!({ "error": format!("start_line {} is beyond file line count {}", start_line, lines.len()) })
-                                        } else {
-                                            let end_idx = std::cmp::min(end_line, lines.len());
-
-                                            let mut diff = String::new();
-                                            diff.push_str("```diff\n");
-                                            for line in
-                                                lines.iter().take(end_idx).skip(start_line - 1)
-                                            {
-                                                diff.push_str("- ");
-                                                diff.push_str(line);
-                                                diff.push('\n');
-                                            }
-                                            for line in new_content.lines() {
-                                                diff.push_str("+ ");
-                                                diff.push_str(line);
-                                                diff.push('\n');
-                                            }
-                                            diff.push_str("```");
-
-                                            let mut new_lines = Vec::new();
-                                            for line in lines.iter().take(start_line - 1) {
-                                                new_lines.push(*line);
-                                            }
-                                            for line in new_content.lines() {
-                                                new_lines.push(line);
-                                            }
-                                            for line in lines.iter().skip(end_idx) {
-                                                new_lines.push(*line);
-                                            }
-                                            let mut new_content_str = new_lines.join("\n");
-                                            if content.ends_with('\n')
-                                                && !new_content_str.is_empty()
-                                            {
-                                                new_content_str.push('\n');
-                                            }
-
-                                            match std::fs::write(path, new_content_str) {
-                                                Ok(_) => {
-                                                    serde_json::json!({ "success": true, "diff": diff })
-                                                }
-                                                Err(e) => {
-                                                    serde_json::json!({ "error": format!("Failed to write file: {}", e) })
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        serde_json::json!({ "error": format!("Failed to read file: {}", e) })
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    "apply_patch" => {
+                    "patch" => {
                         let patch = args.get("patch").and_then(|v| v.as_str()).unwrap_or("");
                         let run_res = (|| -> Result<serde_json::Value, String> {
                             let file_path = patch
@@ -1545,7 +1619,6 @@ pub(crate) fn handle_function_action(
                                 }
                             }
 
-                            // If not found by ascending search, check subdirectories (first level)
                             if git_root.is_none() {
                                 let original_cwd = std::env::current_dir()
                                     .unwrap_or_else(|_| std::path::PathBuf::from("/"));
@@ -1559,7 +1632,6 @@ pub(crate) fn handle_function_action(
                                     }
 
                                     if !candidates.is_empty() {
-                                        // Try to find one containing the file
                                         let found = if let Some(fp) = file_path {
                                             candidates.iter().find(|cand| cand.join(fp).exists())
                                         } else {
@@ -1624,7 +1696,6 @@ pub(crate) fn handle_function_action(
 
                             cleanup(&temp_path);
 
-                            // Optional git diff
                             let diff_out = std::process::Command::new(git_bin)
                                 .current_dir(&git_root)
                                 .args(["diff", "--cached"])
@@ -1659,7 +1730,7 @@ pub(crate) fn handle_function_action(
                             Err(e) => serde_json::json!({ "error": e }),
                         }
                     }
-                    "web_search" => {
+                    "websearch" => {
                         let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
                         let res = if query.starts_with("http://") || query.starts_with("https://") {
                             (|| -> Result<serde_json::Value, String> {
@@ -1695,7 +1766,7 @@ pub(crate) fn handle_function_action(
                             Err(e) => serde_json::json!({ "error": e }),
                         }
                     }
-                    "ask_user" => {
+                    "ask" => {
                         let question = args.get("question").and_then(|v| v.as_str()).unwrap_or("");
                         let options = args
                             .get("options")
@@ -1720,7 +1791,7 @@ pub(crate) fn handle_function_action(
 
                         serde_json::json!({ "answer": answer })
                     }
-                    "todowrite" => {
+                    "todo" => {
                         serde_json::json!({ "success": true })
                     }
                     _ => serde_json::json!({ "error": "Unknown function" }),
