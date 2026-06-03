@@ -43,13 +43,17 @@ struct BackgroundProcess {
 
 static BACKGROUND_PROCESSES: OnceLock<Mutex<HashMap<u32, BackgroundProcess>>> = OnceLock::new();
 
-struct PersistentSession {
-    stdin: std::process::ChildStdin,
-    stdout_accumulator: Arc<Mutex<String>>,
-    stderr_accumulator: Arc<Mutex<String>>,
+pub(crate) struct PersistentSession {
+    pub(crate) pid: u32,
+    pub(crate) child: Arc<Mutex<std::process::Child>>,
+    pub(crate) stdin: std::process::ChildStdin,
+    pub(crate) stdout_accumulator: Arc<Mutex<String>>,
+    pub(crate) stderr_accumulator: Arc<Mutex<String>>,
 }
 
-static PERSISTENT_SESSIONS: OnceLock<Mutex<HashMap<String, PersistentSession>>> = OnceLock::new();
+pub(crate) static PERSISTENT_SESSIONS: OnceLock<Mutex<HashMap<String, PersistentSession>>> =
+    OnceLock::new();
+pub(crate) static ACTIVE_PERSISTENT_SESSION_ID: Mutex<Option<String>> = Mutex::new(None);
 
 fn register_background_process(
     pid: u32,
@@ -65,12 +69,27 @@ fn register_background_process(
     let child_clone = child_arc.clone();
     let exit_status_clone = exit_status.clone();
 
-    // Spawn monitor thread to wait for process exit
+    // Spawn non-blocking monitor thread to poll process exit status
     std::thread::spawn(move || {
-        let mut child_guard = child_clone.lock().unwrap();
-        if let Ok(status) = child_guard.wait() {
-            let mut status_guard = exit_status_clone.lock().unwrap();
-            *status_guard = status.code();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            if let Ok(mut child_guard) = child_clone.lock() {
+                match child_guard.try_wait() {
+                    Ok(Some(status)) => {
+                        let mut status_guard = exit_status_clone.lock().unwrap();
+                        *status_guard = Some(status.code().unwrap_or(-1));
+                        break;
+                    }
+                    Ok(None) => {}
+                    Err(_) => {
+                        let mut status_guard = exit_status_clone.lock().unwrap();
+                        *status_guard = Some(-1);
+                        break;
+                    }
+                }
+            } else {
+                break;
+            }
         }
     });
 
@@ -94,10 +113,10 @@ fn run_check_process(pid: u32) -> serde_json::Value {
         if let Some(proc) = map.get_mut(&pid) {
             let mut exit_code_guard = proc.exit_status.lock().unwrap();
             if exit_code_guard.is_none()
-                && let Ok(mut child_guard) = proc.child.lock()
+                && let Ok(mut child_guard) = proc.child.try_lock()
                 && let Ok(Some(status)) = child_guard.try_wait()
             {
-                *exit_code_guard = status.code();
+                *exit_code_guard = Some(status.code().unwrap_or(-1));
             }
             let is_alive = exit_code_guard.is_none();
             serde_json::json!({
@@ -116,7 +135,9 @@ fn run_kill_process(pid: u32) -> serde_json::Value {
     let registry = BACKGROUND_PROCESSES.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(mut map) = registry.lock() {
         if let Some(proc) = map.remove(&pid) {
-            let _ = proc.child.lock().map(|mut c| c.kill());
+            if let Ok(mut c) = proc.child.try_lock() {
+                let _ = c.kill();
+            }
             #[cfg(unix)]
             {
                 let _ = std::process::Command::new("kill")
@@ -157,10 +178,10 @@ fn run_get_logs(pid: u32, limit: Option<usize>) -> serde_json::Value {
 
             let mut exit_code_guard = proc.exit_status.lock().unwrap();
             if exit_code_guard.is_none()
-                && let Ok(mut child_guard) = proc.child.lock()
+                && let Ok(mut child_guard) = proc.child.try_lock()
                 && let Ok(Some(status)) = child_guard.try_wait()
             {
-                *exit_code_guard = status.code();
+                *exit_code_guard = Some(status.code().unwrap_or(-1));
             }
 
             serde_json::json!({
@@ -191,7 +212,6 @@ fn run_persistent_bash(
         command
             .arg("--noprofile")
             .arg("--norc")
-            .arg("-i")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -214,11 +234,11 @@ fn run_persistent_bash(
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
-
-        let stdout_acc = Arc::new(Mutex::new(String::new()));
-        let stderr_acc = Arc::new(Mutex::new(String::new()));
+        let pid = child.id();
+        let child_arc = Arc::new(Mutex::new(child));
 
         let sender_stdout = sender.clone();
+        let stdout_acc = Arc::new(Mutex::new(String::new()));
         let stdout_acc_clone = stdout_acc.clone();
         std::thread::spawn(move || {
             use std::io::Read;
@@ -232,11 +252,12 @@ fn run_persistent_bash(
                 if let Ok(mut guard) = stdout_acc_clone.lock() {
                     guard.push_str(&chunk);
                 }
-                let _ = sender_stdout.send(WorkerEvent::BashStdout(chunk));
+                let _ = sender_stdout.send(WorkerEvent::BashStdout(Some(pid), chunk));
             }
         });
 
         let sender_stderr = sender.clone();
+        let stderr_acc = Arc::new(Mutex::new(String::new()));
         let stderr_acc_clone = stderr_acc.clone();
         std::thread::spawn(move || {
             use std::io::Read;
@@ -250,16 +271,23 @@ fn run_persistent_bash(
                 if let Ok(mut guard) = stderr_acc_clone.lock() {
                     guard.push_str(&chunk);
                 }
-                let _ = sender_stderr.send(WorkerEvent::BashStderr(chunk));
+                let _ = sender_stderr.send(WorkerEvent::BashStderr(Some(pid), chunk));
             }
         });
 
         PersistentSession {
+            pid,
+            child: child_arc,
             stdin,
             stdout_accumulator: stdout_acc,
             stderr_accumulator: stderr_acc,
         }
     });
+
+    // Set the active persistent session ID for keystroke forwarding
+    if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
+        *guard = Some(session_id.to_owned());
+    }
 
     use std::io::Write;
 
@@ -285,15 +313,40 @@ fn run_persistent_bash(
     let mut check_count = 0;
     let max_checks = 100;
     let mut found = false;
+    let mut has_exited = false;
+    let mut exit_status = None;
 
     while check_count < max_checks {
         std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Check if bash process has exited early
+        if let Ok(mut child_guard) = entry.child.lock()
+            && let Ok(Some(status)) = child_guard.try_wait()
+        {
+            has_exited = true;
+            exit_status = Some(status.code().unwrap_or(-1));
+            break;
+        }
+
         let stdout_guard = entry.stdout_accumulator.lock().unwrap();
         if stdout_guard[start_stdout_len..].contains(&sentinel) {
             found = true;
             break;
         }
         check_count += 1;
+    }
+
+    // Clear active persistent session ID
+    if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
+        *guard = None;
+    }
+
+    // Clean up registry entry if process has exited
+    if has_exited {
+        let registry = PERSISTENT_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
+        if let Ok(mut map) = registry.lock() {
+            map.remove(session_id);
+        }
     }
 
     let raw_stdout = entry.stdout_accumulator.lock().unwrap();
@@ -308,10 +361,23 @@ fn run_persistent_bash(
     let clean_stdout = stdout_diff.trim_end().to_owned();
 
     Ok(serde_json::json!({
-        "status": if found { serde_json::json!(0) } else { serde_json::Value::Null },
+        "status": if found {
+            serde_json::json!(0)
+        } else if has_exited {
+            serde_json::json!(exit_status.unwrap_or(-1))
+        } else {
+            serde_json::Value::Null
+        },
         "stdout": clean_stdout,
         "stderr": stderr_diff,
-        "error": if found { serde_json::Value::Null } else { serde_json::json!("Command timed out / is still running") }
+        "pid": entry.pid,
+        "error": if found {
+            serde_json::Value::Null
+        } else if has_exited {
+            serde_json::json!("Shell process exited")
+        } else {
+            serde_json::json!("Command timed out / is still running")
+        }
     }))
 }
 
@@ -322,8 +388,8 @@ pub(crate) enum WorkerEvent {
     Models(Result<Vec<String>, String>),
     ToolResult(String, serde_json::Value),
     ResetStream(usize),
-    BashStdout(String),
-    BashStderr(String),
+    BashStdout(Option<u32>, String),
+    BashStderr(Option<u32>, String),
 }
 
 pub fn run(mut app: App) -> Result<()> {
@@ -479,11 +545,11 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
                 app.chat.streaming_parts.clear();
             }
         }
-        WorkerEvent::BashStdout(chunk) => {
-            app.handle_bash_stdout(chunk);
+        WorkerEvent::BashStdout(pid, chunk) => {
+            app.handle_bash_stdout(pid, chunk);
         }
-        WorkerEvent::BashStderr(chunk) => {
-            app.handle_bash_stderr(chunk);
+        WorkerEvent::BashStderr(pid, chunk) => {
+            app.handle_bash_stderr(pid, chunk);
         }
     }
 }
@@ -1006,7 +1072,8 @@ pub(crate) fn handle_function_action(
                                         if let Ok(mut guard) = stdout_acc_clone.lock() {
                                             guard.push_str(&chunk);
                                         }
-                                        let _ = sender_stdout.send(WorkerEvent::BashStdout(chunk));
+                                        let _ = sender_stdout
+                                            .send(WorkerEvent::BashStdout(Some(pid), chunk));
                                     }
                                 });
 
@@ -1025,7 +1092,8 @@ pub(crate) fn handle_function_action(
                                         if let Ok(mut guard) = stderr_acc_clone.lock() {
                                             guard.push_str(&chunk);
                                         }
-                                        let _ = sender_stderr.send(WorkerEvent::BashStderr(chunk));
+                                        let _ = sender_stderr
+                                            .send(WorkerEvent::BashStderr(Some(pid), chunk));
                                     }
                                 });
 
