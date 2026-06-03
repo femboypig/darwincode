@@ -450,7 +450,7 @@ impl ChatCommand {
             },
             CommandSuggestion {
                 name: "/models".to_owned(),
-                description: "List Gemini models".to_owned(),
+                description: "List available models".to_owned(),
             },
             CommandSuggestion {
                 name: "/permissions".to_owned(),
