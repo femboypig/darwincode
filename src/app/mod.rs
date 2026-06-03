@@ -540,10 +540,14 @@ impl App {
             let permission = self.chat.config.permission_level;
             let auto_allowed = permission == PermissionLevel::Chaos
                 || (permission == PermissionLevel::Safe
-                    && (name == "read_file"
-                        || name == "list_directory"
-                        || name == "search_files"
-                        || name == "read_files"));
+                    && (name == "read"
+                        || name == "grep"
+                        || name == "glob"
+                        || name == "websearch"
+                        || name == "ask"
+                        || name == "todo"
+                        || name == "ps"
+                        || name == "logs"));
 
             if auto_allowed {
                 self.backup_before_execution(&name, &args);
@@ -556,13 +560,11 @@ impl App {
                     config: self.chat.config.clone(),
                 })
             } else if permission == PermissionLevel::Safe
-                && (name == "run_bash_command"
-                    || name == "edit_file"
-                    || name == "write_file"
-                    || name == "edit_files"
-                    || name == "edit_file_lines"
-                    || name == "apply_patch"
-                    || name == "kill_process")
+                && (name == "sh"
+                    || name == "write"
+                    || name == "edit"
+                    || name == "patch"
+                    || name == "kill")
             {
                 self.pending = Some(PendingTask::Generating);
                 self.complete_function_execution(
@@ -760,16 +762,20 @@ impl App {
                     {
                         let auto_allowed = level == PermissionLevel::Chaos
                             || (level == PermissionLevel::Safe
-                                && (name == "read_file"
-                                    || name == "list_directory"
-                                    || name == "search_files"
-                                    || name == "read_files"));
+                                && (name == "read"
+                                    || name == "grep"
+                                    || name == "glob"
+                                    || name == "websearch"
+                                    || name == "ask"
+                                    || name == "todo"
+                                    || name == "ps"
+                                    || name == "logs"));
                         if auto_allowed {
                             self.backup_before_execution(&name, &args);
                             self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                             self.status = format!("Auto-executing {name}");
                             return Some(SubmitAction::ExecuteFunction { name, args, config: self.chat.config.clone() });
-                        } else if level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files" || name == "edit_file_lines" || name == "apply_patch" || name == "kill_process")
+                        } else if level == PermissionLevel::Safe && (name == "sh" || name == "write" || name == "edit" || name == "patch" || name == "kill")
                             && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
                                 return Some(SubmitAction::Generate(request));
                             }
@@ -1246,10 +1252,14 @@ impl App {
             if let Some(PendingTask::ConfirmFunction { name, args }) = self.pending.clone() {
                 let auto_allowed = *level == PermissionLevel::Chaos
                     || (*level == PermissionLevel::Safe
-                        && (name == "read_file"
-                            || name == "list_directory"
-                            || name == "search_files"
-                            || name == "read_files"));
+                        && (name == "read"
+                            || name == "grep"
+                            || name == "glob"
+                            || name == "websearch"
+                            || name == "ask"
+                            || name == "todo"
+                            || name == "ps"
+                            || name == "logs"));
                 if auto_allowed {
                     self.backup_before_execution(&name, &args);
                     self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
@@ -1261,13 +1271,11 @@ impl App {
                         config: self.chat.config.clone(),
                     });
                 } else if *level == PermissionLevel::Safe
-                    && (name == "run_bash_command"
-                        || name == "edit_file"
-                        || name == "write_file"
-                        || name == "edit_files"
-                        || name == "edit_file_lines"
-                        || name == "apply_patch"
-                        || name == "kill_process")
+                    && (name == "sh"
+                        || name == "write"
+                        || name == "edit"
+                        || name == "patch"
+                        || name == "kill")
                     && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self
                         .complete_function_execution(
                             name,
@@ -1400,7 +1408,7 @@ impl App {
         };
 
         let mut response = response;
-        if name == "todowrite"
+        if name == "todo"
             && let Some(todos_val) = args.get("todos")
         {
             if let Ok(new_todos) =
@@ -1468,7 +1476,7 @@ impl App {
             })],
         });
         self.save_session();
-        if name == "run_bash_command" {
+        if name == "sh" {
             let _cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let mut output = String::new();
             let mut success = true;
@@ -1633,12 +1641,15 @@ impl App {
 
         let mut paths_to_backup = Vec::new();
         match name {
-            "edit_file" | "write_file" | "edit_file_lines" => {
+            "write" => {
                 if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
                     paths_to_backup.push(path.to_owned());
                 }
             }
-            "edit_files" => {
+            "edit" => {
+                if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
+                    paths_to_backup.push(path.to_owned());
+                }
                 if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
                     for edit_val in edits {
                         if let Some(path) = edit_val.get("path").and_then(|v| v.as_str()) {
@@ -1647,7 +1658,7 @@ impl App {
                     }
                 }
             }
-            "apply_patch" => {
+            "patch" => {
                 if let Some(patch) = args.get("patch").and_then(|v| v.as_str()) {
                     for line in patch.lines() {
                         if line.starts_with("+++ b/") || line.starts_with("+++ ") {
@@ -1703,7 +1714,7 @@ impl App {
     }
 
     pub fn start_function_execution(&mut self, name: &str, args: &serde_json::Value) {
-        if name == "run_bash_command" {
+        if name == "sh" {
             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let body = format!("$ {}\nRunning...\n", cmd);
             let persistent_session_id = args
