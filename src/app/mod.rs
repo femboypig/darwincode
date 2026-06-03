@@ -893,35 +893,34 @@ impl App {
                                 m.is_shell && m.shell_session_id.as_ref() == Some(&session_id)
                             })
                             .map(|(idx, _)| idx);
-                        if let Some(msg_idx) = target_msg_idx {
-                            if let Some(&(_, start_line, end_line)) = self
+                        if let Some(msg_idx) = target_msg_idx
+                            && let Some(&(_, start_line, end_line)) = self
                                 .chat
                                 .message_line_ranges
                                 .borrow()
                                 .iter()
                                 .find(|&&(idx, _, _)| idx == msg_idx)
-                            {
-                                let total_lines = self
-                                    .chat
-                                    .message_line_ranges
-                                    .borrow()
-                                    .last()
-                                    .map(|(_, _, end)| *end)
-                                    .unwrap_or(0);
-                                let viewport_height = self
-                                    .chat
-                                    .messages_area
-                                    .get()
-                                    .map(|r| r.height as usize)
-                                    .unwrap_or(20);
-                                let max_scroll = total_lines.saturating_sub(viewport_height);
-                                let msg_height = end_line.saturating_sub(start_line);
-                                let mid_line = start_line + msg_height / 2;
-                                let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
-                                let scroll_val = max_scroll.saturating_sub(target_scroll_y);
-                                self.chat.scroll = scroll_val as u16;
-                                scrolled = true;
-                            }
+                        {
+                            let total_lines = self
+                                .chat
+                                .message_line_ranges
+                                .borrow()
+                                .last()
+                                .map(|(_, _, end)| *end)
+                                .unwrap_or(0);
+                            let viewport_height = self
+                                .chat
+                                .messages_area
+                                .get()
+                                .map(|r| r.height as usize)
+                                .unwrap_or(20);
+                            let max_scroll = total_lines.saturating_sub(viewport_height);
+                            let msg_height = end_line.saturating_sub(start_line);
+                            let mid_line = start_line + msg_height / 2;
+                            let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
+                            let scroll_val = max_scroll.saturating_sub(target_scroll_y);
+                            self.chat.scroll = scroll_val as u16;
+                            scrolled = true;
                         }
                         if !scrolled {
                             self.chat.scroll = 0;
@@ -958,35 +957,34 @@ impl App {
                             .rev()
                             .find(|(_, m)| m.is_shell && m.shell_pid == Some(pid))
                             .map(|(idx, _)| idx);
-                        if let Some(msg_idx) = target_msg_idx {
-                            if let Some(&(_, start_line, end_line)) = self
+                        if let Some(msg_idx) = target_msg_idx
+                            && let Some(&(_, start_line, end_line)) = self
                                 .chat
                                 .message_line_ranges
                                 .borrow()
                                 .iter()
                                 .find(|&&(idx, _, _)| idx == msg_idx)
-                            {
-                                let total_lines = self
-                                    .chat
-                                    .message_line_ranges
-                                    .borrow()
-                                    .last()
-                                    .map(|(_, _, end)| *end)
-                                    .unwrap_or(0);
-                                let viewport_height = self
-                                    .chat
-                                    .messages_area
-                                    .get()
-                                    .map(|r| r.height as usize)
-                                    .unwrap_or(20);
-                                let max_scroll = total_lines.saturating_sub(viewport_height);
-                                let msg_height = end_line.saturating_sub(start_line);
-                                let mid_line = start_line + msg_height / 2;
-                                let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
-                                let scroll_val = max_scroll.saturating_sub(target_scroll_y);
-                                self.chat.scroll = scroll_val as u16;
-                                scrolled = true;
-                            }
+                        {
+                            let total_lines = self
+                                .chat
+                                .message_line_ranges
+                                .borrow()
+                                .last()
+                                .map(|(_, _, end)| *end)
+                                .unwrap_or(0);
+                            let viewport_height = self
+                                .chat
+                                .messages_area
+                                .get()
+                                .map(|r| r.height as usize)
+                                .unwrap_or(20);
+                            let max_scroll = total_lines.saturating_sub(viewport_height);
+                            let msg_height = end_line.saturating_sub(start_line);
+                            let mid_line = start_line + msg_height / 2;
+                            let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
+                            let scroll_val = max_scroll.saturating_sub(target_scroll_y);
+                            self.chat.scroll = scroll_val as u16;
+                            scrolled = true;
                         }
                         if !scrolled {
                             self.chat.scroll = 0;
@@ -1021,35 +1019,34 @@ impl App {
                             .rev()
                             .find(|(_, m)| m.is_shell && m.shell_pid == Some(pid))
                             .map(|(idx, _)| idx);
-                        if let Some(msg_idx) = target_msg_idx {
-                            if let Some(&(_, start_line, end_line)) = self
+                        if let Some(msg_idx) = target_msg_idx
+                            && let Some(&(_, start_line, end_line)) = self
                                 .chat
                                 .message_line_ranges
                                 .borrow()
                                 .iter()
                                 .find(|&&(idx, _, _)| idx == msg_idx)
-                            {
-                                let total_lines = self
-                                    .chat
-                                    .message_line_ranges
-                                    .borrow()
-                                    .last()
-                                    .map(|(_, _, end)| *end)
-                                    .unwrap_or(0);
-                                let viewport_height = self
-                                    .chat
-                                    .messages_area
-                                    .get()
-                                    .map(|r| r.height as usize)
-                                    .unwrap_or(20);
-                                let max_scroll = total_lines.saturating_sub(viewport_height);
-                                let msg_height = end_line.saturating_sub(start_line);
-                                let mid_line = start_line + msg_height / 2;
-                                let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
-                                let scroll_val = max_scroll.saturating_sub(target_scroll_y);
-                                self.chat.scroll = scroll_val as u16;
-                                scrolled = true;
-                            }
+                        {
+                            let total_lines = self
+                                .chat
+                                .message_line_ranges
+                                .borrow()
+                                .last()
+                                .map(|(_, _, end)| *end)
+                                .unwrap_or(0);
+                            let viewport_height = self
+                                .chat
+                                .messages_area
+                                .get()
+                                .map(|r| r.height as usize)
+                                .unwrap_or(20);
+                            let max_scroll = total_lines.saturating_sub(viewport_height);
+                            let msg_height = end_line.saturating_sub(start_line);
+                            let mid_line = start_line + msg_height / 2;
+                            let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
+                            let scroll_val = max_scroll.saturating_sub(target_scroll_y);
+                            self.chat.scroll = scroll_val as u16;
+                            scrolled = true;
                         }
                         if !scrolled {
                             self.chat.scroll = 0;
