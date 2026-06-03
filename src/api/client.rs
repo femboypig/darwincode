@@ -455,16 +455,51 @@ impl GeminiClient {
             for (i, msg) in history.iter().enumerate() {
                 match msg.role.as_str() {
                     "user" => {
-                        let mut text = String::new();
-                        for part in &msg.parts {
-                            if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
-                                text.push_str(t);
+                        let has_images = msg
+                            .parts
+                            .iter()
+                            .any(|part| part.get("inlineData").is_some());
+                        let supports_vision = model_supports_vision(model, &self.config.base_url);
+                        if has_images && supports_vision {
+                            let mut content_array = Vec::new();
+                            for part in &msg.parts {
+                                if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
+                                    if !t.is_empty() {
+                                        content_array.push(serde_json::json!({
+                                            "type": "text",
+                                            "text": t
+                                        }));
+                                    }
+                                } else if let Some(inline_data) = part.get("inlineData")
+                                    && let Some(mime) =
+                                        inline_data.get("mimeType").and_then(|v| v.as_str())
+                                    && let Some(data) =
+                                        inline_data.get("data").and_then(|v| v.as_str())
+                                {
+                                    content_array.push(serde_json::json!({
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": format!("data:{};base64,{}", mime, data)
+                                        }
+                                    }));
+                                }
                             }
+                            openai_messages.push(serde_json::json!({
+                                "role": "user",
+                                "content": content_array
+                            }));
+                        } else {
+                            let mut text = String::new();
+                            for part in &msg.parts {
+                                if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
+                                    text.push_str(t);
+                                }
+                            }
+                            openai_messages.push(serde_json::json!({
+                                "role": "user",
+                                "content": text
+                            }));
                         }
-                        openai_messages.push(serde_json::json!({
-                            "role": "user",
-                            "content": text
-                        }));
                     }
                     "model" => {
                         let mut content = String::new();
@@ -820,5 +855,70 @@ fn read_error(error: ureq::Error) -> anyhow::Error {
             anyhow::anyhow!("API request failed with HTTP {code}: {message}")
         }
         ureq::Error::Transport(error) => anyhow::anyhow!("API request failed: {error}"),
+    }
+}
+
+fn model_supports_vision(model: &str, base_url: &str) -> bool {
+    let m = model.to_lowercase();
+    let b = base_url.to_lowercase();
+
+    // Explicitly blacklisted text-only models and endpoints
+    if m.contains("deepseek")
+        || b.contains("deepseek")
+        || m.contains("coder")
+        || m.contains("reasoner")
+        || m.contains("r1")
+    {
+        return false;
+    }
+
+    // Default to true so custom/other vision models work out-of-the-box
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_model_supports_vision() {
+        // Standard vision models
+        assert!(model_supports_vision("gpt-4o", "https://api.openai.com/v1"));
+        assert!(model_supports_vision(
+            "claude-3-5-sonnet",
+            "https://api.anthropic.com/v1"
+        ));
+        assert!(model_supports_vision(
+            "gemini-1.5-flash",
+            "https://generativelanguage.googleapis.com"
+        ));
+
+        // Custom proxy model names (like big-pickle on opencode.ai)
+        assert!(model_supports_vision(
+            "big-pickle",
+            "https://opencode.ai/zen/v1"
+        ));
+
+        // Blacklisted text-only models and endpoints
+        assert!(!model_supports_vision(
+            "deepseek-chat",
+            "https://api.deepseek.com/v1"
+        ));
+        assert!(!model_supports_vision(
+            "deepseek-coder",
+            "https://api.deepseek.com/v1"
+        ));
+        assert!(!model_supports_vision(
+            "deepseek-reasoner",
+            "https://api.deepseek.com/v1"
+        ));
+        assert!(!model_supports_vision(
+            "qwen2.5-coder",
+            "https://api.openai.com/v1"
+        ));
+        assert!(!model_supports_vision(
+            "big-pickle",
+            "https://api.deepseek.com/v1"
+        ));
     }
 }
