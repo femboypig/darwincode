@@ -224,9 +224,12 @@ impl App {
         self.chat.sent_history_index = None;
         self.chat.input_draft.clear();
 
-        // Special case: If user enters exit or permissions command, execute it immediately even if busy!
+        // Special case: If user enters exit, permissions, or shell command, execute it immediately even if busy!
         if let Some(command) = ChatCommand::parse(&input)
-            && matches!(command, ChatCommand::Exit | ChatCommand::Permissions(_))
+            && matches!(
+                command,
+                ChatCommand::Exit | ChatCommand::Permissions(_) | ChatCommand::Shell(_)
+            )
         {
             self.chat.input.clear();
             self.chat.cursor = 0;
@@ -473,6 +476,7 @@ impl App {
             shell_cmd: String::new(),
             is_tool: false,
             shell_pid: None,
+            shell_session_id: None,
             cached_wrapped: std::cell::RefCell::new(None),
         });
     }
@@ -844,6 +848,297 @@ impl App {
                 None
             }
 
+            ChatCommand::Shell(session_arg) => {
+                if let Some(session_id) = session_arg {
+                    // Switch/focus to a specific session or active process
+                    let mut found = false;
+                    let registry = crate::tui::PERSISTENT_SESSIONS
+                        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+                    let has_session = {
+                        let map = registry.lock().unwrap();
+                        map.contains_key(session_id.as_str())
+                    };
+
+                    let is_bg_process = {
+                        let bg_registry = crate::tui::BACKGROUND_PROCESSES.get_or_init(|| {
+                            std::sync::Mutex::new(std::collections::HashMap::new())
+                        });
+                        let map = bg_registry.lock().unwrap();
+                        map.keys().any(|k| k.to_string() == session_id)
+                    };
+
+                    if has_session {
+                        if let Ok(mut guard) = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock() {
+                            let opt: &mut Option<String> = &mut guard;
+                            *opt = Some(session_id.clone());
+                        }
+                        self.chat.focused_shell_session_id = Some(session_id.clone());
+                        self.chat.focused_shell_pid = None;
+                        self.chat.shell_focused = true;
+
+                        for m in &mut self.chat.messages {
+                            if m.is_shell {
+                                *m.cached_wrapped.borrow_mut() = None;
+                            }
+                        }
+
+                        let mut scrolled = false;
+                        let target_msg_idx = self
+                            .chat
+                            .messages
+                            .iter()
+                            .enumerate()
+                            .rev()
+                            .find(|(_, m)| {
+                                m.is_shell && m.shell_session_id.as_ref() == Some(&session_id)
+                            })
+                            .map(|(idx, _)| idx);
+                        if let Some(msg_idx) = target_msg_idx {
+                            if let Some(&(_, start_line, end_line)) = self
+                                .chat
+                                .message_line_ranges
+                                .borrow()
+                                .iter()
+                                .find(|&&(idx, _, _)| idx == msg_idx)
+                            {
+                                let total_lines = self
+                                    .chat
+                                    .message_line_ranges
+                                    .borrow()
+                                    .last()
+                                    .map(|(_, _, end)| *end)
+                                    .unwrap_or(0);
+                                let viewport_height = self
+                                    .chat
+                                    .messages_area
+                                    .get()
+                                    .map(|r| r.height as usize)
+                                    .unwrap_or(20);
+                                let max_scroll = total_lines.saturating_sub(viewport_height);
+                                let msg_height = end_line.saturating_sub(start_line);
+                                let mid_line = start_line + msg_height / 2;
+                                let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
+                                let scroll_val = max_scroll.saturating_sub(target_scroll_y);
+                                self.chat.scroll = scroll_val as u16;
+                                scrolled = true;
+                            }
+                        }
+                        if !scrolled {
+                            self.chat.scroll = 0;
+                        }
+
+                        *self.chat.message_line_ranges.borrow_mut() = Vec::new();
+                        self.status = "Ready".to_owned();
+                        found = true;
+                    } else if let Ok(guard) = crate::tui::RUNNING_PROCESS_PID.lock()
+                        && let Some(pid) = *guard
+                        && pid.to_string() == session_id
+                    {
+                        if let Ok(mut active_guard) =
+                            crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock()
+                        {
+                            *active_guard = None;
+                        }
+                        self.chat.focused_shell_session_id = None;
+                        self.chat.focused_shell_pid = Some(pid);
+                        self.chat.shell_focused = true;
+
+                        for m in &mut self.chat.messages {
+                            if m.is_shell {
+                                *m.cached_wrapped.borrow_mut() = None;
+                            }
+                        }
+
+                        let mut scrolled = false;
+                        let target_msg_idx = self
+                            .chat
+                            .messages
+                            .iter()
+                            .enumerate()
+                            .rev()
+                            .find(|(_, m)| m.is_shell && m.shell_pid == Some(pid))
+                            .map(|(idx, _)| idx);
+                        if let Some(msg_idx) = target_msg_idx {
+                            if let Some(&(_, start_line, end_line)) = self
+                                .chat
+                                .message_line_ranges
+                                .borrow()
+                                .iter()
+                                .find(|&&(idx, _, _)| idx == msg_idx)
+                            {
+                                let total_lines = self
+                                    .chat
+                                    .message_line_ranges
+                                    .borrow()
+                                    .last()
+                                    .map(|(_, _, end)| *end)
+                                    .unwrap_or(0);
+                                let viewport_height = self
+                                    .chat
+                                    .messages_area
+                                    .get()
+                                    .map(|r| r.height as usize)
+                                    .unwrap_or(20);
+                                let max_scroll = total_lines.saturating_sub(viewport_height);
+                                let msg_height = end_line.saturating_sub(start_line);
+                                let mid_line = start_line + msg_height / 2;
+                                let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
+                                let scroll_val = max_scroll.saturating_sub(target_scroll_y);
+                                self.chat.scroll = scroll_val as u16;
+                                scrolled = true;
+                            }
+                        }
+                        if !scrolled {
+                            self.chat.scroll = 0;
+                        }
+
+                        *self.chat.message_line_ranges.borrow_mut() = Vec::new();
+                        self.status = "Ready".to_owned();
+                        found = true;
+                    } else if is_bg_process {
+                        let pid = session_id.parse::<u32>().unwrap();
+                        if let Ok(mut active_guard) =
+                            crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock()
+                        {
+                            *active_guard = None;
+                        }
+                        self.chat.focused_shell_session_id = None;
+                        self.chat.focused_shell_pid = Some(pid);
+                        self.chat.shell_focused = true;
+
+                        for m in &mut self.chat.messages {
+                            if m.is_shell {
+                                *m.cached_wrapped.borrow_mut() = None;
+                            }
+                        }
+
+                        let mut scrolled = false;
+                        let target_msg_idx = self
+                            .chat
+                            .messages
+                            .iter()
+                            .enumerate()
+                            .rev()
+                            .find(|(_, m)| m.is_shell && m.shell_pid == Some(pid))
+                            .map(|(idx, _)| idx);
+                        if let Some(msg_idx) = target_msg_idx {
+                            if let Some(&(_, start_line, end_line)) = self
+                                .chat
+                                .message_line_ranges
+                                .borrow()
+                                .iter()
+                                .find(|&&(idx, _, _)| idx == msg_idx)
+                            {
+                                let total_lines = self
+                                    .chat
+                                    .message_line_ranges
+                                    .borrow()
+                                    .last()
+                                    .map(|(_, _, end)| *end)
+                                    .unwrap_or(0);
+                                let viewport_height = self
+                                    .chat
+                                    .messages_area
+                                    .get()
+                                    .map(|r| r.height as usize)
+                                    .unwrap_or(20);
+                                let max_scroll = total_lines.saturating_sub(viewport_height);
+                                let msg_height = end_line.saturating_sub(start_line);
+                                let mid_line = start_line + msg_height / 2;
+                                let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
+                                let scroll_val = max_scroll.saturating_sub(target_scroll_y);
+                                self.chat.scroll = scroll_val as u16;
+                                scrolled = true;
+                            }
+                        }
+                        if !scrolled {
+                            self.chat.scroll = 0;
+                        }
+
+                        *self.chat.message_line_ranges.borrow_mut() = Vec::new();
+                        self.status = "Ready".to_owned();
+                        found = true;
+                    }
+                    if !found {
+                        self.chat.messages.push(MessageLine::error(format!(
+                            "Shell session or active process '{}' not found or cannot be focused.",
+                            session_id
+                        )));
+                    }
+                } else {
+                    // List all active sessions
+                    let registry = crate::tui::PERSISTENT_SESSIONS
+                        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+                    let mut session_infos = Vec::new();
+
+                    // 1. Persistent Sessions
+                    {
+                        let map = registry.lock().unwrap();
+                        for (id, session) in map.iter() {
+                            let is_running =
+                                matches!(session.child.lock().unwrap().try_wait(), Ok(None));
+                            if is_running {
+                                let active_str = if self.chat.shell_focused
+                                    && self.chat.focused_shell_session_id.as_ref() == Some(id)
+                                {
+                                    " (focused)"
+                                } else {
+                                    ""
+                                };
+                                session_infos.push(format!(
+                                    "- **Persistent Session: {}** (PID: {}) [active]{}",
+                                    id, session.pid, active_str
+                                ));
+                            }
+                        }
+                    }
+
+                    // 2. Non-persistent Background Processes
+                    let bg_registry = crate::tui::BACKGROUND_PROCESSES
+                        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+                    {
+                        let map = bg_registry.lock().unwrap();
+                        for (pid, proc) in map.iter() {
+                            let is_running = proc.exit_status.lock().unwrap().is_none();
+                            if is_running {
+                                session_infos.push(format!(
+                                    "- **Background Process: {}** (PID: {}) [active]",
+                                    proc._command, pid
+                                ));
+                            }
+                        }
+                    }
+
+                    // 3. Foreground Process
+                    if let Ok(guard) = crate::tui::RUNNING_PROCESS_PID.lock()
+                        && let Some(pid) = *guard
+                    {
+                        let is_focused =
+                            self.chat.shell_focused && self.chat.focused_shell_pid == Some(pid);
+                        let active_str = if is_focused { " (focused)" } else { "" };
+                        session_infos.push(format!(
+                            "- **Foreground Process** (PID: {}) [active]{}",
+                            pid, active_str
+                        ));
+                    }
+
+                    if session_infos.is_empty() {
+                        self.chat.messages.push(MessageLine::info(
+                            "No active shell sessions at this time.".to_owned(),
+                        ));
+                    } else {
+                        session_infos.sort();
+                        let info_text = format!(
+                            "Active shell sessions:\n{}\nUse `/shell [session_id_or_pid]` to focus a session.",
+                            session_infos.join("\n")
+                        );
+                        self.chat.messages.push(MessageLine::info(info_text));
+                    }
+                }
+                None
+            }
+
             ChatCommand::Help => {
                 let help_text = "Available commands:\n\
                                  - **/settings**: Open configuration settings\n\
@@ -854,6 +1149,7 @@ impl App {
                                  - **/clear**: Clear the current chat history\n\
                                  - **/history**: Show all saved chat session IDs\n\
                                  - **/undo**: Revert all file changes made in the last prompt\n\
+                                 - **/shell [session_id_or_pid]**: List or focus active shell sessions\n\
                                  - **/help**: Display this help card\n\
                                  - **/exit** / **/quit**: Exit the application\n\n\
                                  Hotkeys (in Chat):\n\
@@ -1152,6 +1448,10 @@ impl App {
                 .get("pid")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as u32);
+            let persistent_session_id = args
+                .get("persistent_session_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_owned());
             if let Some(msg) = self
                 .chat
                 .messages
@@ -1162,6 +1462,7 @@ impl App {
                 msg.text = output;
                 msg.shell_success = success;
                 msg.shell_pid = pid;
+                msg.shell_session_id = persistent_session_id;
                 *msg.cached_wrapped.borrow_mut() = None;
             }
         } else {
@@ -1314,9 +1615,16 @@ impl App {
         if name == "run_bash_command" {
             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let body = format!("$ {}\nRunning...\n", cmd);
-            self.chat
-                .messages
-                .push(MessageLine::shell(cmd.to_owned(), body, false));
+            let persistent_session_id = args
+                .get("persistent_session_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_owned());
+            self.chat.messages.push(MessageLine::shell(
+                cmd.to_owned(),
+                body,
+                false,
+                persistent_session_id,
+            ));
         } else {
             let summary = format!("**{}** executing...", name);
             self.chat.messages.push(MessageLine::tool(summary));
