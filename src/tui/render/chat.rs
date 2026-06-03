@@ -626,14 +626,16 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                 let cmd_single_line = message.shell_cmd.replace(['\n', '\r'], " ");
                 let title_w = (width as usize).saturating_sub(1);
                 let max_title_cmd_len = title_w.saturating_sub(12); // "✗ Shell " is 8 chars, some margin
-                let cmd_summary = if cmd_single_line.chars().count() > max_title_cmd_len {
-                    let truncated: String = cmd_single_line
-                        .chars()
-                        .take(max_title_cmd_len.saturating_sub(3))
-                        .collect();
+                let cmd_vis_w = visual_width(&cmd_single_line);
+                let cmd_summary = if cmd_vis_w > max_title_cmd_len {
+                    let truncate_w = max_title_cmd_len.saturating_sub(3);
+                    let (truncated, _) =
+                        clean_and_truncate_to_visual_width(&cmd_single_line, truncate_w);
                     format!("{}...", truncated)
                 } else {
-                    cmd_single_line
+                    let (cleaned, _) =
+                        clean_and_truncate_to_visual_width(&cmd_single_line, max_title_cmd_len);
+                    cleaned
                 };
                 let icon = if message.shell_success {
                     icons::SHELL_OK
@@ -647,13 +649,13 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     border_style,
                 )));
 
-                let title_len = title.chars().count();
-                let title_pad = title_w.saturating_sub(title_len);
-                let padded_title = if title_len > title_w {
-                    title.chars().take(title_w).collect()
-                } else {
-                    format!("{}{}", title, " ".repeat(title_pad))
-                };
+                let (cleaned_title, title_vis_w) =
+                    clean_and_truncate_to_visual_width(&title, title_w);
+                let padded_title = format!(
+                    "{}{}",
+                    cleaned_title,
+                    " ".repeat(title_w.saturating_sub(title_vis_w))
+                );
 
                 msg_lines.push(Line::from(vec![
                     Span::styled("│ ", border_style),
@@ -691,15 +693,14 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     };
 
                 for line in display_lines {
-                    let line_len = line.chars().count();
-                    let body_pad = body_w.saturating_sub(line_len);
-                    let padded_line = if line_len > body_w {
-                        line.chars().take(body_w).collect()
-                    } else {
-                        format!("{}{}", line, " ".repeat(body_pad))
-                    };
-
                     let is_truncation_marker = line.starts_with("... [") && line.ends_with("] ...");
+                    let (cleaned, line_vis_w) = clean_and_truncate_to_visual_width(&line, body_w);
+                    let padded_line = format!(
+                        "{}{}",
+                        cleaned,
+                        " ".repeat(body_w.saturating_sub(line_vis_w))
+                    );
+
                     let style = if is_truncation_marker {
                         Style::default()
                             .fg(Color::Yellow)
@@ -885,4 +886,47 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn visual_width(s: &str) -> usize {
+    use unicode_width::UnicodeWidthChar;
+    let mut w = 0;
+    for c in s.chars() {
+        if c == '\t' {
+            w += 4;
+        } else if c == '\r' || c == '\n' {
+            // ignore
+        } else if !c.is_control() {
+            w += c.width().unwrap_or(0);
+        }
+    }
+    w
+}
+
+fn clean_and_truncate_to_visual_width(s: &str, max_w: usize) -> (String, usize) {
+    use unicode_width::UnicodeWidthChar;
+    let mut res = String::new();
+    let mut current_w = 0;
+    for c in s.chars() {
+        if c == '\r' || c == '\n' {
+            continue;
+        }
+        let char_w = if c == '\t' {
+            4
+        } else if c.is_control() {
+            0
+        } else {
+            c.width().unwrap_or(0)
+        };
+        if current_w + char_w > max_w {
+            break;
+        }
+        if c == '\t' {
+            res.push_str("    ");
+        } else if !c.is_control() {
+            res.push(c);
+        }
+        current_w += char_w;
+    }
+    (res, current_w)
 }
