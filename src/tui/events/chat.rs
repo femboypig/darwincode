@@ -133,8 +133,16 @@ pub(crate) fn handle_chat_key(
             return Ok(());
         }
 
-        let mut guard = crate::tui::RUNNING_PROCESS_STDIN.lock();
-        if let Some(ref mut stdin) = guard.as_mut().ok().and_then(|g| g.as_mut()) {
+        let mut written = false;
+        let mut written_pid = None;
+
+        // 1. Try to write to active persistent session stdin
+        if let Ok(session_id_guard) = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock()
+            && let Some(ref session_id) = *session_id_guard
+            && let Some(registry_mutex) = crate::tui::PERSISTENT_SESSIONS.get()
+            && let Ok(mut registry_guard) = registry_mutex.lock()
+            && let Some(session) = registry_guard.get_mut(session_id)
+        {
             use std::io::Write;
             let data = match key.code {
                 KeyCode::Char(c) => Some(c.to_string()),
@@ -143,24 +151,57 @@ pub(crate) fn handle_chat_key(
                 _ => None,
             };
             if let Some(s) = data {
-                let _ = stdin.write_all(s.as_bytes());
-                let _ = stdin.flush();
+                let _ = session.stdin.write_all(s.as_bytes());
+                let _ = session.stdin.flush();
+                written = true;
+                written_pid = Some(session.pid);
+            }
+        }
 
-                if let Some(msg) = app.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
-                    if msg.text.ends_with("\nRunning...\n") {
-                        msg.text.truncate(msg.text.len() - 11);
+        // 2. Try to write to non-persistent foreground process stdin
+        if !written {
+            let mut guard = crate::tui::RUNNING_PROCESS_STDIN.lock();
+            if let Some(ref mut stdin) = guard.as_mut().ok().and_then(|g| g.as_mut()) {
+                use std::io::Write;
+                let data = match key.code {
+                    KeyCode::Char(c) => Some(c.to_string()),
+                    KeyCode::Enter => Some("\n".to_owned()),
+                    KeyCode::Backspace => Some("\x08".to_owned()),
+                    _ => None,
+                };
+                if let Some(s) = data {
+                    let _ = stdin.write_all(s.as_bytes());
+                    let _ = stdin.flush();
+                    written = true;
+                    if let Ok(pid_guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+                        written_pid = *pid_guard;
                     }
-                    if key.code == KeyCode::Backspace {
-                        if !msg.text.is_empty() {
-                            msg.text.pop();
-                        }
-                    } else {
-                        msg.text.push_str(&s);
-                    }
-                    *msg.cached_wrapped.borrow_mut() = None;
                 }
             }
         }
+
+        if written {
+            // Find the shell message line and truncate "\nRunning...\n" if it's there
+            let mut found_msg = None;
+            if let Some(wp) = written_pid {
+                found_msg = app
+                    .chat
+                    .messages
+                    .iter_mut()
+                    .rev()
+                    .find(|m| m.is_shell && m.shell_pid == Some(wp));
+            }
+            if found_msg.is_none() {
+                found_msg = app.chat.messages.iter_mut().rev().find(|m| m.is_shell);
+            }
+            if let Some(msg) = found_msg
+                && msg.text.ends_with("\nRunning...\n")
+            {
+                msg.text.truncate(msg.text.len() - 11);
+                *msg.cached_wrapped.borrow_mut() = None;
+            }
+        }
+
         return Ok(());
     }
 
