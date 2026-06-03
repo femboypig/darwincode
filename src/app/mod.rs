@@ -1070,10 +1070,10 @@ impl App {
                 is_aborted = true;
             }
 
-            if let Some(err_str) = response.get("error").and_then(|v| v.as_str()) {
-                if err_str.contains("terminated by user via Ctrl+C") {
-                    is_aborted = true;
-                }
+            if let Some(err_str) = response.get("error").and_then(|v| v.as_str())
+                && err_str.contains("terminated by user via Ctrl+C")
+            {
+                is_aborted = true;
             }
 
             let stdout = response
