@@ -538,7 +538,7 @@ dependencies = [
 
 [[package]]
 name = "darwincode"
-version = "1.9.59"
+version = "1.9.60"
 dependencies = [
  "aes-gcm",
  "anyhow",
