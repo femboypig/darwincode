@@ -414,7 +414,8 @@ fn start_terminal() -> Result<Tui> {
         stdout,
         EnterAlternateScreen,
         event::EnableFocusChange,
-        event::EnableBracketedPaste
+        event::EnableBracketedPaste,
+        event::EnableMouseCapture
     )?;
     Terminal::new(CrosstermBackend::new(stdout)).map_err(Into::into)
 }
@@ -423,7 +424,8 @@ fn stop_terminal(terminal: &mut Tui) -> Result<()> {
     let _ = execute!(
         io::stdout(),
         event::DisableFocusChange,
-        event::DisableBracketedPaste
+        event::DisableBracketedPaste,
+        event::DisableMouseCapture
     );
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -495,6 +497,15 @@ fn run_loop(
                         events::handle_key(app, sender, key)?;
                     }
                 }
+                Event::Mouse(mouse_event) => match mouse_event.kind {
+                    event::MouseEventKind::ScrollUp => {
+                        app.chat.scroll = app.chat.scroll.saturating_add(1);
+                    }
+                    event::MouseEventKind::ScrollDown => {
+                        app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                    }
+                    _ => {}
+                },
                 Event::Paste(text) => events::handle_paste(app, text),
                 Event::Resize(_, _) => {
                     let _ = terminal.autoresize();
@@ -1264,54 +1275,117 @@ pub(crate) fn handle_function_action(
                     }
                     "apply_patch" => {
                         let patch = args.get("patch").and_then(|v| v.as_str()).unwrap_or("");
-                        let run_res = (|| -> Result<(), String> {
-                            let git_root = (|| -> Option<std::path::PathBuf> {
-                                let out = std::process::Command::new("git")
-                                    .args(["rev-parse", "--show-toplevel"])
+                        let run_res = (|| -> Result<serde_json::Value, String> {
+                            let file_path = patch
+                                .lines()
+                                .find_map(|line| {
+                                    if let Some(stripped) = line.strip_prefix("--- a/") {
+                                        Some(stripped)
+                                    } else if let Some(stripped) = line.strip_prefix("+++ b/") {
+                                        Some(stripped)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .and_then(|rest| rest.split_whitespace().next());
+
+                            let file_dir = if let Some(fp) = file_path {
+                                std::path::Path::new(fp)
+                                    .parent()
+                                    .unwrap_or(std::path::Path::new(""))
+                            } else {
+                                std::path::Path::new("")
+                            };
+
+                            let git_root = (|| -> Result<std::path::PathBuf, String> {
+                                let mut cmd = std::process::Command::new("git");
+                                cmd.args(["rev-parse", "--show-toplevel"]);
+                                if !file_dir.as_os_str().is_empty() {
+                                    cmd.current_dir(file_dir);
+                                }
+                                let out = cmd
                                     .output()
-                                    .ok()?;
+                                    .map_err(|e| format!("Failed to execute git: {}", e))?;
                                 if out.status.success() {
                                     let path_str =
                                         String::from_utf8_lossy(&out.stdout).trim().to_owned();
-                                    Some(std::path::PathBuf::from(path_str))
+                                    Ok(std::path::PathBuf::from(path_str))
                                 } else {
-                                    None
+                                    Err("Not a git repository".to_owned())
                                 }
-                            })();
+                            })()?;
+
+                            let random_val = {
+                                let mut bytes = [0u8; 8];
+                                rand::fill(&mut bytes);
+                                bytes
+                                    .iter()
+                                    .map(|b| format!("{:02x}", b))
+                                    .collect::<String>()
+                            };
+                            let temp_path = std::path::PathBuf::from(format!(
+                                "/tmp/_apply_patch_{}.diff",
+                                random_val
+                            ));
+                            std::fs::write(&temp_path, patch).map_err(|e| {
+                                format!("Failed to write temporary patch file: {}", e)
+                            })?;
+
+                            let cleanup = |path: &std::path::Path| {
+                                let _ = std::fs::remove_file(path);
+                            };
 
                             let mut cmd = std::process::Command::new("git");
-                            if let Some(ref root) = git_root {
-                                cmd.current_dir(root);
-                            }
-                            cmd.arg("apply").arg("-");
-                            cmd.stdin(std::process::Stdio::piped());
+                            cmd.current_dir(&git_root);
+                            cmd.args(["apply", &temp_path.to_string_lossy()]);
                             cmd.stdout(std::process::Stdio::piped());
                             cmd.stderr(std::process::Stdio::piped());
-                            let mut child = cmd
-                                .spawn()
-                                .map_err(|e| format!("Failed to spawn git apply: {}", e))?;
-                            if let Some(mut stdin) = child.stdin.take() {
-                                use std::io::Write;
-                                stdin
-                                    .write_all(patch.as_bytes())
-                                    .map_err(|e| format!("Failed to write to stdin: {}", e))?;
-                            }
-                            let output = child
-                                .wait_with_output()
-                                .map_err(|e| format!("Failed waiting for git apply: {}", e))?;
-                            if output.status.success() {
-                                Ok(())
-                            } else {
+
+                            let output = cmd.output().map_err(|e| {
+                                cleanup(&temp_path);
+                                format!("Failed waiting for git apply: {}", e)
+                            })?;
+
+                            if !output.status.success() {
+                                cleanup(&temp_path);
                                 let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-                                let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-                                Err(format!(
-                                    "git apply failed:\nstdout: {}\nstderr: {}",
-                                    stdout, stderr
-                                ))
+                                return Err(format!("git apply failed:\n{}", stderr));
                             }
+
+                            cleanup(&temp_path);
+
+                            // Optional git diff
+                            let diff_out = std::process::Command::new("git")
+                                .current_dir(&git_root)
+                                .args(["diff", "--cached"])
+                                .output();
+                            let mut diff_str = match diff_out {
+                                Ok(out) if out.status.success() => {
+                                    String::from_utf8_lossy(&out.stdout).into_owned()
+                                }
+                                _ => String::new(),
+                            };
+                            if diff_str.is_empty() {
+                                let diff_uncached = std::process::Command::new("git")
+                                    .current_dir(&git_root)
+                                    .arg("diff")
+                                    .output();
+                                if let Ok(out) = diff_uncached {
+                                    let success = out.status.success();
+                                    if success {
+                                        diff_str =
+                                            String::from_utf8_lossy(&out.stdout).into_owned();
+                                    }
+                                }
+                            }
+
+                            Ok(serde_json::json!({
+                                "success": true,
+                                "diff": diff_str
+                            }))
                         })();
                         match run_res {
-                            Ok(_) => serde_json::json!({ "success": true }),
+                            Ok(val) => val,
                             Err(e) => serde_json::json!({ "error": e }),
                         }
                     }
