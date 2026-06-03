@@ -1063,7 +1063,8 @@ impl App {
                 } else {
                     success = false;
                 }
-            } else if response.get("status").is_some() && response.get("status").unwrap().is_null() {
+            } else if response.get("status").is_some() && response.get("status").unwrap().is_null()
+            {
                 success = false;
             } else {
                 success = false;
@@ -1084,10 +1085,7 @@ impl App {
                 .get("stderr")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let error_field = response
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let error_field = response.get("error").and_then(|v| v.as_str()).unwrap_or("");
 
             if !stdout.is_empty() {
                 output.push_str(stdout);

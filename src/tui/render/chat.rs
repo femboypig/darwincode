@@ -664,21 +664,31 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                 let body_w = (width as usize).saturating_sub(2);
                 let wrapped_body_lines = wrap_text_to_lines(&content, body_w);
                 let max_shell_lines = 25;
-                let (display_lines, _truncated_count) = if wrapped_body_lines.len() > max_shell_lines {
-                    let keep_start = 10;
-                    let keep_end = 12;
-                    let mut lines_to_show = Vec::new();
-                    for l in wrapped_body_lines.iter().take(keep_start) {
-                        lines_to_show.push(l.clone());
-                    }
-                    lines_to_show.push(format!("... [{} lines truncated] ...", wrapped_body_lines.len() - keep_start - keep_end));
-                    for l in wrapped_body_lines.iter().skip(wrapped_body_lines.len() - keep_end) {
-                        lines_to_show.push(l.clone());
-                    }
-                    (lines_to_show, wrapped_body_lines.len() - keep_start - keep_end)
-                } else {
-                    (wrapped_body_lines, 0)
-                };
+                let (display_lines, _truncated_count) =
+                    if wrapped_body_lines.len() > max_shell_lines {
+                        let keep_start = 10;
+                        let keep_end = 12;
+                        let mut lines_to_show = Vec::new();
+                        for l in wrapped_body_lines.iter().take(keep_start) {
+                            lines_to_show.push(l.clone());
+                        }
+                        lines_to_show.push(format!(
+                            "... [{} lines truncated] ...",
+                            wrapped_body_lines.len() - keep_start - keep_end
+                        ));
+                        for l in wrapped_body_lines
+                            .iter()
+                            .skip(wrapped_body_lines.len() - keep_end)
+                        {
+                            lines_to_show.push(l.clone());
+                        }
+                        (
+                            lines_to_show,
+                            wrapped_body_lines.len() - keep_start - keep_end,
+                        )
+                    } else {
+                        (wrapped_body_lines, 0)
+                    };
 
                 for line in display_lines {
                     let line_len = line.chars().count();
@@ -691,7 +701,9 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
                     let is_truncation_marker = line.starts_with("... [") && line.ends_with("] ...");
                     let style = if is_truncation_marker {
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::ITALIC)
                     } else {
                         Style::default().fg(Color::DarkGray)
                     };
