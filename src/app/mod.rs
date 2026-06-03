@@ -1051,13 +1051,29 @@ impl App {
             let mut success = true;
 
             let mut is_aborted = false;
+            let mut is_running = false;
+
             if let Some(status) = response.get("status").and_then(|v| v.as_i64()) {
                 if status != 0 {
                     success = false;
                 }
+            } else if let Some(status_str) = response.get("status").and_then(|v| v.as_str()) {
+                if status_str == "running" {
+                    is_running = true;
+                } else {
+                    success = false;
+                }
+            } else if response.get("status").is_some() && response.get("status").unwrap().is_null() {
+                success = false;
             } else {
                 success = false;
                 is_aborted = true;
+            }
+
+            if let Some(err_str) = response.get("error").and_then(|v| v.as_str()) {
+                if err_str.contains("terminated by user via Ctrl+C") {
+                    is_aborted = true;
+                }
             }
 
             let stdout = response
@@ -1068,6 +1084,11 @@ impl App {
                 .get("stderr")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            let error_field = response
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
             if !stdout.is_empty() {
                 output.push_str(stdout);
             }
@@ -1077,13 +1098,19 @@ impl App {
                 }
                 output.push_str(stderr);
             }
+            if !error_field.is_empty() && error_field != "null" {
+                if !output.is_empty() {
+                    output.push('\n');
+                }
+                output.push_str(error_field);
+            }
 
             if is_aborted {
                 if !output.is_empty() {
                     output.push('\n');
                 }
                 output.push_str("^C\n[Process terminated by user via Ctrl+C]");
-            } else if output.is_empty() {
+            } else if output.is_empty() && !is_running {
                 output = "(empty output)".to_owned();
             }
 
