@@ -99,6 +99,7 @@ pub struct App {
     pub generation_id: usize,
     pub confirm_scroll: u16,
     pub ask_user: AskUserState,
+    pub sessions_cache: std::cell::RefCell<Option<Vec<crate::app::session::SessionMeta>>>,
 }
 
 impl App {
@@ -128,6 +129,7 @@ impl App {
                     custom_input: String::new(),
                     is_custom: false,
                 },
+                sessions_cache: std::cell::RefCell::new(None),
             },
             None => Self {
                 screen: Screen::Setup,
@@ -153,6 +155,7 @@ impl App {
                     custom_input: String::new(),
                     is_custom: false,
                 },
+                sessions_cache: std::cell::RefCell::new(None),
             },
         }
     }
@@ -601,6 +604,10 @@ impl App {
 
     pub fn command_suggestions(&self) -> Vec<CommandSuggestion> {
         let input = self.chat.input.trim_start();
+        if !input.starts_with("/resume") {
+            *self.sessions_cache.borrow_mut() = None;
+        }
+
         if !input.starts_with('/') {
             return Vec::new();
         }
@@ -622,17 +629,23 @@ impl App {
                 .collect();
         }
 
-        if (input.starts_with("/resume ") || input == "/resume")
-            && let Ok(sessions) = session::list_saved_sessions()
-        {
-            return sessions
-                .into_iter()
-                .map(|meta| CommandSuggestion {
-                    name: format!("/resume {}", meta.id),
-                    description: meta.snippet,
-                })
-                .filter(|s| s.name.starts_with(input))
-                .collect();
+        if input.starts_with("/resume ") || input == "/resume" {
+            let mut cache = self.sessions_cache.borrow_mut();
+            if cache.is_none()
+                && let Ok(sessions) = session::list_saved_sessions()
+            {
+                *cache = Some(sessions);
+            }
+            if let Some(sessions) = cache.as_ref() {
+                return sessions
+                    .iter()
+                    .map(|meta| CommandSuggestion {
+                        name: format!("/resume {}", meta.id),
+                        description: meta.snippet.clone(),
+                    })
+                    .filter(|s| s.name.starts_with(input))
+                    .collect();
+            }
         }
 
         if input.contains(' ') {
