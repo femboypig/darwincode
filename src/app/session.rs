@@ -321,7 +321,10 @@ pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
     Ok(result)
 }
 
-pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine> {
+pub fn rebuild_messages_from_history(
+    history: &[ChatMessage],
+    show_thoughts: bool,
+) -> Vec<MessageLine> {
     let mut messages = Vec::new();
     let mut last_function_call = None;
 
@@ -347,9 +350,44 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
                 }
 
                 let mut text = String::new();
+                let mut last_was_thought = false;
+                let mut has_thought_content = false;
+
                 for part in &msg.parts {
-                    if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
-                        text.push_str(t);
+                    let is_thought = part
+                        .get("thought")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                        || part.get("thought_signature").is_some();
+
+                    if let Some(t) = part.get("text").and_then(|v| v.as_str())
+                        && !t.is_empty()
+                    {
+                        if is_thought {
+                            if show_thoughts {
+                                if !has_thought_content {
+                                    text.push_str("Thinking: ");
+                                    has_thought_content = true;
+                                }
+                                text.push_str(t);
+                            }
+                            last_was_thought = true;
+                        } else {
+                            if last_was_thought {
+                                if show_thoughts {
+                                    let clean_t =
+                                        t.trim_start_matches('\n').trim_start_matches('\r');
+                                    text.push_str(&format!("\n\n{}", clean_t));
+                                } else {
+                                    let clean_t =
+                                        t.trim_start_matches('\n').trim_start_matches('\r');
+                                    text.push_str(clean_t);
+                                }
+                            } else {
+                                text.push_str(t);
+                            }
+                            last_was_thought = false;
+                        }
                     }
                 }
                 if !text.is_empty() {
@@ -380,12 +418,32 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
                             let mut success = true;
 
                             let mut is_aborted = false;
+                            let mut is_running = false;
+
                             if let Some(status) = response.get("status").and_then(|v| v.as_i64()) {
                                 if status != 0 {
                                     success = false;
                                 }
+                            } else if let Some(status_str) =
+                                response.get("status").and_then(|v| v.as_str())
+                            {
+                                if status_str == "running" {
+                                    is_running = true;
+                                } else {
+                                    success = false;
+                                }
+                            } else if response.get("status").is_some()
+                                && response.get("status").unwrap().is_null()
+                            {
+                                success = false;
                             } else {
                                 success = false;
+                                is_aborted = true;
+                            }
+
+                            if let Some(err_str) = response.get("error").and_then(|v| v.as_str())
+                                && err_str.contains("terminated by user via Ctrl+C")
+                            {
                                 is_aborted = true;
                             }
 
@@ -397,6 +455,9 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
                                 .get("stderr")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("");
+                            let error_field =
+                                response.get("error").and_then(|v| v.as_str()).unwrap_or("");
+
                             if !stdout.is_empty() {
                                 output.push_str(stdout);
                             }
@@ -406,12 +467,20 @@ pub fn rebuild_messages_from_history(history: &[ChatMessage]) -> Vec<MessageLine
                                 }
                                 output.push_str(stderr);
                             }
+                            if !error_field.is_empty() && error_field != "null" {
+                                if !output.is_empty() {
+                                    output.push('\n');
+                                }
+                                output.push_str(error_field);
+                            }
 
                             if is_aborted {
                                 if !output.is_empty() {
                                     output.push('\n');
                                 }
                                 output.push_str("^C\n[Process terminated by user via Ctrl+C]");
+                            } else if output.is_empty() && !is_running {
+                                output = "(empty output)".to_owned();
                             }
 
                             let body = format!("$ {}\n{}", cmd, output);
@@ -468,7 +537,7 @@ mod tests {
         assert_eq!(loaded.id, "test_session_123");
         assert_eq!(loaded.history.len(), 1);
 
-        let messages = rebuild_messages_from_history(&loaded.history);
+        let messages = rebuild_messages_from_history(&loaded.history, true);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].author, "You");
         assert_eq!(messages[0].text, "Hello!");
@@ -522,7 +591,7 @@ mod tests {
             })],
         });
 
-        let messages = rebuild_messages_from_history(&history);
+        let messages = rebuild_messages_from_history(&history, true);
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].author, "You");
         assert_eq!(messages[0].text, "Run command");
