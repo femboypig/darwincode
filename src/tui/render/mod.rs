@@ -59,8 +59,8 @@ pub(crate) fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
 
     let theme = get_theme(app);
     let (bar_bg, bar_fg) = match theme {
-        crate::config::Theme::Light => (Color::Rgb(230, 230, 240), Color::Rgb(40, 40, 50)),
-        _ => (Color::Rgb(30, 30, 40), Color::Rgb(220, 220, 230)),
+        crate::config::Theme::Light => (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)),
+        _ => (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0)),
     };
     let base_style = Style::default().bg(bar_bg).fg(bar_fg);
 
