@@ -17,34 +17,33 @@ pub(crate) fn handle_chat_key(
         app.pending,
         Some(crate::app::PendingTask::ConfirmFunction { .. })
     ) {
+        if app
+            .keybindings
+            .matches(crate::tui::keybindings::TuiAction::Quit, key)
+        {
+            app.should_quit = true;
+            return Ok(());
+        }
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if let Some(action) = app.answer_function_confirmation(true) {
                     handle_function_action(action, sender);
                 }
             }
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+            KeyCode::Char('n') | KeyCode::Char('N') => {
                 if let Some(action) = app.answer_function_confirmation(false) {
                     handle_function_action(action, sender);
                 }
             }
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                app.should_quit = true;
-            }
-            KeyCode::Up => {
-                app.confirm_scroll = app.confirm_scroll.saturating_sub(1);
-            }
-            KeyCode::Down => {
-                app.confirm_scroll = app.confirm_scroll.saturating_add(1);
-            }
-            KeyCode::PageUp => {
-                app.confirm_scroll = app.confirm_scroll.saturating_sub(10);
-            }
-            KeyCode::PageDown => {
-                app.confirm_scroll = app.confirm_scroll.saturating_add(10);
-            }
             _ => {
                 if app
+                    .keybindings
+                    .matches(crate::tui::keybindings::TuiAction::Cancel, key)
+                {
+                    if let Some(action) = app.answer_function_confirmation(false) {
+                        handle_function_action(action, sender);
+                    }
+                } else if app
                     .keybindings
                     .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
                 {
@@ -54,6 +53,16 @@ pub(crate) fn handle_chat_key(
                     .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
                 {
                     app.confirm_scroll = app.confirm_scroll.saturating_add(1);
+                } else if app
+                    .keybindings
+                    .matches(crate::tui::keybindings::TuiAction::PageUp, key)
+                {
+                    app.confirm_scroll = app.confirm_scroll.saturating_sub(10);
+                } else if app
+                    .keybindings
+                    .matches(crate::tui::keybindings::TuiAction::PageDown, key)
+                {
+                    app.confirm_scroll = app.confirm_scroll.saturating_add(10);
                 }
             }
         }
