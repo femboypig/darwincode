@@ -59,11 +59,22 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             ])
             .split(area);
 
+        let logo_spacer = if top_height >= 8 {
+            3
+        } else if top_height >= 7 {
+            2
+        } else if top_height >= 6 {
+            1
+        } else {
+            0
+        };
+
         let top_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),
                 Constraint::Length(5), // Logo (5 lines)
+                Constraint::Length(logo_spacer),
             ])
             .split(main_chunks[0]);
 
@@ -542,6 +553,8 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let shell_focused = app.chat.shell_focused;
     if app.chat.messages.is_empty() {
+        app.chat.messages_area.set(Some(area));
+        *app.chat.message_line_ranges.borrow_mut() = Vec::new();
         let lines = welcome_lines(area);
         frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
         return;
@@ -560,6 +573,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
     let last_shell_idx = app.chat.messages.iter().rposition(|m| m.is_shell);
     let mut prev_is_tool = false;
+    let mut message_line_ranges = Vec::new();
 
     for (msg_idx, message) in app.chat.messages.iter().enumerate() {
         let mut content = if message.pending {
@@ -607,15 +621,30 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             let mut msg_lines = Vec::new();
             if is_shell {
-                let is_last_shell = Some(msg_idx) == last_shell_idx;
-                let border_color = if shell_focused && is_last_shell {
+                let is_focused_shell = if shell_focused {
+                    if let Some(ref active_id) = app.chat.focused_shell_session_id {
+                        let last_of_session =
+                            app.chat.messages.iter().enumerate().rposition(|(_, m)| {
+                                m.is_shell && m.shell_session_id.as_ref() == Some(active_id)
+                            });
+                        Some(msg_idx) == last_of_session
+                    } else if let Some(pid) = app.chat.focused_shell_pid {
+                        message.shell_pid == Some(pid)
+                    } else {
+                        Some(msg_idx) == last_shell_idx
+                    }
+                } else {
+                    false
+                };
+
+                let border_color = if is_focused_shell {
                     Color::Rgb(59, 130, 246)
                 } else {
                     Color::DarkGray
                 };
                 let border_style = Style::default().fg(border_color);
 
-                let title_style = if shell_focused && is_last_shell {
+                let title_style = if is_focused_shell {
                     Style::default()
                         .fg(Color::Rgb(59, 130, 246))
                         .add_modifier(Modifier::BOLD)
@@ -818,9 +847,15 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
             push_margin(&mut all_lines);
         }
 
+        let start_line = all_lines.len();
         all_lines.extend(msg_lines);
+        let end_line = all_lines.len();
+        message_line_ranges.push((msg_idx, start_line, end_line));
         prev_is_tool = is_tool;
     }
+
+    app.chat.messages_area.set(Some(area));
+    *app.chat.message_line_ranges.borrow_mut() = message_line_ranges;
 
     // Line-by-line scrolling
     let total_lines = all_lines.len();
