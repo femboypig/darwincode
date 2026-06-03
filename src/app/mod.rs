@@ -516,7 +516,10 @@ impl App {
                 && (name == "run_bash_command"
                     || name == "edit_file"
                     || name == "write_file"
-                    || name == "edit_files")
+                    || name == "edit_files"
+                    || name == "edit_file_lines"
+                    || name == "apply_patch"
+                    || name == "kill_process")
             {
                 self.pending = Some(PendingTask::Generating);
                 self.complete_function_execution(
@@ -698,7 +701,7 @@ impl App {
                             self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                             self.status = format!("Auto-executing {name}");
                             return Some(SubmitAction::ExecuteFunction { name, args, config: self.chat.config.clone() });
-                        } else if level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files")
+                        } else if level == PermissionLevel::Safe && (name == "run_bash_command" || name == "edit_file" || name == "write_file" || name == "edit_files" || name == "edit_file_lines" || name == "apply_patch" || name == "kill_process")
                             && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self.complete_function_execution(name, serde_json::json!({"error": "Permission denied: restricted mode"})) {
                                 return Some(SubmitAction::Generate(request));
                             }
@@ -904,7 +907,10 @@ impl App {
                     && (name == "run_bash_command"
                         || name == "edit_file"
                         || name == "write_file"
-                        || name == "edit_files")
+                        || name == "edit_files"
+                        || name == "edit_file_lines"
+                        || name == "apply_patch"
+                        || name == "kill_process")
                     && let Some(crate::app::FunctionAction::ResumeGeneration(request)) = self
                         .complete_function_execution(
                             name,
@@ -1147,7 +1153,7 @@ impl App {
     pub fn backup_before_execution(&mut self, name: &str, args: &serde_json::Value) {
         let mut paths_to_backup = Vec::new();
         match name {
-            "edit_file" | "write_file" => {
+            "edit_file" | "write_file" | "edit_file_lines" => {
                 if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
                     paths_to_backup.push(path.to_owned());
                 }
@@ -1157,6 +1163,34 @@ impl App {
                     for edit_val in edits {
                         if let Some(path) = edit_val.get("path").and_then(|v| v.as_str()) {
                             paths_to_backup.push(path.to_owned());
+                        }
+                    }
+                }
+            }
+            "apply_patch" => {
+                if let Some(patch) = args.get("patch").and_then(|v| v.as_str()) {
+                    for line in patch.lines() {
+                        if line.starts_with("+++ b/") || line.starts_with("+++ ") {
+                            let path = if line.starts_with("+++ b/") {
+                                &line[6..]
+                            } else {
+                                &line[4..]
+                            };
+                            let path = path.split_whitespace().next().unwrap_or(path);
+                            if path != "/dev/null" {
+                                paths_to_backup.push(path.to_owned());
+                            }
+                        }
+                        if line.starts_with("--- a/") || line.starts_with("--- ") {
+                            let path = if line.starts_with("--- a/") {
+                                &line[6..]
+                            } else {
+                                &line[4..]
+                            };
+                            let path = path.split_whitespace().next().unwrap_or(path);
+                            if path != "/dev/null" && !paths_to_backup.contains(&path.to_owned()) {
+                                paths_to_backup.push(path.to_owned());
+                            }
                         }
                     }
                 }
