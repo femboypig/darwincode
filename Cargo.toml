@@ -1,6 +1,6 @@
 [package]
 name = "darwincode"
-version = "1.9.76"
+version = "1.9.77"
 edition = "2024"
 description = "The open source terminal AI coding agent"
 license = "MIT"
