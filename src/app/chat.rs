@@ -289,6 +289,7 @@ pub struct MessageLine {
     pub is_shell: bool,
     pub shell_success: bool,
     pub shell_cmd: String,
+    pub shell_pid: Option<u32>,
     pub is_tool: bool,
     pub cached_wrapped:
         std::cell::RefCell<Option<(usize, Theme, Vec<ratatui::text::Line<'static>>)>>,
@@ -303,6 +304,7 @@ impl MessageLine {
             is_shell: false,
             shell_success: false,
             shell_cmd: String::new(),
+            shell_pid: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -316,6 +318,7 @@ impl MessageLine {
             is_shell: false,
             shell_success: false,
             shell_cmd: String::new(),
+            shell_pid: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -329,6 +332,7 @@ impl MessageLine {
             is_shell: false,
             shell_success: false,
             shell_cmd: String::new(),
+            shell_pid: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -342,6 +346,7 @@ impl MessageLine {
             is_shell: false,
             shell_success: false,
             shell_cmd: String::new(),
+            shell_pid: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -355,6 +360,7 @@ impl MessageLine {
             is_shell: false,
             shell_success: false,
             shell_cmd: String::new(),
+            shell_pid: None,
             is_tool: true,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -368,6 +374,7 @@ impl MessageLine {
             is_shell: true,
             shell_success: success,
             shell_cmd: cmd,
+            shell_pid: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -381,6 +388,7 @@ impl MessageLine {
             is_shell: false,
             shell_success: false,
             shell_cmd: String::new(),
+            shell_pid: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
