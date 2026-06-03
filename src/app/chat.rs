@@ -18,7 +18,11 @@ pub struct ChatState {
     pub sent_history_index: Option<usize>,
     pub input_draft: String,
     pub shell_focused: bool,
+    pub focused_shell_session_id: Option<String>,
+    pub focused_shell_pid: Option<u32>,
     pub last_chunk_was_thought: bool,
+    pub messages_area: std::cell::Cell<Option<ratatui::layout::Rect>>,
+    pub message_line_ranges: std::cell::RefCell<Vec<(usize, usize, usize)>>,
 }
 
 impl ChatState {
@@ -46,7 +50,11 @@ impl ChatState {
             sent_history_index: None,
             input_draft: String::new(),
             shell_focused: false,
+            focused_shell_session_id: None,
+            focused_shell_pid: None,
             last_chunk_was_thought: false,
+            messages_area: std::cell::Cell::new(None),
+            message_line_ranges: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -290,6 +298,7 @@ pub struct MessageLine {
     pub shell_success: bool,
     pub shell_cmd: String,
     pub shell_pid: Option<u32>,
+    pub shell_session_id: Option<String>,
     pub is_tool: bool,
     pub cached_wrapped:
         std::cell::RefCell<Option<(usize, Theme, Vec<ratatui::text::Line<'static>>)>>,
@@ -305,6 +314,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             shell_pid: None,
+            shell_session_id: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -319,6 +329,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             shell_pid: None,
+            shell_session_id: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -333,6 +344,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             shell_pid: None,
+            shell_session_id: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -347,6 +359,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             shell_pid: None,
+            shell_session_id: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -361,12 +374,18 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             shell_pid: None,
+            shell_session_id: None,
             is_tool: true,
             cached_wrapped: std::cell::RefCell::new(None),
         }
     }
 
-    pub fn shell(cmd: String, output: String, success: bool) -> Self {
+    pub fn shell(
+        cmd: String,
+        output: String,
+        success: bool,
+        shell_session_id: Option<String>,
+    ) -> Self {
         Self {
             author: "Shell",
             text: output,
@@ -375,6 +394,7 @@ impl MessageLine {
             shell_success: success,
             shell_cmd: cmd,
             shell_pid: None,
+            shell_session_id,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -389,6 +409,7 @@ impl MessageLine {
             shell_success: false,
             shell_cmd: String::new(),
             shell_pid: None,
+            shell_session_id: None,
             is_tool: false,
             cached_wrapped: std::cell::RefCell::new(None),
         }
@@ -411,6 +432,7 @@ pub enum ChatCommand {
     New,
     History,
     Undo,
+    Shell(Option<String>),
     Help,
     Unknown(String),
 }
@@ -441,6 +463,10 @@ impl ChatCommand {
                 let arg = parts.next().map(|s| s.to_owned());
                 Self::Resume(arg)
             }
+            "/shell" => {
+                let arg = parts.next().map(|s| s.to_owned());
+                Self::Shell(arg)
+            }
             "/clear" => Self::Clear,
             "/new" => Self::New,
             "/history" => Self::History,
@@ -467,6 +493,10 @@ impl ChatCommand {
             CommandSuggestion {
                 name: "/resume".to_owned(),
                 description: "Resume saved chat sessions".to_owned(),
+            },
+            CommandSuggestion {
+                name: "/shell".to_owned(),
+                description: "List or focus active shell sessions".to_owned(),
             },
             CommandSuggestion {
                 name: "/new".to_owned(),
