@@ -314,8 +314,24 @@ impl App {
         }))
     }
 
-    pub fn handle_bash_stdout(&mut self, chunk: String) {
-        if let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
+    pub fn handle_bash_stdout(&mut self, pid: Option<u32>, chunk: String) {
+        let mut found = false;
+        if let Some(p) = pid
+            && let Some(msg) = self
+                .chat
+                .messages
+                .iter_mut()
+                .rev()
+                .find(|m| m.is_shell && m.shell_pid == Some(p))
+        {
+            if msg.text.ends_with("\nRunning...\n") {
+                msg.text.truncate(msg.text.len() - 11);
+            }
+            msg.text.push_str(&chunk);
+            *msg.cached_wrapped.borrow_mut() = None;
+            found = true;
+        }
+        if !found && let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
             if msg.text.ends_with("\nRunning...\n") {
                 msg.text.truncate(msg.text.len() - 11);
             }
@@ -324,8 +340,24 @@ impl App {
         }
     }
 
-    pub fn handle_bash_stderr(&mut self, chunk: String) {
-        if let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
+    pub fn handle_bash_stderr(&mut self, pid: Option<u32>, chunk: String) {
+        let mut found = false;
+        if let Some(p) = pid
+            && let Some(msg) = self
+                .chat
+                .messages
+                .iter_mut()
+                .rev()
+                .find(|m| m.is_shell && m.shell_pid == Some(p))
+        {
+            if msg.text.ends_with("\nRunning...\n") {
+                msg.text.truncate(msg.text.len() - 11);
+            }
+            msg.text.push_str(&chunk);
+            *msg.cached_wrapped.borrow_mut() = None;
+            found = true;
+        }
+        if !found && let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
             if msg.text.ends_with("\nRunning...\n") {
                 msg.text.truncate(msg.text.len() - 11);
             }
@@ -440,6 +472,7 @@ impl App {
             shell_success: false,
             shell_cmd: String::new(),
             is_tool: false,
+            shell_pid: None,
             cached_wrapped: std::cell::RefCell::new(None),
         });
     }
@@ -940,7 +973,10 @@ impl App {
         let s = session::load_session(id)?;
         self.chat.session_id = s.id;
         self.chat.history = s.history;
-        self.chat.messages = session::rebuild_messages_from_history(&self.chat.history);
+        self.chat.messages = session::rebuild_messages_from_history(
+            &self.chat.history,
+            self.chat.config.show_thoughts,
+        );
         self.status = format!("Resumed session: {}", id);
         Ok(())
     }
@@ -1046,7 +1082,7 @@ impl App {
         });
         self.save_session();
         if name == "run_bash_command" {
-            let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
+            let _cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let mut output = String::new();
             let mut success = true;
 
@@ -1112,11 +1148,20 @@ impl App {
                 output = "(empty output)".to_owned();
             }
 
-            let body = format!("$ {}\n{}", cmd, output);
-
-            if let Some(msg) = self.chat.messages.iter_mut().rev().find(|m| m.is_shell) {
-                msg.text = body;
+            let pid = response
+                .get("pid")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+            if let Some(msg) = self
+                .chat
+                .messages
+                .iter_mut()
+                .rev()
+                .find(|m| m.is_shell && m.shell_pid.is_none())
+            {
+                msg.text = output;
                 msg.shell_success = success;
+                msg.shell_pid = pid;
                 *msg.cached_wrapped.borrow_mut() = None;
             }
         } else {
