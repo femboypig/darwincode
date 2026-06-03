@@ -52,12 +52,21 @@ pub fn run(mut app: App) -> Result<()> {
 fn start_terminal() -> Result<Tui> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, event::EnableFocusChange)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        event::EnableFocusChange,
+        event::EnableBracketedPaste
+    )?;
     Terminal::new(CrosstermBackend::new(stdout)).map_err(Into::into)
 }
 
 fn stop_terminal(terminal: &mut Tui) -> Result<()> {
-    let _ = execute!(io::stdout(), event::DisableFocusChange);
+    let _ = execute!(
+        io::stdout(),
+        event::DisableFocusChange,
+        event::DisableBracketedPaste
+    );
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
