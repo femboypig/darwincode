@@ -20,17 +20,23 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
     if app.ask_user.is_custom {
         match key.code {
             KeyCode::Enter => {
-                let answer = app.ask_user.custom_input.trim().to_owned();
-                if !answer.is_empty() {
-                    let tx = crate::tui::ASK_USER_CHANNEL
-                        .lock()
-                        .ok()
-                        .and_then(|mut g| g.take().map(|(tx, _, _)| tx));
-                    if let Some(tx) = tx {
-                        let _ = tx.send(answer);
+                if key.modifiers.contains(KeyModifiers::SHIFT)
+                    || key.modifiers.contains(KeyModifiers::ALT)
+                {
+                    app.ask_user.custom_input.push('\n');
+                } else {
+                    let answer = app.ask_user.custom_input.trim().to_owned();
+                    if !answer.is_empty() {
+                        let tx = crate::tui::ASK_USER_CHANNEL
+                            .lock()
+                            .ok()
+                            .and_then(|mut g| g.take().map(|(tx, _, _)| tx));
+                        if let Some(tx) = tx {
+                            let _ = tx.send(answer);
+                        }
+                        app.screen = Screen::Chat;
+                        app.status = "Ready".to_owned();
                     }
-                    app.screen = Screen::Chat;
-                    app.status = "Ready".to_owned();
                 }
             }
             KeyCode::Esc => {
