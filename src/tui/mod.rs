@@ -34,7 +34,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 struct BackgroundProcess {
-    command: String,
+    _command: String,
     child: Arc<Mutex<std::process::Child>>,
     stdout_accumulator: Arc<Mutex<String>>,
     stderr_accumulator: Arc<Mutex<String>>,
@@ -78,7 +78,7 @@ fn register_background_process(
         map.insert(
             pid,
             BackgroundProcess {
-                command,
+                _command: command,
                 child: child_arc,
                 stdout_accumulator: stdout_acc,
                 stderr_accumulator: stderr_acc,
