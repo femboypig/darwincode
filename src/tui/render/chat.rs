@@ -284,7 +284,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     render_statusbar(frame, app, statusbar_area);
 
     if let Some(PendingTask::ConfirmFunction { name, args }) = &app.pending {
-        let popup_area = if name == "edit_file" || name == "edit_files" || name == "write_file" {
+        let popup_area = if name == "edit_file" || name == "edit_files" || name == "write_file" || name == "edit_file_lines" || name == "apply_patch" {
             centered_rect(80, 70, area)
         } else {
             centered_rect(60, 50, area)
@@ -338,6 +338,82 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                     Style::default()
                         .fg(Color::Rgb(180, 255, 180))
                         .bg(Color::Rgb(20, 60, 20)),
+                )));
+            }
+            text.push(Line::from(""));
+        } else if name == "edit_file_lines" {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let start_line = args.get("start_line").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
+            let end_line = args.get("end_line").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
+            let new_str = args.get("new_content").and_then(|v| v.as_str()).unwrap_or("");
+
+            text.push(Line::from(vec![
+                Span::styled("File: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(path, Style::default().fg(Color::Cyan)),
+                Span::raw(format!(" (lines {}-{})", start_line, end_line)),
+            ]));
+            text.push(Line::from(""));
+            text.push(Line::from(Span::styled(
+                "Diff Preview:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let lines: Vec<&str> = content.lines().collect();
+                if start_line > 0 && start_line <= lines.len() {
+                    let end_idx = std::cmp::min(end_line, lines.len());
+                    for i in (start_line - 1)..end_idx {
+                        let formatted = format!("- {}", lines[i]);
+                        let padded = format!("{formatted:<width$}", width = inner_width);
+                        text.push(Line::from(Span::styled(
+                            padded,
+                            Style::default()
+                                .fg(Color::Rgb(255, 180, 180))
+                                .bg(Color::Rgb(70, 20, 20)),
+                        )));
+                    }
+                }
+            }
+            for line in new_str.lines() {
+                let formatted = format!("+ {line}");
+                let padded = format!("{formatted:<width$}", width = inner_width);
+                text.push(Line::from(Span::styled(
+                    padded,
+                    Style::default()
+                        .fg(Color::Rgb(180, 255, 180))
+                        .bg(Color::Rgb(20, 60, 20)),
+                )));
+            }
+            text.push(Line::from(""));
+        } else if name == "apply_patch" {
+            let patch = args.get("patch").and_then(|v| v.as_str()).unwrap_or("");
+            text.push(Line::from(Span::styled(
+                "Patch Preview:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            text.push(Line::from(""));
+
+            for line in patch.lines().take(15) {
+                let style = if line.starts_with('+') && !line.starts_with("+++") {
+                    Style::default()
+                        .fg(Color::Rgb(180, 255, 180))
+                        .bg(Color::Rgb(20, 60, 20))
+                } else if line.starts_with('-') && !line.starts_with("---") {
+                    Style::default()
+                        .fg(Color::Rgb(255, 180, 180))
+                        .bg(Color::Rgb(70, 20, 20))
+                } else if line.starts_with("@@") {
+                    Style::default().fg(Color::Cyan)
+                } else {
+                    Style::default()
+                };
+                let padded = format!("{line:<width$}", width = inner_width);
+                text.push(Line::from(Span::styled(padded, style)));
+            }
+            if patch.lines().count() > 15 {
+                text.push(Line::from(Span::styled(
+                    format!("... and {} more lines", patch.lines().count() - 15),
+                    Style::default().add_modifier(Modifier::ITALIC),
                 )));
             }
             text.push(Line::from(""));
