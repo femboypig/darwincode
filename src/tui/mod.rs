@@ -33,15 +33,17 @@ pub static ASK_USER_CHANNEL: std::sync::Mutex<Option<AskUserChannel>> = std::syn
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-struct BackgroundProcess {
-    _command: String,
-    child: Arc<Mutex<std::process::Child>>,
-    stdout_accumulator: Arc<Mutex<String>>,
-    stderr_accumulator: Arc<Mutex<String>>,
-    exit_status: Arc<Mutex<Option<i32>>>,
+pub(crate) struct BackgroundProcess {
+    pub(crate) _command: String,
+    pub(crate) child: Arc<Mutex<std::process::Child>>,
+    pub(crate) stdin: Option<std::process::ChildStdin>,
+    pub(crate) stdout_accumulator: Arc<Mutex<String>>,
+    pub(crate) stderr_accumulator: Arc<Mutex<String>>,
+    pub(crate) exit_status: Arc<Mutex<Option<i32>>>,
 }
 
-static BACKGROUND_PROCESSES: OnceLock<Mutex<HashMap<u32, BackgroundProcess>>> = OnceLock::new();
+pub(crate) static BACKGROUND_PROCESSES: OnceLock<Mutex<HashMap<u32, BackgroundProcess>>> =
+    OnceLock::new();
 
 pub(crate) struct PersistentSession {
     pub(crate) pid: u32,
@@ -59,6 +61,7 @@ fn register_background_process(
     pid: u32,
     command: String,
     child: std::process::Child,
+    stdin: Option<std::process::ChildStdin>,
     stdout_acc: Arc<Mutex<String>>,
     stderr_acc: Arc<Mutex<String>>,
 ) {
@@ -99,6 +102,7 @@ fn register_background_process(
             BackgroundProcess {
                 _command: command,
                 child: child_arc,
+                stdin,
                 stdout_accumulator: stdout_acc,
                 stderr_accumulator: stderr_acc,
                 exit_status,
@@ -142,6 +146,8 @@ fn run_kill_process(pid: u32) -> serde_json::Value {
             {
                 let _ = std::process::Command::new("kill")
                     .args(["-9", &format!("-{}", pid)])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
                     .status();
             }
             serde_json::json!({ "success": true })
@@ -503,6 +509,225 @@ fn run_loop(
                     }
                     event::MouseEventKind::ScrollDown => {
                         app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                    }
+                    event::MouseEventKind::Down(event::MouseButton::Left) => {
+                        if let Some(rect) = app.chat.messages_area.get() {
+                            let click_x = mouse_event.column;
+                            let click_y = mouse_event.row;
+                            if click_x >= rect.x
+                                && click_x < rect.x + rect.width
+                                && click_y >= rect.y
+                                && click_y < rect.y + rect.height
+                            {
+                                let total_lines = app
+                                    .chat
+                                    .message_line_ranges
+                                    .borrow()
+                                    .last()
+                                    .map(|(_, _, end)| *end)
+                                    .unwrap_or(0);
+                                let viewport_height = rect.height as usize;
+                                let max_scroll = total_lines.saturating_sub(viewport_height);
+                                let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
+                                let scroll_y = max_scroll.saturating_sub(scroll_offset);
+
+                                let clicked_line = scroll_y + (click_y - rect.y) as usize;
+
+                                let mut clicked_msg_idx = None;
+                                for &(msg_idx, start_line, end_line) in
+                                    app.chat.message_line_ranges.borrow().iter()
+                                {
+                                    if clicked_line >= start_line && clicked_line < end_line {
+                                        clicked_msg_idx = Some(msg_idx);
+                                        break;
+                                    }
+                                }
+
+                                if let Some(msg_idx) = clicked_msg_idx
+                                    && app.chat.messages[msg_idx].is_shell
+                                {
+                                    if let Some(session_id) =
+                                        app.chat.messages[msg_idx].shell_session_id.clone()
+                                    {
+                                        if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
+                                            let opt: &mut Option<String> = &mut guard;
+                                            *opt = Some(session_id.clone());
+                                        }
+                                        app.chat.focused_shell_session_id =
+                                            Some(session_id.clone());
+                                        app.chat.focused_shell_pid = None;
+                                        app.chat.shell_focused = true;
+
+                                        for m in &mut app.chat.messages {
+                                            if m.is_shell {
+                                                *m.cached_wrapped.borrow_mut() = None;
+                                            }
+                                        }
+
+                                        let mut scrolled = false;
+                                        if let Some(&(_, start_line, end_line)) = app
+                                            .chat
+                                            .message_line_ranges
+                                            .borrow()
+                                            .iter()
+                                            .find(|&&(idx, _, _)| idx == msg_idx)
+                                        {
+                                            let total_lines = app
+                                                .chat
+                                                .message_line_ranges
+                                                .borrow()
+                                                .last()
+                                                .map(|(_, _, end)| *end)
+                                                .unwrap_or(0);
+                                            let viewport_height = rect.height as usize;
+                                            let max_scroll =
+                                                total_lines.saturating_sub(viewport_height);
+                                            let msg_height = end_line.saturating_sub(start_line);
+                                            let mid_line = start_line + msg_height / 2;
+                                            let target_scroll_y =
+                                                mid_line.saturating_sub(viewport_height / 2);
+                                            let scroll_val =
+                                                max_scroll.saturating_sub(target_scroll_y);
+                                            app.chat.scroll = scroll_val as u16;
+                                            scrolled = true;
+                                        }
+                                        if !scrolled {
+                                            app.chat.scroll = 0;
+                                        }
+
+                                        *app.chat.message_line_ranges.borrow_mut() = Vec::new();
+                                        app.status = "Ready".to_owned();
+                                    } else {
+                                        let clicked_pid = app.chat.messages[msg_idx].shell_pid;
+                                        let fg_pid =
+                                            RUNNING_PROCESS_PID.lock().ok().and_then(|g| *g);
+                                        let is_bg_alive = if let Some(pid) = clicked_pid {
+                                            let bg_registry = BACKGROUND_PROCESSES.get();
+                                            if let Some(registry_mutex) = bg_registry
+                                                && let Ok(registry_guard) = registry_mutex.lock()
+                                                && let Some(proc) = registry_guard.get(&pid)
+                                            {
+                                                proc.exit_status.lock().unwrap().is_none()
+                                            } else {
+                                                false
+                                            }
+                                        } else {
+                                            false
+                                        };
+
+                                        if let Some(pid) = fg_pid
+                                            && Some(pid) == clicked_pid
+                                        {
+                                            if let Ok(mut guard) =
+                                                ACTIVE_PERSISTENT_SESSION_ID.lock()
+                                            {
+                                                *guard = None;
+                                            }
+                                            app.chat.focused_shell_session_id = None;
+                                            app.chat.focused_shell_pid = Some(pid);
+                                            app.chat.shell_focused = true;
+
+                                            for m in &mut app.chat.messages {
+                                                if m.is_shell {
+                                                    *m.cached_wrapped.borrow_mut() = None;
+                                                }
+                                            }
+
+                                            let mut scrolled = false;
+                                            if let Some(&(_, start_line, end_line)) = app
+                                                .chat
+                                                .message_line_ranges
+                                                .borrow()
+                                                .iter()
+                                                .find(|&&(idx, _, _)| idx == msg_idx)
+                                            {
+                                                let total_lines = app
+                                                    .chat
+                                                    .message_line_ranges
+                                                    .borrow()
+                                                    .last()
+                                                    .map(|(_, _, end)| *end)
+                                                    .unwrap_or(0);
+                                                let viewport_height = rect.height as usize;
+                                                let max_scroll =
+                                                    total_lines.saturating_sub(viewport_height);
+                                                let msg_height =
+                                                    end_line.saturating_sub(start_line);
+                                                let mid_line = start_line + msg_height / 2;
+                                                let target_scroll_y =
+                                                    mid_line.saturating_sub(viewport_height / 2);
+                                                let scroll_val =
+                                                    max_scroll.saturating_sub(target_scroll_y);
+                                                app.chat.scroll = scroll_val as u16;
+                                                scrolled = true;
+                                            }
+                                            if !scrolled {
+                                                app.chat.scroll = 0;
+                                            }
+
+                                            *app.chat.message_line_ranges.borrow_mut() = Vec::new();
+                                            app.status = "Ready".to_owned();
+                                        } else if is_bg_alive && let Some(pid) = clicked_pid {
+                                            if let Ok(mut guard) =
+                                                ACTIVE_PERSISTENT_SESSION_ID.lock()
+                                            {
+                                                *guard = None;
+                                            }
+                                            app.chat.focused_shell_session_id = None;
+                                            app.chat.focused_shell_pid = Some(pid);
+                                            app.chat.shell_focused = true;
+
+                                            for m in &mut app.chat.messages {
+                                                if m.is_shell {
+                                                    *m.cached_wrapped.borrow_mut() = None;
+                                                }
+                                            }
+
+                                            let mut scrolled = false;
+                                            if let Some(&(_, start_line, end_line)) = app
+                                                .chat
+                                                .message_line_ranges
+                                                .borrow()
+                                                .iter()
+                                                .find(|&&(idx, _, _)| idx == msg_idx)
+                                            {
+                                                let total_lines = app
+                                                    .chat
+                                                    .message_line_ranges
+                                                    .borrow()
+                                                    .last()
+                                                    .map(|(_, _, end)| *end)
+                                                    .unwrap_or(0);
+                                                let viewport_height = rect.height as usize;
+                                                let max_scroll =
+                                                    total_lines.saturating_sub(viewport_height);
+                                                let msg_height =
+                                                    end_line.saturating_sub(start_line);
+                                                let mid_line = start_line + msg_height / 2;
+                                                let target_scroll_y =
+                                                    mid_line.saturating_sub(viewport_height / 2);
+                                                let scroll_val =
+                                                    max_scroll.saturating_sub(target_scroll_y);
+                                                app.chat.scroll = scroll_val as u16;
+                                                scrolled = true;
+                                            }
+                                            if !scrolled {
+                                                app.chat.scroll = 0;
+                                            }
+
+                                            *app.chat.message_line_ranges.borrow_mut() = Vec::new();
+                                            app.status = "Ready".to_owned();
+                                        } else {
+                                            app.chat
+                                                .messages
+                                                .push(crate::app::MessageLine::error(
+                                                    "This shell process has already terminated or does not support input.".to_owned()
+                                                ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     _ => {}
                 },
@@ -1046,18 +1271,18 @@ pub(crate) fn handle_function_action(
 
                                 let pid = child.id();
 
-                                if let Some(mut stdin) = child.stdin.take() {
+                                let mut child_stdin = child.stdin.take();
+                                if let Some(ref mut stdin) = child_stdin.as_mut() {
                                     if let Some(inp) = input {
                                         use std::io::Write;
                                         let _ = stdin.write_all(inp.as_bytes());
                                         let _ = stdin.flush();
                                     }
-                                    if !background
-                                        && let Ok(mut guard) =
-                                            crate::tui::RUNNING_PROCESS_STDIN.lock()
-                                    {
-                                        *guard = Some(stdin);
-                                    }
+                                }
+                                if !background
+                                    && let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock()
+                                {
+                                    *guard = child_stdin.take();
                                 }
 
                                 let stdout = child.stdout.take().unwrap();
@@ -1113,6 +1338,7 @@ pub(crate) fn handle_function_action(
                                         pid,
                                         cmd.to_owned(),
                                         child,
+                                        child_stdin,
                                         stdout_accumulator.clone(),
                                         stderr_accumulator.clone(),
                                     );
@@ -1618,60 +1844,59 @@ fn percent_decode(input: &str) -> String {
     decoded
 }
 
-fn strip_html_tags(input: &str) -> String {
-    let mut out = String::new();
-    let mut in_tag = false;
-    for c in input.chars() {
-        if c == '<' {
-            in_tag = true;
-        } else if c == '>' {
-            in_tag = false;
-        } else if !in_tag {
-            out.push(c);
-        }
-    }
-    out.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#x27;", "'")
-        .replace("&#39;", "'")
-        .trim()
-        .to_owned()
-}
-
 fn html_to_plain_text(html: &str) -> String {
-    let mut cleaned = html.to_owned();
-    while let Some(start) = cleaned.find("<script") {
-        let rest = &cleaned[start..];
-        if let Some(end) = rest.find("</script>") {
-            cleaned.replace_range(start..start + end + 9, " ");
-        } else {
-            break;
+    let document = scraper::Html::parse_document(html);
+    let mut text_parts = Vec::new();
+    for node in document.tree.nodes() {
+        use scraper::node::Node;
+        if let Node::Text(text) = node.value() {
+            let mut has_ignored_ancestor = false;
+            let mut parent = node.parent();
+            while let Some(p) = parent {
+                if let Node::Element(elem) = p.value() {
+                    let name = elem.name();
+                    if name == "script" || name == "style" {
+                        has_ignored_ancestor = true;
+                        break;
+                    }
+                }
+                parent = p.parent();
+            }
+            if !has_ignored_ancestor {
+                text_parts.push(text.to_string());
+            }
         }
     }
-    while let Some(start) = cleaned.find("<style") {
-        let rest = &cleaned[start..];
-        if let Some(end) = rest.find("</style>") {
-            cleaned.replace_range(start..start + end + 8, " ");
-        } else {
-            break;
+
+    let combined = text_parts.join(" ");
+    let mut result = String::new();
+    for word in combined.split_whitespace() {
+        if !result.is_empty() {
+            result.push(' ');
         }
+        result.push_str(word);
     }
-    strip_html_tags(&cleaned)
+    result
 }
 
 fn parse_ddg_html(html: &str) -> Vec<serde_json::Value> {
+    let document = scraper::Html::parse_document(html);
+    let result_selector = scraper::Selector::parse(".result").unwrap();
+    let a_selector = scraper::Selector::parse(".result__a").unwrap();
+    let snippet_selector = scraper::Selector::parse(".result__snippet").unwrap();
+
     let mut results = Vec::new();
-    for block in html.split("<div class=\"result").skip(1) {
+    for element in document.select(&result_selector) {
         if results.len() >= 6 {
             break;
         }
 
-        let href = if let Some(href_start) = block.find("href=\"") {
-            let rest = &block[href_start + 6..];
-            if let Some(href_end) = rest.find("\"") {
-                let raw_url = &rest[..href_end];
+        let href = match element
+            .select(&a_selector)
+            .next()
+            .and_then(|a| a.value().attr("href"))
+        {
+            Some(raw_url) => {
                 if let Some(uddg_idx) = raw_url.find("uddg=") {
                     let encoded_url = &raw_url[uddg_idx + 5..];
                     let decoded_url = percent_decode(encoded_url);
@@ -1683,50 +1908,56 @@ fn parse_ddg_html(html: &str) -> Vec<serde_json::Value> {
                 } else {
                     raw_url.to_owned()
                 }
-            } else {
-                continue;
             }
-        } else {
-            continue;
+            None => continue,
         };
 
-        let title = if let Some(title_start) = block.find("class=\"result__a\"") {
-            let rest = &block[title_start..];
-            if let Some(tag_close) = rest.find('>') {
-                let rest_text = &rest[tag_close + 1..];
-                if let Some(tag_open) = rest_text.find("</a>") {
-                    strip_html_tags(&rest_text[..tag_open])
-                } else {
-                    "Untitled".to_owned()
-                }
-            } else {
-                "Untitled".to_owned()
-            }
-        } else {
-            "Untitled".to_owned()
-        };
+        let title = element
+            .select(&a_selector)
+            .next()
+            .map(|a| a.text().collect::<Vec<_>>().join(""))
+            .unwrap_or_else(|| "Untitled".to_owned());
 
-        let snippet = if let Some(snippet_start) = block.find("class=\"result__snippet\"") {
-            let rest = &block[snippet_start..];
-            if let Some(tag_close) = rest.find('>') {
-                let rest_text = &rest[tag_close + 1..];
-                if let Some(tag_open) = rest_text.find("</a>") {
-                    strip_html_tags(&rest_text[..tag_open])
-                } else {
-                    String::new()
-                }
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        };
+        let snippet = element
+            .select(&snippet_selector)
+            .next()
+            .map(|s| s.text().collect::<Vec<_>>().join(""))
+            .unwrap_or_default();
 
         results.push(serde_json::json!({
-            "title": title,
+            "title": title.trim().to_owned(),
             "url": href,
-            "snippet": snippet
+            "snippet": snippet.trim().to_owned()
         }));
     }
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_html_to_plain_text() {
+        let html = "<html><head><title>Test</title><style>body { color: red; }</style></head>\
+                    <body><h1>Hello World</h1><script>console.log('test');</script>\
+                    <p>This is a <b>test</b> of the scraper.</p></body></html>";
+        let text = html_to_plain_text(html);
+        assert_eq!(text, "Test Hello World This is a test of the scraper.");
+    }
+
+    #[test]
+    fn test_parse_ddg_html() {
+        let html = r#"
+            <div class="result">
+                <a class="result__a" href="https://example.com/uddg=https%3A%2F%2Fexample.com%2Fpage%26amp%3Bfoo">Example Title</a>
+                <span class="result__snippet">This is a snippet.</span>
+            </div>
+        "#;
+        let results = parse_ddg_html(html);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["title"], "Example Title");
+        assert_eq!(results[0]["url"], "https://example.com/page");
+        assert_eq!(results[0]["snippet"], "This is a snippet.");
+    }
 }
