@@ -11,7 +11,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Paragraph};
 
 use crate::app::{App, Screen};
 
@@ -59,12 +59,13 @@ pub(crate) fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
 
     let theme = get_theme(app);
     let (bar_bg, bar_fg) = match theme {
-        crate::config::Theme::Dark | crate::config::Theme::Auto => {
-            (Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0))
-        }
-        crate::config::Theme::Light => (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)),
+        crate::config::Theme::Light => (Color::Rgb(230, 230, 240), Color::Rgb(40, 40, 50)),
+        _ => (Color::Rgb(30, 30, 40), Color::Rgb(220, 220, 230)),
     };
     let base_style = Style::default().bg(bar_bg).fg(bar_fg);
+
+    // Fill the entire status bar background first
+    frame.render_widget(Block::default().style(base_style), area);
 
     // 1. Render left mode block (powerline capsule style)
     let mode_paragraph = Paragraph::new(mode_text).style(
@@ -84,14 +85,26 @@ pub(crate) fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         #[cfg(not(target_os = "windows"))]
         let spinner_frames = ["◐", "◓", "◑", "◒"];
         spinner_frames[(app.tick / 2) % spinner_frames.len()]
+    } else if status_str.contains("Aborted")
+        || status_str.contains("Stopped")
+        || status_str.contains("failed")
+        || status_str.contains("Failed")
+    {
+        icons::SHELL_ERR
     } else {
         icons::IDLE
     };
     let status_color = if is_busy {
         Color::Rgb(245, 158, 11)
+    } else if status_str.contains("Aborted")
+        || status_str.contains("Stopped")
+        || status_str.contains("failed")
+        || status_str.contains("Failed")
+    {
+        Color::Rgb(239, 68, 68)
     } else {
         Color::Rgb(34, 197, 94)
-    }; // Amber vs Green
+    }; // Amber vs Red vs Green
 
     let middle_spans = vec![
         Span::styled(
