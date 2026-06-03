@@ -208,7 +208,25 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     }
 
     if let Some(messages_area) = messages_area {
-        render_messages(frame, app, messages_area);
+        if !app.chat.todos.is_empty() {
+            if messages_area.width >= 90 {
+                let layout = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Min(40), Constraint::Length(32)])
+                    .split(messages_area);
+                render_messages(frame, app, layout[0]);
+                render_todos(frame, app, layout[1]);
+            } else {
+                let layout = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(10), Constraint::Length(8)])
+                    .split(messages_area);
+                render_messages(frame, app, layout[0]);
+                render_todos(frame, app, layout[1]);
+            }
+        } else {
+            render_messages(frame, app, messages_area);
+        }
     }
 
     if let Some(suggestions_area) = suggestions_area {
@@ -983,4 +1001,59 @@ fn clean_and_truncate_to_visual_width(s: &str, max_w: usize) -> (String, usize) 
         current_w += char_w;
     }
     (res, current_w)
+}
+
+fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
+    let mut lines = Vec::new();
+    for item in &app.chat.todos {
+        let status_span = match item.status.as_str() {
+            "completed" => Span::styled("✓ ", Style::default().fg(Color::Rgb(34, 197, 94))),
+            "in_progress" => Span::styled("▶ ", Style::default().fg(Color::Rgb(234, 179, 8))),
+            "pending" => Span::styled("○ ", Style::default().fg(Color::DarkGray)),
+            "cancelled" => Span::styled("✗ ", Style::default().fg(Color::DarkGray)),
+            _ => Span::raw("  "),
+        };
+
+        let priority_span = match item.priority.as_str() {
+            "high" => Span::styled("▲ ", Style::default().fg(Color::Rgb(239, 68, 68))),
+            "medium" => Span::styled("◆ ", Style::default().fg(Color::Rgb(59, 130, 246))),
+            "low" => Span::styled("▼ ", Style::default().fg(Color::DarkGray)),
+            _ => Span::raw("  "),
+        };
+
+        let content_style = match item.status.as_str() {
+            "completed" => Style::default().fg(Color::DarkGray),
+            "cancelled" => Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+            "in_progress" => Style::default().add_modifier(Modifier::BOLD),
+            _ => Style::default(),
+        };
+
+        let content_width = (area.width as usize).saturating_sub(6).max(1);
+        let wrapped = wrap_text_to_lines(&item.content, content_width);
+        for (idx, line_text) in wrapped.iter().enumerate() {
+            if idx == 0 {
+                lines.push(Line::from(vec![
+                    status_span.clone(),
+                    priority_span.clone(),
+                    Span::styled(line_text.clone(), content_style),
+                ]));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled(line_text.clone(), content_style),
+                ]));
+            }
+        }
+        lines.push(Line::from(""));
+    }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" Todo List ")
+        .padding(Padding::horizontal(1));
+
+    frame.render_widget(Paragraph::new(lines).block(block), area);
 }
