@@ -7,6 +7,11 @@ use sha2::{Digest, Sha256};
 
 /// Derive a secure, hardware-bound 256-bit symmetric key by hashing machine-id and user details.
 pub fn derive_hardware_key() -> Result<[u8; 32]> {
+    static KEY_CACHE: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+    if let Some(key) = KEY_CACHE.get() {
+        return Ok(*key);
+    }
+
     let mut hasher = Sha256::new();
 
     // Read local machine-id in a robust cross-platform manner
@@ -125,6 +130,7 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
     let hash = hasher.finalize();
     let mut key = [0u8; 32];
     key.copy_from_slice(&hash);
+    let _ = KEY_CACHE.set(key);
     Ok(key)
 }
 
