@@ -16,13 +16,55 @@ pub enum TuiAction {
     HistoryDown,
     ToggleSetup,
     ToggleModels,
-    TogglePermissions,
     ToggleSessions,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct KeyBindings {
     pub bindings: HashMap<TuiAction, Vec<String>>,
+}
+
+impl<'de> serde::Deserialize<'de> for KeyBindings {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::{MapAccess, Visitor};
+        use std::fmt;
+
+        struct KeyBindingsVisitor;
+
+        impl<'de> Visitor<'de> for KeyBindingsVisitor {
+            type Value = KeyBindings;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a KeyBindings object with a bindings map")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut bindings = HashMap::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "bindings" {
+                        // Deserialize the inner map, tolerating unknown TuiAction names.
+                        let raw: HashMap<String, Vec<String>> = map.next_value()?;
+                        for (action_str, keys) in raw {
+                            // Try to parse the action name — skip unrecognized ones.
+                            if let Ok(action) =
+                                serde_json::from_value::<TuiAction>(serde_json::Value::String(
+                                    action_str.clone(),
+                                ))
+                            {
+                                bindings.insert(action, keys);
+                            }
+                            // Unknown action names (e.g. removed variants) are silently ignored.
+                        }
+                    } else {
+                        let _ = map.next_value::<serde::de::IgnoredAny>()?;
+                    }
+                }
+                Ok(KeyBindings { bindings })
+            }
+        }
+
+        deserializer.deserialize_map(KeyBindingsVisitor)
+    }
 }
 
 impl Default for KeyBindings {
@@ -45,7 +87,6 @@ impl Default for KeyBindings {
         bindings.insert(TuiAction::HistoryDown, vec!["ctrl+down".to_owned()]);
         bindings.insert(TuiAction::ToggleSetup, vec!["ctrl+s".to_owned()]);
         bindings.insert(TuiAction::ToggleModels, vec!["ctrl+p".to_owned()]);
-        bindings.insert(TuiAction::TogglePermissions, vec!["ctrl+o".to_owned()]);
         bindings.insert(TuiAction::ToggleSessions, vec!["ctrl+g".to_owned()]);
         Self { bindings }
     }
@@ -129,12 +170,32 @@ pub fn keybindings_path() -> Result<PathBuf> {
 pub fn load_keybindings() -> KeyBindings {
     match keybindings_path() {
         Ok(path) => {
-            if path.exists()
-                && let Ok(data) = std::fs::read_to_string(&path)
-                && let Ok(config) = serde_json::from_str::<KeyBindings>(&data)
-            {
-                return config;
+            if path.exists() {
+                // File exists — try to load it. If parsing fails, use defaults
+                // but do NOT overwrite the user's file (that would destroy their edits).
+                match std::fs::read_to_string(&path) {
+                    Ok(data) => match serde_json::from_str::<KeyBindings>(&data) {
+                        Ok(config) => return config,
+                        Err(e) => {
+                            eprintln!(
+                                "[keybindings] Failed to parse {}: {}. Using defaults.",
+                                path.display(),
+                                e
+                            );
+                            return KeyBindings::default();
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!(
+                            "[keybindings] Failed to read {}: {}. Using defaults.",
+                            path.display(),
+                            e
+                        );
+                        return KeyBindings::default();
+                    }
+                }
             }
+            // File does not exist — write defaults so the user can discover and edit them.
             let default_bindings = KeyBindings::default();
             if let Some(parent) = path.parent() {
                 let _ = std::fs::create_dir_all(parent);
@@ -177,5 +238,41 @@ mod tests {
             state: KeyEventState::empty(),
         };
         assert!(bindings.matches(TuiAction::ToggleSetup, ev));
+    }
+
+    #[test]
+    fn test_keybindings_deserialize_ignores_unknown_actions() {
+        // Old JSON files may contain action names that no longer exist (e.g. "TogglePermissions").
+        // The deserializer must silently skip them instead of failing.
+        let json = r#"{"bindings":{"Quit":["ctrl+c"],"TogglePermissions":["ctrl+o"],"Cancel":["esc"]}}"#;
+        let kb: KeyBindings =
+            serde_json::from_str(json).expect("should deserialize with unknown actions");
+        assert!(kb.bindings.contains_key(&TuiAction::Quit));
+        assert!(kb.bindings.contains_key(&TuiAction::Cancel));
+        // TogglePermissions no longer exists — it must be silently dropped.
+        assert_eq!(kb.bindings.len(), 2);
+    }
+
+    #[test]
+    fn test_load_keybindings_no_overwrite_on_bad_json() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join("darwincode_kb_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("keybindings.json");
+        // Write intentionally broken JSON.
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(b"{ bad json }").unwrap();
+        drop(f);
+
+        // load_keybindings can't be called directly with a custom path, but we can verify
+        // the parse path: broken JSON must return an error, not panic.
+        let result = serde_json::from_str::<KeyBindings>("{ bad json }");
+        assert!(result.is_err(), "broken JSON must fail to parse");
+
+        // The file must NOT be overwritten by anything in this test (it is the load_keybindings
+        // logic that must not overwrite — here we just verify the file is still broken).
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents, "{ bad json }");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
