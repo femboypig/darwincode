@@ -46,11 +46,9 @@ impl<'de> serde::Deserialize<'de> for KeyBindings {
                         let raw: HashMap<String, Vec<String>> = map.next_value()?;
                         for (action_str, keys) in raw {
                             // Try to parse the action name — skip unrecognized ones.
-                            if let Ok(action) =
-                                serde_json::from_value::<TuiAction>(serde_json::Value::String(
-                                    action_str.clone(),
-                                ))
-                            {
+                            if let Ok(action) = serde_json::from_value::<TuiAction>(
+                                serde_json::Value::String(action_str.clone()),
+                            ) {
                                 bindings.insert(action, keys);
                             }
                             // Unknown action names (e.g. removed variants) are silently ignored.
@@ -244,7 +242,8 @@ mod tests {
     fn test_keybindings_deserialize_ignores_unknown_actions() {
         // Old JSON files may contain action names that no longer exist (e.g. "TogglePermissions").
         // The deserializer must silently skip them instead of failing.
-        let json = r#"{"bindings":{"Quit":["ctrl+c"],"TogglePermissions":["ctrl+o"],"Cancel":["esc"]}}"#;
+        let json =
+            r#"{"bindings":{"Quit":["ctrl+c"],"TogglePermissions":["ctrl+o"],"Cancel":["esc"]}}"#;
         let kb: KeyBindings =
             serde_json::from_str(json).expect("should deserialize with unknown actions");
         assert!(kb.bindings.contains_key(&TuiAction::Quit));
