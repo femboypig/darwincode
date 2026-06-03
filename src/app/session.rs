@@ -68,18 +68,19 @@ pub fn format_tool_summary(
     response: &serde_json::Value,
 ) -> String {
     let tool_label = match name {
-        "read_file" | "read_files" => "read".to_owned(),
-        "edit_file" | "edit_files" | "edit_file_lines" | "apply_patch" => "edit".to_owned(),
-        "write_file" => "write".to_owned(),
-        "search_files" => "search".to_owned(),
-        "list_directory" => "list".to_owned(),
-        "run_bash_command" => "run".to_owned(),
-        "check_process" => "proc".to_owned(),
-        "kill_process" => "kill".to_owned(),
-        "get_logs" => "logs".to_owned(),
-        "web_search" => "web".to_owned(),
-        "ask_user" => "ask".to_owned(),
-        "todowrite" => "todo".to_owned(),
+        "read" => "read".to_owned(),
+        "grep" => "grep".to_owned(),
+        "glob" => "glob".to_owned(),
+        "edit" => "edit".to_owned(),
+        "write" => "write".to_owned(),
+        "patch" => "patch".to_owned(),
+        "sh" => "sh".to_owned(),
+        "ps" => "ps".to_owned(),
+        "kill" => "kill".to_owned(),
+        "logs" => "logs".to_owned(),
+        "websearch" => "websearch".to_owned(),
+        "ask" => "ask".to_owned(),
+        "todo" => "todo".to_owned(),
         _ => {
             let mut label = String::new();
             for c in name.chars() {
@@ -100,7 +101,7 @@ pub fn format_tool_summary(
         res_parts.push(format!("Error: {err}"));
     } else {
         match name {
-            "todowrite" => {
+            "todo" => {
                 if let Some(todos) = args.get("todos").and_then(|v| v.as_array()) {
                     let mut completed = 0;
                     let mut in_progress = 0;
@@ -125,26 +126,28 @@ pub fn format_tool_summary(
                     res_parts.push("updated task list".to_owned());
                 }
             }
-            "edit_file" => {
-                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-                res_parts.push(format!("`{path}` updated"));
+            "edit" => {
+                if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+                    let edits_len = edits.len();
+                    let suffix = if edits_len == 1 { "file" } else { "files" };
+                    res_parts.push(format!("atomically edited {edits_len} {suffix}"));
+                } else if args.get("start_line").is_some() {
+                    let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+                    let start = args.get("start_line").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let end = args.get("end_line").and_then(|v| v.as_i64()).unwrap_or(0);
+                    res_parts.push(format!("`{path}` lines {start}-{end} updated"));
+                } else {
+                    let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+                    res_parts.push(format!("`{path}` updated"));
+                }
                 if let Some(diff) = response.get("diff").and_then(|v| v.as_str()) {
                     res_parts.push(format!("\n{diff}"));
                 }
             }
-            "edit_file_lines" => {
-                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-                let start = args.get("start_line").and_then(|v| v.as_i64()).unwrap_or(0);
-                let end = args.get("end_line").and_then(|v| v.as_i64()).unwrap_or(0);
-                res_parts.push(format!("`{path}` lines {start}-{end} updated"));
-                if let Some(diff) = response.get("diff").and_then(|v| v.as_str()) {
-                    res_parts.push(format!("\n{diff}"));
-                }
-            }
-            "apply_patch" => {
+            "patch" => {
                 res_parts.push("Patch applied successfully".to_owned());
             }
-            "check_process" => {
+            "ps" => {
                 let pid = args.get("pid").and_then(|v| v.as_i64()).unwrap_or(0);
                 let alive = response
                     .get("alive")
@@ -153,45 +156,32 @@ pub fn format_tool_summary(
                 let status = if alive { "running" } else { "terminated" };
                 res_parts.push(format!("Process {pid} is {status}"));
             }
-            "kill_process" => {
+            "kill" => {
                 let pid = args.get("pid").and_then(|v| v.as_i64()).unwrap_or(0);
                 res_parts.push(format!("Process {pid} terminated"));
             }
-            "get_logs" => {
+            "logs" => {
                 let pid = args.get("pid").and_then(|v| v.as_i64()).unwrap_or(0);
                 res_parts.push(format!("Logs for process {pid} retrieved"));
             }
-            "read_file" => {
-                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-                if let Some(content) = response.get("content").and_then(|v| v.as_str()) {
-                    let count = content.lines().count();
-                    res_parts.push(format!("`{path}` read successfully ({count} lines)"));
+            "read" => {
+                if let Some(paths) = args.get("paths").and_then(|v| v.as_array()) {
+                    let paths_len = paths.len();
+                    let suffix = if paths_len == 1 { "file" } else { "files" };
+                    res_parts.push(format!("read {paths_len} {suffix} successfully"));
                 } else {
-                    res_parts.push(format!("`{path}` read successfully"));
+                    let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+                    if let Some(files) = response.get("files").and_then(|v| v.as_array()) {
+                        res_parts.push(format!("`{path}` → {} items", files.len()));
+                    } else if let Some(content) = response.get("content").and_then(|v| v.as_str()) {
+                        let count = content.lines().count();
+                        res_parts.push(format!("`{path}` read successfully ({count} lines)"));
+                    } else {
+                        res_parts.push(format!("`{path}` read successfully"));
+                    }
                 }
             }
-            "read_files" => {
-                let paths_len = args
-                    .get("paths")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.len())
-                    .unwrap_or(0);
-                let suffix = if paths_len == 1 { "file" } else { "files" };
-                res_parts.push(format!("read {paths_len} {suffix} successfully"));
-            }
-            "edit_files" => {
-                let edits_len = args
-                    .get("edits")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.len())
-                    .unwrap_or(0);
-                let suffix = if edits_len == 1 { "file" } else { "files" };
-                res_parts.push(format!("atomically edited {edits_len} {suffix}"));
-                if let Some(diff) = response.get("diff").and_then(|v| v.as_str()) {
-                    res_parts.push(format!("\n{diff}"));
-                }
-            }
-            "write_file" => {
+            "write" => {
                 let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
                 res_parts.push(format!("`{path}` written successfully"));
                 if let Some(content) = args.get("content").and_then(|v| v.as_str()) {
@@ -210,13 +200,7 @@ pub fn format_tool_summary(
                     res_parts.push(format!("\n{diff}"));
                 }
             }
-            "list_directory" => {
-                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-                if let Some(files) = response.get("files").and_then(|v| v.as_array()) {
-                    res_parts.push(format!("`{path}` → {} items", files.len()));
-                }
-            }
-            "search_files" => {
+            "grep" | "glob" => {
                 let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("?");
                 if let Some(matches) = response.get("matches").and_then(|v| v.as_str()) {
                     res_parts.push(format!("`{pattern}` → {} matches", matches.lines().count()));
@@ -352,7 +336,7 @@ pub fn rebuild_todos_from_history(history: &[ChatMessage]) -> Vec<crate::app::ch
         if msg.role == "model" {
             for part in &msg.parts {
                 if let Some(call) = part.get("functionCall")
-                    && call.get("name").and_then(|v| v.as_str()) == Some("todowrite")
+                    && call.get("name").and_then(|v| v.as_str()) == Some("todo")
                     && let Some(args) = call.get("args")
                     && let Some(todos_val) = args.get("todos")
                     && let Ok(todos) =
@@ -364,7 +348,7 @@ pub fn rebuild_todos_from_history(history: &[ChatMessage]) -> Vec<crate::app::ch
         } else if msg.role == "function" {
             for part in &msg.parts {
                 if let Some(resp) = part.get("functionResponse")
-                    && resp.get("name").and_then(|v| v.as_str()) == Some("todowrite")
+                    && resp.get("name").and_then(|v| v.as_str()) == Some("todo")
                     && let Some(response_val) = resp.get("response")
                 {
                     let success = response_val
@@ -476,7 +460,7 @@ pub fn rebuild_messages_from_history(
                         } else {
                             serde_json::Value::Null
                         };
-                        if name == "run_bash_command" {
+                        if name == "sh" {
                             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
                             let mut output = String::new();
                             let mut success = true;
@@ -627,7 +611,7 @@ mod tests {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
                 "functionCall": {
-                    "name": "run_bash_command",
+                    "name": "sh",
                     "args": { "command": "echo hello" }
                 }
             })],
@@ -637,18 +621,18 @@ mod tests {
             role: "function".to_owned(),
             parts: vec![serde_json::json!({
                 "functionResponse": {
-                    "name": "run_bash_command",
+                    "name": "sh",
                     "response": { "status": 0, "stdout": "hello\n", "stderr": "" }
                 }
             })],
         });
 
-        // Add write_file message interaction
+        // Add write message interaction
         history.push(ChatMessage {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
                 "functionCall": {
-                    "name": "write_file",
+                    "name": "write",
                     "args": { "path": "foo.txt", "content": "hello" }
                 }
             })],
@@ -658,7 +642,7 @@ mod tests {
             role: "function".to_owned(),
             parts: vec![serde_json::json!({
                 "functionResponse": {
-                    "name": "write_file",
+                    "name": "write",
                     "response": { "success": true }
                 }
             })],
@@ -683,12 +667,12 @@ mod tests {
     fn test_rebuild_todos_from_history() {
         let mut history = Vec::new();
 
-        // 1. A failed todowrite call
+        // 1. A failed todo call
         history.push(ChatMessage {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
                 "functionCall": {
-                    "name": "todowrite",
+                    "name": "todo",
                     "args": {
                         "todos": [
                             { "content": "Task 1", "status": "completed", "priority": "high" }
@@ -701,18 +685,18 @@ mod tests {
             role: "function".to_owned(),
             parts: vec![serde_json::json!({
                 "functionResponse": {
-                    "name": "todowrite",
+                    "name": "todo",
                     "response": { "success": false, "error": "Cannot start as completed" }
                 }
             })],
         });
 
-        // 2. A successful todowrite call
+        // 2. A successful todo call
         history.push(ChatMessage {
             role: "model".to_owned(),
             parts: vec![serde_json::json!({
                 "functionCall": {
-                    "name": "todowrite",
+                    "name": "todo",
                     "args": {
                         "todos": [
                             { "content": "Task 1", "status": "pending", "priority": "high" }
@@ -725,7 +709,7 @@ mod tests {
             role: "function".to_owned(),
             parts: vec![serde_json::json!({
                 "functionResponse": {
-                    "name": "todowrite",
+                    "name": "todo",
                     "response": { "success": true }
                 }
             })],
