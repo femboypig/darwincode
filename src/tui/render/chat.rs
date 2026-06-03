@@ -44,38 +44,33 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         let logo_lines = logo_lines();
         let logo_fits_flag = logo_fits(&logo_lines, area.width, 5);
 
-        let empty_chunks = if logo_fits_flag {
-            Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Percentage(25), // Top space (centers the logo vertically)
-                    Constraint::Length(6),      // Logo (5 lines + 1 spacer)
-                    Constraint::Length(input_height), // Input box
-                    Constraint::Length(2),      // Spacer
-                    Constraint::Length(1),      // Tips line
-                    Constraint::Min(0),         // Bottom space
-                    Constraint::Length(1),      // Status bar
-                ])
-                .split(area)
-        } else {
-            Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(0),               // Top space (centers the input box vertically)
-                    Constraint::Length(input_height), // Input box
-                    Constraint::Length(2),            // Spacer
-                    Constraint::Length(1),            // Tips line
-                    Constraint::Min(0),               // Bottom space
-                    Constraint::Length(1),            // Status bar
-                ])
-                .split(area)
-        };
+        let main_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(50),
+                Constraint::Length(input_height),
+                Constraint::Percentage(50),
+            ])
+            .split(area);
 
-        let input_chunk = if logo_fits_flag {
-            empty_chunks[2]
-        } else {
-            empty_chunks[1]
-        };
+        let top_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(6), // Logo (5 lines + 1 spacer)
+            ])
+            .split(main_chunks[0]);
+
+        let bottom_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2), // Spacer
+                Constraint::Length(1), // Tips line
+                Constraint::Min(0),    // Bottom space
+                Constraint::Length(1), // Status bar
+            ])
+            .split(main_chunks[2]);
+
         let centered_input_box = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -83,7 +78,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                 Constraint::Percentage(70),
                 Constraint::Percentage(15),
             ])
-            .split(input_chunk)[1];
+            .split(main_chunks[1])[1];
 
         if logo_fits_flag {
             (
@@ -91,9 +86,9 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                 None,
                 None,
                 Some(centered_input_box),
-                empty_chunks[6],
-                Some(empty_chunks[1]),
-                Some(empty_chunks[4]),
+                bottom_chunks[3],
+                Some(top_chunks[1]),
+                Some(bottom_chunks[1]),
             )
         } else {
             (
@@ -101,9 +96,9 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                 None,
                 None,
                 Some(centered_input_box),
-                empty_chunks[5],
+                bottom_chunks[3],
                 None,
-                Some(empty_chunks[3]),
+                Some(bottom_chunks[1]),
             )
         }
     } else {
