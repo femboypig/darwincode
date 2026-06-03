@@ -44,7 +44,9 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         let logo_lines = logo_lines();
         let logo_fits_flag = logo_fits(&logo_lines, area.width, 5);
 
-        let remaining_height = area.height.saturating_sub(input_height + 1); // 1 for status bar
+        let remaining_height = area
+            .height
+            .saturating_sub(input_height + 1 + suggestion_height); // 1 for status bar
         let half_height = remaining_height / 2;
         let top_height = half_height;
         let bottom_height = remaining_height.saturating_sub(half_height);
@@ -53,6 +55,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(top_height),
+                Constraint::Length(suggestion_height),
                 Constraint::Length(input_height),
                 Constraint::Length(bottom_height),
                 Constraint::Length(1), // Status bar
@@ -85,7 +88,22 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                 Constraint::Length(1), // Tips line
                 Constraint::Min(0),
             ])
-            .split(main_chunks[2]);
+            .split(main_chunks[3]);
+
+        let centered_suggestions_box = if suggestion_height > 0 {
+            Some(
+                Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(15),
+                        Constraint::Percentage(70),
+                        Constraint::Percentage(15),
+                    ])
+                    .split(main_chunks[1])[1],
+            )
+        } else {
+            None
+        };
 
         let centered_input_box = Layout::default()
             .direction(Direction::Horizontal)
@@ -94,7 +112,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                 Constraint::Percentage(70),
                 Constraint::Percentage(15),
             ])
-            .split(main_chunks[1])[1];
+            .split(main_chunks[2])[1];
 
         let logo_area = if logo_fits_flag && top_height >= 5 {
             Some(top_chunks[1])
@@ -110,10 +128,10 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
         (
             None,
-            None,
+            centered_suggestions_box,
             None,
             Some(centered_input_box),
-            main_chunks[3],
+            main_chunks[4],
             logo_area,
             tips_area,
         )
@@ -873,8 +891,11 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
-    let items = app
-        .command_suggestions()
+    let suggestions = app.command_suggestions();
+    let is_ref = suggestions.iter().any(|s| s.name.starts_with('@'));
+    let title = if is_ref { " References " } else { " Commands " };
+
+    let items = suggestions
         .into_iter()
         .take(3)
         .map(|suggestion| {
@@ -894,7 +915,7 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .title(" Commands ")
+                .title(title)
                 .padding(Padding::horizontal(1)),
         ),
         area,
