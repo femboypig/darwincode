@@ -5,7 +5,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
 
 use crate::app::{App, SetupField};
-use crate::tui::keybindings::keybindings_path;
 use crate::tui::render::icons::icons;
 use crate::tui::render::logo::logo_lines_for_area;
 use crate::tui::render::render_statusbar;
@@ -217,23 +216,6 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
         Span::styled(save_text, save_style),
     ]));
 
-    // Keybindings hint line
-    let kb_path_str = keybindings_path()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "~/.config/darwincode/keybindings.json".to_owned());
-    all_lines.push(Line::from(vec![]));
-    all_lines.push(Line::from(vec![
-        Span::styled(
-            format!(" {} Keybindings: ", icons::SETTINGS_MODE),
-            Style::default().fg(Color::DarkGray),
-        ),
-        Span::styled(
-            kb_path_str,
-            Style::default()
-                .fg(Color::Rgb(99, 120, 180))
-                .add_modifier(Modifier::ITALIC),
-        ),
-    ]));
     let viewport_height = inner_area.height as usize;
     let total_lines = all_lines.len();
 
