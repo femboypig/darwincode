@@ -36,6 +36,12 @@ pub(crate) fn handle_paste(app: &mut App, text: String) {
             }
             return;
         }
+        if app.theme_picker_open {
+            for c in text.chars() {
+                app.theme_picker.push_query(c);
+            }
+            return;
+        }
         app.chat.insert_text(&text);
     } else if app.screen == Screen::Setup {
         let old_key = app.setup.api_key.clone();
