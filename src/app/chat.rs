@@ -447,6 +447,7 @@ pub enum ChatCommand {
     Settings,
     Exit,
     Models,
+    Theme,
     Permissions(Option<PermissionLevel>),
     Resume(Option<String>),
     Clear,
@@ -472,6 +473,7 @@ impl ChatCommand {
             "/settings" => Self::Settings,
             "/exit" | "/quit" => Self::Exit,
             "/models" => Self::Models,
+            "/theme" => Self::Theme,
             "/permissions" => {
                 let arg = parts.next().map(|s| s.to_lowercase());
                 let level = match arg.as_deref() {
@@ -510,6 +512,10 @@ impl ChatCommand {
             CommandSuggestion {
                 name: "/models".to_owned(),
                 description: "List available models".to_owned(),
+            },
+            CommandSuggestion {
+                name: "/theme".to_owned(),
+                description: "Change active theme".to_owned(),
             },
             CommandSuggestion {
                 name: "/permissions".to_owned(),
