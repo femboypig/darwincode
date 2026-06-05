@@ -79,8 +79,7 @@ pub(crate) fn render_permissions(frame: &mut Frame, app: &App) {
     // Options: 2 lines each (label + description)
     let list_start_y = inner.y + 2; // +1 title + 1 blank
 
-    for idx in 0..total {
-        let (label, desc, _) = options[idx];
+    for (idx, &(label, desc, _)) in options.iter().enumerate().take(total) {
         let is_selected = idx == selected;
 
         let label_y = list_start_y + (idx as u16 * 2);
