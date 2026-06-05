@@ -1,0 +1,234 @@
+{
+  "$schema": "https://raw.githubusercontent.com/femboypig/darwincode/main/theme.json",
+  "defs": {
+    "bg": "#1a1b26",
+    "panel_bg": "#16161e",
+    "fg": "#c0caf5",
+    "fg_muted": "#565f89",
+    "red": "#f7768e",
+    "orange": "#ff9e64",
+    "yellow": "#e0af68",
+    "green": "#9ece6a",
+    "teal": "#73daca",
+    "blue": "#7aa2f7",
+    "magenta": "#bb9af7",
+    "cyan": "#7dcfff",
+    "border": "#3b4261",
+
+    "light_bg": "#f0f0f5",
+    "light_panel_bg": "#e5e5ed",
+    "light_fg": "#343b58",
+    "light_fg_muted": "#8c95b3",
+    "light_red": "#8c4351",
+    "light_orange": "#965b3c",
+    "light_yellow": "#8f5e15",
+    "light_green": "#485e30",
+    "light_teal": "#33635c",
+    "light_blue": "#34548c",
+    "light_magenta": "#5a4a78",
+    "light_cyan": "#166e8a",
+    "light_border": "#d0d4e3"
+  },
+  "theme": {
+    "primary": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "secondary": {
+      "dark": "fg_muted",
+      "light": "light_fg_muted"
+    },
+    "accent": {
+      "dark": "teal",
+      "light": "light_teal"
+    },
+    "error": {
+      "dark": "red",
+      "light": "light_red"
+    },
+    "warning": {
+      "dark": "orange",
+      "light": "light_orange"
+    },
+    "success": {
+      "dark": "green",
+      "light": "light_green"
+    },
+    "info": {
+      "dark": "cyan",
+      "light": "light_cyan"
+    },
+    "text": {
+      "dark": "fg",
+      "light": "light_fg"
+    },
+    "textMuted": {
+      "dark": "fg_muted",
+      "light": "light_fg_muted"
+    },
+    "background": {
+      "dark": "bg",
+      "light": "light_bg"
+    },
+    "backgroundPanel": {
+      "dark": "panel_bg",
+      "light": "light_panel_bg"
+    },
+    "backgroundElement": {
+      "dark": "panel_bg",
+      "light": "light_panel_bg"
+    },
+    "border": {
+      "dark": "border",
+      "light": "light_border"
+    },
+    "borderActive": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "borderSubtle": {
+      "dark": "border",
+      "light": "light_border"
+    },
+    "diffAdded": {
+      "dark": "green",
+      "light": "light_green"
+    },
+    "diffRemoved": {
+      "dark": "red",
+      "light": "light_red"
+    },
+    "diffContext": {
+      "dark": "fg_muted",
+      "light": "light_fg_muted"
+    },
+    "diffHunkHeader": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "diffHighlightAdded": {
+      "dark": "green",
+      "light": "light_green"
+    },
+    "diffHighlightRemoved": {
+      "dark": "red",
+      "light": "light_red"
+    },
+    "diffAddedBg": {
+      "dark": "#1d2a2f",
+      "light": "#e2edd9"
+    },
+    "diffRemovedBg": {
+      "dark": "#2d1e2f",
+      "light": "#fae3e6"
+    },
+    "diffContextBg": {
+      "dark": "panel_bg",
+      "light": "light_panel_bg"
+    },
+    "diffLineNumber": {
+      "dark": "fg_muted",
+      "light": "light_fg_muted"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "#1d2a2f",
+      "light": "#e2edd9"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "#2d1e2f",
+      "light": "#fae3e6"
+    },
+    "markdownText": {
+      "dark": "fg",
+      "light": "light_fg"
+    },
+    "markdownHeading": {
+      "dark": "magenta",
+      "light": "light_magenta"
+    },
+    "markdownLink": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "markdownLinkText": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "markdownCode": {
+      "dark": "green",
+      "light": "light_green"
+    },
+    "markdownBlockQuote": {
+      "dark": "fg_muted",
+      "light": "light_fg_muted"
+    },
+    "markdownEmph": {
+      "dark": "orange",
+      "light": "light_orange"
+    },
+    "markdownStrong": {
+      "dark": "yellow",
+      "light": "light_yellow"
+    },
+    "markdownHorizontalRule": {
+      "dark": "border",
+      "light": "light_border"
+    },
+    "markdownListItem": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "markdownListEnumeration": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "markdownImage": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "markdownImageText": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "markdownCodeBlock": {
+      "dark": "panel_bg",
+      "light": "light_panel_bg"
+    },
+    "syntaxComment": {
+      "dark": "fg_muted",
+      "light": "light_fg_muted"
+    },
+    "syntaxKeyword": {
+      "dark": "magenta",
+      "light": "light_magenta"
+    },
+    "syntaxFunction": {
+      "dark": "blue",
+      "light": "light_blue"
+    },
+    "syntaxVariable": {
+      "dark": "fg",
+      "light": "light_fg"
+    },
+    "syntaxString": {
+      "dark": "green",
+      "light": "light_green"
+    },
+    "syntaxNumber": {
+      "dark": "orange",
+      "light": "light_orange"
+    },
+    "syntaxType": {
+      "dark": "yellow",
+      "light": "light_yellow"
+    },
+    "syntaxOperator": {
+      "dark": "teal",
+      "light": "light_teal"
+    },
+    "syntaxPunctuation": {
+      "dark": "fg",
+      "light": "light_fg"
+    }
+  }
+}
