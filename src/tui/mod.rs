@@ -2,6 +2,7 @@ pub(crate) mod events;
 pub(crate) mod keybindings;
 pub(crate) mod render;
 pub(crate) mod syntax;
+pub(crate) mod theme;
 
 use std::io::{self, Stdout};
 use std::sync::mpsc::{self, Receiver, Sender};
