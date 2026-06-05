@@ -1,102 +1,94 @@
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
+use ratatui::widgets::{Block, Paragraph};
 
 use crate::app::{App, SetupField};
 use crate::tui::render::icons::icons;
-use crate::tui::render::logo::logo_lines_for_area;
-use crate::tui::render::render_statusbar;
 
-pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
-    let area = frame.area();
-    // Conditionally hide ASCII logo on small terminal heights
-    let logo = if area.height >= 22 {
-        logo_lines_for_area(area.width, 5)
-    } else {
-        Vec::new()
+pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = crate::tui::render::get_theme(app);
+    let modal_bg = match theme {
+        crate::config::Theme::Light => Color::Rgb(240, 240, 240),
+        _ => Color::Rgb(24, 24, 24),
     };
-    let logo_height = if logo.is_empty() {
-        0
-    } else {
-        logo.len() as u16 + 1
+
+    let dim_text = match theme {
+        crate::config::Theme::Light => Color::Rgb(120, 120, 120),
+        _ => Color::DarkGray,
     };
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(vec![
-            Constraint::Length(logo_height),
-            Constraint::Min(8),
-            Constraint::Length(1),
-        ])
-        .split(area);
 
-    if logo_height > 0 {
-        frame.render_widget(Paragraph::new(logo).alignment(Alignment::Center), chunks[0]);
-    }
+    // Centered modal popup: 55% width, 65% height
+    let popup_area = crate::tui::render::chat::centered_rect(55, 65, area);
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(modal_bg)),
+        popup_area,
+    );
 
-    let api_key = if app.setup.api_key.is_empty() {
+    let margin = 1u16;
+    let content = Rect {
+        x: popup_area.x + margin,
+        y: popup_area.y + margin,
+        width: popup_area.width.saturating_sub(margin * 2),
+        height: popup_area.height.saturating_sub(margin * 2),
+    };
+    if content.height == 0 || content.width == 0 { return; }
+
+    let api_key_display = if app.setup.api_key.is_empty() {
         "not set".to_owned()
     } else {
         let count = app.setup.api_key.chars().count();
         format!("{} ({} chars)", "*".repeat(count.min(12)), count)
     };
 
-    // Split chunks[1] into fields area and tip area
     let has_tip = app.setup.api_key.starts_with("sk-");
-    let settings_layout = Layout::default()
+    let tip_height = if has_tip { 1 } else { 0 };
+
+    let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(vec![
-            Constraint::Min(8),
-            Constraint::Length(if has_tip { 2 } else { 0 }),
-        ])
-        .split(chunks[1]);
-
-    // Center settings block horizontally inside a 68-char panel
-    let centered_layout = Layout::default()
-        .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Min(0),
-            Constraint::Length(68),
-            Constraint::Min(0),
+            Constraint::Length(1), // Title
+            Constraint::Length(1), // Separator
+            Constraint::Min(1),    // Fields
+            Constraint::Length(1), // Separator
+            Constraint::Length(1), // Footer tips
+            Constraint::Length(tip_height), // OpenAI tip
         ])
-        .split(settings_layout[0]);
-    let settings_area = centered_layout[1];
+        .split(content);
 
-    let footer_text = if app.setup.is_editing {
-        " █ Enter: Save field • Esc: Cancel editing "
-    } else {
-        " ▲/▼: Move • Enter/Space: Edit/Toggle • ◀/▶: Cycle options • Esc: Exit "
+    // Title row (indented by 1)
+    let title_area = Rect {
+        x: chunks[0].x + 1,
+        y: chunks[0].y,
+        width: chunks[0].width.saturating_sub(2),
+        height: 1,
     };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(if app.setup.is_editing {
-            Style::default()
-                .fg(Color::Rgb(16, 185, 129))
-                .add_modifier(Modifier::BOLD) // Emerald Green when editing
-        } else {
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            format!("{} DarwinCode Assistant Settings", icons::SETTINGS_MODE),
             Style::default()
                 .fg(Color::Rgb(59, 130, 246))
-                .add_modifier(Modifier::BOLD) // Vibrant Blue normally
-        })
-        .title(Span::styled(
-            format!(" {} DarwinCode Assistant Settings ", icons::SETTINGS_MODE),
-            Style::default().add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(Span::styled(
-            footer_text,
-            Style::default().fg(Color::DarkGray),
-        ))
-        .padding(Padding::new(2, 2, 1, 1));
+                .add_modifier(Modifier::BOLD),
+        ))),
+        title_area,
+    );
 
-    let inner_area = block.inner(settings_area);
+    // Header separator
+    frame.render_widget(
+        Paragraph::new("─".repeat(content.width as usize)).style(Style::default().fg(dim_text)),
+        chunks[1],
+    );
 
-    let fields = vec![
+    // Body (Fields)
+    let body_area = chunks[2];
+
+    let fields: Vec<(&str, String, SetupField, Color)> = vec![
         (
             "API Key",
-            api_key,
+            api_key_display,
             SetupField::ApiKey,
             Color::Rgb(236, 72, 153),
         ),
@@ -170,69 +162,157 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
         ),
     ];
 
-    let mut all_lines = Vec::new();
-    for (label, value, field, color) in fields {
-        let is_active = app.setup.active_field == field;
-        all_lines.push(draw_setup_field(
-            label,
-            &value,
-            is_active,
-            app.setup.is_editing,
-            color,
-        ));
+    let total_lines = fields.len() + 1; // fields + Save button
+    let viewport = body_area.height as usize;
+    let active_idx = app.setup.active_field.index();
+    let start = if total_lines <= viewport {
+        0
+    } else if active_idx < viewport / 2 {
+        0
+    } else if active_idx >= total_lines - viewport / 2 {
+        total_lines - viewport
+    } else {
+        active_idx - viewport / 2
+    };
+    let visible_count = viewport.min(total_lines.saturating_sub(start));
+
+    for offset in 0..visible_count {
+        let idx = start + offset;
+        let row_y = body_area.y + offset as u16;
+        if row_y >= body_area.bottom() {
+            break;
+        }
+        let row_area = Rect {
+            x: body_area.x,
+            y: row_y,
+            width: body_area.width,
+            height: 1,
+        };
+
+        let is_save = idx == fields.len();
+        let (label, value, is_active) = if is_save {
+            (
+                "Save and Start Assistant".to_owned(),
+                String::new(),
+                app.setup.active_field == SetupField::Save,
+            )
+        } else {
+            let (label, value, _, _) = &fields[idx];
+            (
+                label.to_string(),
+                value.clone(),
+                app.setup.active_field == fields[idx].2,
+            )
+        };
+
+        let row_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Length(1),
+                Constraint::Length(18),
+                Constraint::Length(1),
+                Constraint::Min(1),
+            ])
+            .split(row_area);
+
+        let marker = if is_active {
+            icons::ACTIVE_MARKER
+        } else {
+            icons::INACTIVE_MARKER
+        };
+        let marker_style = if is_active {
+            Style::default()
+                .fg(Color::Rgb(59, 130, 246))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(dim_text)
+        };
+        frame.render_widget(
+            Paragraph::new(Span::styled(marker, marker_style)),
+            row_cols[0],
+        );
+
+        let label_style = if is_active {
+            Style::default().add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(dim_text)
+        };
+        frame.render_widget(
+            Paragraph::new(Span::styled(label, label_style)),
+            row_cols[2],
+        );
+
+        frame.render_widget(
+            Paragraph::new(Span::styled(" ", Style::default())),
+            row_cols[3],
+        );
+
+        if is_save {
+            let save_style = if is_active {
+                Style::default()
+                    .bg(Color::Rgb(59, 130, 246))
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(Color::Rgb(59, 130, 246))
+                    .add_modifier(Modifier::BOLD)
+            };
+            let save_text = if is_active {
+                format!(" {}SAVE AND START ASSISTANT ", icons::SAVE)
+            } else {
+                format!(" {}Save and Start Assistant ", icons::SAVE)
+            };
+            frame.render_widget(
+                Paragraph::new(Span::styled(save_text, save_style)),
+                row_cols[4],
+            );
+        } else {
+            let field_color = fields[idx].3;
+            let is_editing = is_active && app.setup.is_editing;
+            let value_style = if is_active {
+                if is_editing {
+                    Style::default()
+                        .fg(Color::Rgb(16, 185, 129))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(field_color).add_modifier(Modifier::BOLD)
+                }
+            } else {
+                Style::default()
+            };
+            frame.render_widget(
+                Paragraph::new(Span::styled(value.clone(), value_style)),
+                row_cols[4],
+            );
+
+            if is_editing {
+                let cursor_x = row_cols[4].x + value.chars().count() as u16;
+                if cursor_x < row_cols[4].right() {
+                    frame.set_cursor_position((cursor_x, row_y));
+                }
+            }
+        }
     }
 
-    let save_active = app.setup.active_field == SetupField::Save;
-    let save_marker = if save_active {
-        icons::ACTIVE_MARKER
+    // Footer separator
+    frame.render_widget(
+        Paragraph::new("─".repeat(content.width as usize)).style(Style::default().fg(dim_text)),
+        chunks[3],
+    );
+
+    // Footer
+    let footer_text = if app.setup.is_editing {
+        " Up/Down: Move • Enter: Save field • Esc: Cancel editing "
     } else {
-        icons::INACTIVE_MARKER
+        " Up/Down: Move • Enter/Space: Edit/Toggle • Left/Right: Cycle options • Esc: Exit "
     };
-    let save_marker_style = if save_active {
-        Style::default()
-            .fg(Color::Rgb(59, 130, 246))
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    let save_style = if save_active {
-        Style::default()
-            .bg(Color::Rgb(59, 130, 246))
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(Color::Rgb(59, 130, 246))
-            .add_modifier(Modifier::BOLD)
-    };
-    let save_text = if save_active {
-        format!(" {}SAVE AND START ASSISTANT ", icons::SAVE)
-    } else {
-        format!(" {}Save and Start Assistant ", icons::SAVE)
-    };
-
-    all_lines.push(Line::from(vec![
-        Span::styled(save_marker, save_marker_style),
-        Span::styled(save_text, save_style),
-    ]));
-
-    let viewport_height = inner_area.height as usize;
-    let total_lines = all_lines.len();
-
-    let active_line_idx = app.setup.active_field.index();
-
-    let max_scroll = total_lines.saturating_sub(viewport_height);
-    let mut offset = 0;
-    if active_line_idx >= viewport_height {
-        offset = active_line_idx + 1 - viewport_height;
-    }
-    let scroll_offset = offset.min(max_scroll);
-
-    let end_idx = (scroll_offset + viewport_height).min(total_lines);
-    let visible_lines = all_lines[scroll_offset..end_idx].to_vec();
-
-    frame.render_widget(block, settings_area);
-    frame.render_widget(Paragraph::new(visible_lines), inner_area);
+    frame.render_widget(
+        Paragraph::new(Span::styled(footer_text, Style::default().fg(dim_text)))
+            .alignment(Alignment::Center),
+        chunks[4],
+    );
 
     if has_tip {
         let tip_paragraph = Paragraph::new(Line::from(vec![
@@ -252,58 +332,6 @@ pub(crate) fn render_setup(frame: &mut Frame, app: &App) {
             Span::styled(" to auto-apply OmniRoute defaults.", Style::default()),
         ]))
         .alignment(Alignment::Center);
-        frame.render_widget(tip_paragraph, settings_layout[1]);
+        frame.render_widget(tip_paragraph, chunks[5]);
     }
-
-    render_statusbar(frame, app, chunks[2]);
-}
-
-fn draw_setup_field(
-    label: &str,
-    value: &str,
-    active: bool,
-    is_editing: bool,
-    color: Color,
-) -> Line<'static> {
-    let marker = if active {
-        icons::ACTIVE_MARKER
-    } else {
-        icons::INACTIVE_MARKER
-    };
-    let marker_style = if active {
-        Style::default().fg(color).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-
-    // Active label is bold default terminal text. Inactive is DarkGray.
-    let label_style = if active {
-        Style::default().add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-
-    // Active value uses the theme accent color. Inactive uses default terminal text.
-    let value_style = if active {
-        if is_editing {
-            Style::default()
-                .fg(Color::Rgb(16, 185, 129))
-                .add_modifier(Modifier::BOLD) // Emerald Green when typing!
-        } else {
-            Style::default().fg(color).add_modifier(Modifier::BOLD)
-        }
-    } else {
-        Style::default()
-    };
-
-    let mut value_str = value.to_owned();
-    if active && is_editing {
-        value_str.push('█');
-    }
-
-    Line::from(vec![
-        Span::styled(marker, marker_style),
-        Span::styled(format!("{:<26}", label), label_style),
-        Span::styled(value_str, value_style),
-    ])
 }
