@@ -14,20 +14,46 @@ use crate::app::{App, Screen};
 
 pub(crate) fn get_theme(app: &App) -> crate::config::Theme {
     let raw_theme = if app.screen == Screen::Setup {
-        app.setup.theme
+        &app.setup.theme
     } else {
-        app.chat.config.theme
+        &app.chat.config.theme
     };
     crate::config::resolve_theme(raw_theme)
 }
 
+pub(crate) fn get_active_theme(app: &App) -> crate::tui::theme::ActiveTheme {
+    let raw_theme = if app.screen == Screen::Setup {
+        &app.setup.theme
+    } else {
+        &app.chat.config.theme
+    };
+
+    let mode = crate::config::resolve_theme_mode(raw_theme);
+
+    match raw_theme {
+        crate::config::Theme::Custom(name) => {
+            if let Some(config) = crate::tui::theme::custom_themes().get(name) {
+                config.resolve(&mode)
+            } else {
+                match mode {
+                    crate::tui::theme::ThemeMode::Dark => crate::tui::theme::ActiveTheme::default(),
+                    crate::tui::theme::ThemeMode::Light => {
+                        crate::tui::theme::ActiveTheme::light_default()
+                    }
+                }
+            }
+        }
+        _ => match mode {
+            crate::tui::theme::ThemeMode::Dark => crate::tui::theme::ActiveTheme::default(),
+            crate::tui::theme::ThemeMode::Light => crate::tui::theme::ActiveTheme::light_default(),
+        },
+    }
+}
+
 pub(crate) fn render(frame: &mut Frame, app: &App) {
     frame.render_widget(ratatui::widgets::Clear, frame.area());
-    let theme = get_theme(app);
-    let bg_color = match theme {
-        crate::config::Theme::Light => Color::Rgb(248, 248, 248),
-        _ => Color::Rgb(15, 15, 15),
-    };
+    let active_theme = get_active_theme(app);
+    let bg_color = active_theme.background.unwrap_or(Color::Rgb(15, 15, 15));
     frame.render_widget(
         Block::default().style(Style::default().bg(bg_color)),
         frame.area(),
@@ -41,16 +67,9 @@ pub(crate) fn render(frame: &mut Frame, app: &App) {
 }
 
 pub(crate) fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
-    // todo: rework this shit
-    let theme = get_theme(app);
-    let bg_color = match theme {
-        crate::config::Theme::Light => Color::Rgb(248, 248, 248),
-        _ => Color::Rgb(15, 15, 15),
-    };
-    let (bar_bg, bar_fg) = match theme {
-        crate::config::Theme::Light => (bg_color, Color::Rgb(80, 80, 80)),
-        _ => (bg_color, Color::Rgb(160, 160, 160)),
-    };
+    let active_theme = get_active_theme(app);
+    let bar_bg = active_theme.background.unwrap_or(Color::Rgb(15, 15, 15));
+    let bar_fg = active_theme.text_muted;
     let base_style = Style::default().bg(bar_bg).fg(bar_fg);
 
     // Fill the entire status bar background first
