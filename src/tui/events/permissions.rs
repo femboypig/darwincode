@@ -52,6 +52,7 @@ pub(crate) fn handle_permissions_key(
                         request.history,
                         request.cancel_token,
                         request.generation_id,
+                        request.dev_mode,
                         sender.clone(),
                     );
                 }
