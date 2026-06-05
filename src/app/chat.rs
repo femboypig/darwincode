@@ -29,8 +29,11 @@ pub struct ChatState {
     pub focused_shell_pid: Option<u32>,
     pub last_chunk_was_thought: bool,
     pub messages_area: std::cell::Cell<Option<ratatui::layout::Rect>>,
+    pub mode_area: std::cell::Cell<Option<ratatui::layout::Rect>>,
+    pub model_area: std::cell::Cell<Option<ratatui::layout::Rect>>,
     pub message_line_ranges: std::cell::RefCell<Vec<(usize, usize, usize)>>,
     pub todos: Vec<TodoItem>,
+    pub suggestion_idx: usize,
 }
 
 impl ChatState {
@@ -62,8 +65,11 @@ impl ChatState {
             focused_shell_pid: None,
             last_chunk_was_thought: false,
             messages_area: std::cell::Cell::new(None),
+            mode_area: std::cell::Cell::new(None),
+            model_area: std::cell::Cell::new(None),
             message_line_ranges: std::cell::RefCell::new(Vec::new()),
             todos: Vec::new(),
+            suggestion_idx: 0,
         }
     }
 
@@ -138,6 +144,7 @@ impl ChatState {
             self.redo_history.push((self.input.clone(), self.cursor));
             self.input = prev_input;
             self.cursor = prev_cursor;
+            self.suggestion_idx = 0;
         }
     }
 
@@ -146,6 +153,7 @@ impl ChatState {
             self.input_history.push((self.input.clone(), self.cursor));
             self.input = next_input;
             self.cursor = next_cursor;
+            self.suggestion_idx = 0;
         }
     }
 
@@ -159,6 +167,7 @@ impl ChatState {
             .unwrap_or(self.input.len());
         self.input.insert(byte_idx, c);
         self.cursor += 1;
+        self.suggestion_idx = 0;
     }
 
     pub fn insert_text(&mut self, text: &str) {
@@ -171,6 +180,7 @@ impl ChatState {
             .unwrap_or(self.input.len());
         self.input.insert_str(byte_idx, text);
         self.cursor += text.chars().count();
+        self.suggestion_idx = 0;
     }
 
     pub fn remove_char(&mut self) {
@@ -184,6 +194,7 @@ impl ChatState {
                 .map(|(i, _)| i)
                 .unwrap();
             self.input.remove(byte_idx);
+            self.suggestion_idx = 0;
         }
     }
 
@@ -197,6 +208,7 @@ impl ChatState {
                 .map(|(i, _)| i)
                 .unwrap();
             self.input.remove(byte_idx);
+            self.suggestion_idx = 0;
         }
     }
 
@@ -443,6 +455,8 @@ pub enum ChatCommand {
     Undo,
     Shell(Option<String>),
     Help,
+    Plan,
+    Build,
     Unknown(String),
 }
 
@@ -481,6 +495,8 @@ impl ChatCommand {
             "/history" => Self::History,
             "/undo" => Self::Undo,
             "/help" => Self::Help,
+            "/plan" => Self::Plan,
+            "/build" => Self::Build,
             value => Self::Unknown(value.to_owned()),
         })
     }
@@ -526,6 +542,14 @@ impl ChatCommand {
             CommandSuggestion {
                 name: "/help".to_owned(),
                 description: "Show available commands".to_owned(),
+            },
+            CommandSuggestion {
+                name: "/plan".to_owned(),
+                description: "Switch to Plan mode (read-only for workspace files)".to_owned(),
+            },
+            CommandSuggestion {
+                name: "/build".to_owned(),
+                description: "Switch to Build mode (full tools access)".to_owned(),
             },
             CommandSuggestion {
                 name: "/exit".to_owned(),
@@ -968,8 +992,16 @@ mod tests {
         let parsed = ChatCommand::parse("/undo");
         assert!(matches!(parsed, Some(ChatCommand::Undo)));
 
+        let parsed_plan = ChatCommand::parse("/plan");
+        assert!(matches!(parsed_plan, Some(ChatCommand::Plan)));
+
+        let parsed_build = ChatCommand::parse("/build");
+        assert!(matches!(parsed_build, Some(ChatCommand::Build)));
+
         let suggestions = ChatCommand::suggestions();
         assert!(suggestions.iter().any(|s| s.name == "/undo"));
+        assert!(suggestions.iter().any(|s| s.name == "/plan"));
+        assert!(suggestions.iter().any(|s| s.name == "/build"));
     }
 
     #[test]
