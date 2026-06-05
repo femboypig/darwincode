@@ -94,7 +94,8 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     let (messages_area, suggestions_area, queue_area, input_area, logo_area, tips_area) =
         if app.chat.messages.is_empty() {
-            let logo_lines = logo_lines();
+            let active_theme = crate::tui::render::get_active_theme(app);
+            let logo_lines = logo_lines(Style::default().fg(active_theme.primary));
             let logo_fits_flag = logo_fits(&logo_lines, left_pane.width, 5);
 
             let remaining_height = left_pane
@@ -229,11 +230,17 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         };
 
     if let Some(logo_area) = logo_area {
-        let logo = logo_lines_for_area(logo_area.width, 5);
+        let active_theme = crate::tui::render::get_active_theme(app);
+        let logo = logo_lines_for_area(
+            Style::default().fg(active_theme.primary),
+            logo_area.width,
+            5,
+        );
         frame.render_widget(Paragraph::new(logo).alignment(Alignment::Center), logo_area);
     }
 
     if let Some(tips_area) = tips_area {
+        let active_theme = crate::tui::render::get_active_theme(app);
         let tips_line = Line::from(vec![
             Span::styled(
                 "Ctrl+S",
@@ -241,21 +248,21 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
                     .fg(Color::Rgb(236, 72, 153))
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" Setup  •  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(" Setup  •  ", Style::default().fg(active_theme.text_muted)),
             Span::styled(
                 "Ctrl+P",
                 Style::default()
                     .fg(Color::Rgb(168, 85, 247))
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" Model  •  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(" Model  •  ", Style::default().fg(active_theme.text_muted)),
             Span::styled(
                 "/help",
                 Style::default()
                     .fg(Color::Rgb(59, 130, 246))
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" Help", Style::default().fg(Color::DarkGray)),
+            Span::styled(" Help", Style::default().fg(active_theme.text_muted)),
         ]);
         frame.render_widget(
             Paragraph::new(tips_line).alignment(Alignment::Center),
@@ -330,10 +337,11 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         height: input_box.height,
     };
 
+    let active_theme = crate::tui::render::get_active_theme(app);
     let border_color = if app.chat.shell_focused {
-        Color::DarkGray
+        active_theme.text_muted
     } else {
-        Color::Rgb(59, 130, 246)
+        active_theme.primary
     };
 
     // Draw the vertical blue line on the left (separated by 1 column)
@@ -513,23 +521,25 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         app.chat.mode_area.set(Some(mode_rect));
         app.chat.model_area.set(Some(model_rect));
 
+        let active_theme = crate::tui::render::get_active_theme(app);
+        let separator_style = Style::default().fg(active_theme.text_muted);
         let mut mode_model_spans = vec![
             Span::styled(
                 mode_str,
                 Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" · ", Style::default().fg(Color::Rgb(110, 110, 110))),
+            Span::styled(" · ", separator_style),
         ];
 
-        // Split model label by whitespace: first two words white, subsequent words gray
+        // Split model label by whitespace: first two words theme text, subsequent words theme text_muted
         for (idx, word) in model_str.split_whitespace().enumerate() {
             if idx > 0 {
                 mode_model_spans.push(Span::raw(" "));
             }
             let style = if idx < 2 {
-                Style::default().fg(Color::Rgb(220, 220, 220)) // off-white
+                Style::default().fg(active_theme.text)
             } else {
-                Style::default().fg(Color::Rgb(110, 110, 110)) // gray
+                Style::default().fg(active_theme.text_muted)
             };
             mode_model_spans.push(Span::styled(word.to_owned(), style));
         }
@@ -1551,7 +1561,8 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     if app.chat.messages.is_empty() {
         app.chat.messages_area.set(Some(area));
         *app.chat.message_line_ranges.borrow_mut() = Vec::new();
-        let lines = welcome_lines(area);
+        let active_theme = crate::tui::render::get_active_theme(app);
+        let lines = welcome_lines(Style::default().fg(active_theme.primary), area);
         frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
         return;
     }
