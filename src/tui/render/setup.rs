@@ -8,16 +8,11 @@ use crate::app::{App, SetupField};
 use crate::tui::render::icons::icons;
 
 pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
-    let theme = crate::tui::render::get_theme(app);
-    let modal_bg = match theme {
-        crate::config::Theme::Light => Color::Rgb(240, 240, 240),
-        _ => Color::Rgb(24, 24, 24),
-    };
-
-    let dim_text = match theme {
-        crate::config::Theme::Light => Color::Rgb(120, 120, 120),
-        _ => Color::DarkGray,
-    };
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let modal_bg = active_theme
+        .background_panel
+        .unwrap_or(Color::Rgb(24, 24, 24));
+    let dim_text = active_theme.text_muted;
 
     // Centered modal popup: 55% width, 65% height
     let popup_area = crate::tui::render::chat::centered_rect(55, 65, area);
