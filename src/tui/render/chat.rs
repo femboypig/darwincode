@@ -547,6 +547,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     render_statusbar(frame, app, statusbar_area);
 
     let has_modal = app.model_picker_open
+        || app.theme_picker_open
         || app.screen == crate::app::Screen::Sessions
         || app.screen == crate::app::Screen::Setup
         || app
@@ -560,6 +561,10 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     if app.model_picker_open {
         render_model_picker_modal(frame, app, area);
+    }
+
+    if app.theme_picker_open {
+        render_theme_picker_modal(frame, app, area);
     }
 
     if app.screen == crate::app::Screen::Sessions {
@@ -1285,6 +1290,195 @@ fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
         let display = model.trim_start_matches("models/");
         let is_selected = idx == selected;
         let is_active = display == active_model || model == active_model;
+
+        let row_y = list_area.y + offset as u16;
+        if row_y >= list_area.bottom() {
+            break;
+        }
+        let row_area = Rect {
+            x: list_area.x,
+            y: row_y,
+            width: list_area.width,
+            height: 1,
+        };
+
+        if is_selected {
+            frame.render_widget(
+                Block::default().style(Style::default().bg(select_bg)),
+                row_area,
+            );
+        }
+
+        let row_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(1),
+            ])
+            .split(row_area);
+
+        let bullet_style = if is_active {
+            if is_selected {
+                Style::default()
+                    .bg(select_bg)
+                    .fg(active_bullet_color_on_select)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(active_bullet_color)
+                    .add_modifier(Modifier::BOLD)
+            }
+        } else if is_selected {
+            Style::default().bg(select_bg)
+        } else {
+            Style::default()
+        };
+
+        let bullet_char = if is_active { "*" } else { " " };
+        frame.render_widget(
+            Paragraph::new(Span::styled(bullet_char, bullet_style)),
+            row_cols[1],
+        );
+
+        let text_style = if is_selected {
+            Style::default()
+                .bg(select_bg)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(list_fg)
+        };
+        frame.render_widget(
+            Paragraph::new(Span::styled(display, text_style)),
+            row_cols[3],
+        );
+    }
+}
+
+fn render_theme_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let modal_bg = active_theme
+        .background_panel
+        .unwrap_or(Color::Rgb(24, 24, 24));
+    let modal_fg = active_theme.text;
+    let placeholder_fg = active_theme.text_muted;
+    let list_fg = active_theme.text;
+    let hint_fg = active_theme.text_muted;
+    let active_bullet_color = active_theme.success;
+    let active_bullet_color_on_select = active_theme.secondary;
+    let select_bg = active_theme.accent;
+
+    let popup_area = centered_rect(36, 48, area);
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(modal_bg)),
+        popup_area,
+    );
+
+    let margin = 1u16;
+    let content_area = Rect {
+        x: popup_area.x + margin,
+        y: popup_area.y + margin,
+        width: popup_area.width.saturating_sub(margin * 2),
+        height: popup_area.height.saturating_sub(margin * 2),
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
+        .split(content_area);
+
+    let title_row = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .split(chunks[0]);
+    let title_content = title_row[1];
+
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "Select theme",
+            Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+        )),
+        title_content,
+    );
+    frame.render_widget(
+        Paragraph::new(Span::styled("esc", Style::default().fg(hint_fg)))
+            .alignment(Alignment::Right),
+        title_content,
+    );
+
+    let search_row = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(3), Constraint::Min(1)])
+        .split(chunks[2]);
+    let search_content = search_row[1];
+
+    let search_line = if app.theme_picker.query.is_empty() {
+        Line::from(Span::styled("Search", Style::default().fg(placeholder_fg)))
+    } else {
+        Line::from(Span::styled(
+            app.theme_picker.query.clone(),
+            Style::default().fg(modal_fg),
+        ))
+    };
+    frame.render_widget(Paragraph::new(search_line), search_content);
+
+    let cursor_x = search_content.x + app.theme_picker.query.chars().count() as u16;
+    if cursor_x < search_content.right() {
+        frame.set_cursor_position((cursor_x, search_content.y));
+    }
+
+    let list_area = chunks[4];
+    let filtered = app.theme_picker.filtered_indices();
+
+    if filtered.is_empty() {
+        let msg = if app.theme_picker.query.is_empty() {
+            "No themes available"
+        } else {
+            "No matches"
+        };
+        let empty_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(3), Constraint::Min(1)])
+            .split(list_area);
+        frame.render_widget(
+            Paragraph::new(Span::styled(msg, Style::default().fg(placeholder_fg))),
+            empty_cols[1],
+        );
+        return;
+    }
+
+    let viewport = list_area.height as usize;
+    let total = filtered.len();
+    let selected = app.theme_picker.selected.min(total.saturating_sub(1));
+    let start = if total <= viewport || selected < viewport / 2 {
+        0
+    } else if selected >= total - viewport / 2 {
+        total - viewport
+    } else {
+        selected - viewport / 2
+    };
+
+    let visible_count = viewport.min(total.saturating_sub(start));
+
+    for offset in 0..visible_count {
+        let idx = start + offset;
+        let theme = &app.theme_picker.themes[filtered[idx]];
+        let display = theme.label();
+        let is_selected = idx == selected;
+        let is_active = theme == &app.chat.config.theme;
 
         let row_y = list_area.y + offset as u16;
         if row_y >= list_area.bottom() {
