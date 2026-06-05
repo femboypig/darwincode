@@ -10,7 +10,7 @@ pub struct ChatSession {
     pub history: Vec<ChatMessage>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SessionMeta {
     pub id: String,
     pub snippet: String,
@@ -267,7 +267,32 @@ pub fn save_session(chat: &ChatState) -> Result<()> {
     let key = crate::crypto::derive_hardware_key()?;
     let plain_data = serde_json::to_vec(&session)?;
     let cipher_data = crate::crypto::encrypt_data(&plain_data, &key)?;
-    std::fs::write(path, cipher_data)?;
+    std::fs::write(&path, cipher_data)?;
+
+    // Save metadata cache
+    let mut snippet = "Empty chat".to_owned();
+    if let Some(first_msg) = chat.history.first() {
+        let mut text = String::new();
+        for part in &first_msg.parts {
+            if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
+                text.push_str(t);
+            }
+        }
+        if !text.is_empty() {
+            snippet = text.chars().take(40).collect::<String>();
+        }
+    }
+    let meta = SessionMeta {
+        id: chat.session_id.clone(),
+        snippet,
+    };
+    let meta_path = sessions_dir.join(format!("{}.meta", chat.session_id));
+    if let Ok(plain_meta) = serde_json::to_vec(&meta)
+        && let Ok(cipher_meta) = crate::crypto::encrypt_data(&plain_meta, &key)
+    {
+        let _ = std::fs::write(meta_path, cipher_meta);
+    }
+
     Ok(())
 }
 
@@ -298,30 +323,59 @@ pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
     for entry in std::fs::read_dir(sessions_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("json")
-            && let Ok(cipher_data) = std::fs::read(&path)
-            && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
-            && let Ok(session) = serde_json::from_slice::<serde_json::Value>(&plain_data)
-        {
-            let id = session
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_owned();
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_owned();
             if id.is_empty() {
                 continue;
             }
 
-            let mut snippet = "Empty chat".to_owned();
-            if let Some(history) = session.get("history").and_then(|v| v.as_array())
-                && let Some(first_msg) = history.first()
-                && let Some(parts) = first_msg.get("parts").and_then(|v| v.as_array())
-                && let Some(first_part) = parts.first()
-                && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
-            {
-                snippet = text.chars().take(40).collect::<String>();
+            let meta_path = path.with_extension("meta");
+            if meta_path.exists() {
+                if let Ok(cipher_data) = std::fs::read(&meta_path)
+                    && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
+                    && let Ok(meta) = serde_json::from_slice::<SessionMeta>(&plain_data)
+                {
+                    result.push(meta);
+                    continue;
+                }
             }
-            result.push(SessionMeta { id, snippet });
+
+            if let Ok(cipher_data) = std::fs::read(&path)
+                && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
+                && let Ok(session) = serde_json::from_slice::<serde_json::Value>(&plain_data)
+            {
+                let session_id = session
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                if session_id.is_empty() {
+                    continue;
+                }
+
+                let mut snippet = "Empty chat".to_owned();
+                if let Some(history) = session.get("history").and_then(|v| v.as_array())
+                    && let Some(first_msg) = history.first()
+                    && let Some(parts) = first_msg.get("parts").and_then(|v| v.as_array())
+                    && let Some(first_part) = parts.first()
+                    && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
+                {
+                    snippet = text.chars().take(40).collect::<String>();
+                }
+                let meta = SessionMeta {
+                    id: session_id,
+                    snippet,
+                };
+
+                // cache the meta file
+                if let Ok(plain_meta) = serde_json::to_vec(&meta)
+                    && let Ok(cipher_meta) = crate::crypto::encrypt_data(&plain_meta, &key)
+                {
+                    let _ = std::fs::write(&meta_path, cipher_meta);
+                }
+
+                result.push(meta);
+            }
         }
     }
 
@@ -490,7 +544,8 @@ pub fn rebuild_messages_from_history(
                             }
 
                             if let Some(err_str) = response.get("error").and_then(|v| v.as_str())
-                                && err_str.contains("terminated by user via Ctrl+C")
+                                && (err_str.contains("terminated by user via Ctrl+C")
+                                    || err_str.contains("Process terminated by user via Ctrl+C"))
                             {
                                 is_aborted = true;
                             }
@@ -506,6 +561,12 @@ pub fn rebuild_messages_from_history(
                             let error_field =
                                 response.get("error").and_then(|v| v.as_str()).unwrap_or("");
 
+                            let mut is_still_running_err = false;
+                            if error_field == "Command timed out / is still running" {
+                                is_still_running_err = true;
+                                is_running = true;
+                            }
+
                             if !stdout.is_empty() {
                                 output.push_str(stdout);
                             }
@@ -515,7 +576,7 @@ pub fn rebuild_messages_from_history(
                                 }
                                 output.push_str(stderr);
                             }
-                            if !error_field.is_empty() && error_field != "null" {
+                            if !error_field.is_empty() && error_field != "null" && !is_still_running_err {
                                 if !output.is_empty() {
                                     output.push('\n');
                                 }
@@ -527,7 +588,12 @@ pub fn rebuild_messages_from_history(
                                     output.push('\n');
                                 }
                                 output.push_str("^C\n[Process terminated by user via Ctrl+C]");
-                            } else if output.is_empty() && !is_running {
+                            } else if is_running {
+                                if !output.is_empty() {
+                                    output.push('\n');
+                                }
+                                output.push_str("[Process is still running...]");
+                            } else if output.is_empty() {
                                 output = "(empty output)".to_owned();
                             }
 
@@ -536,12 +602,14 @@ pub fn rebuild_messages_from_history(
                                 .get("persistent_session_id")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_owned());
-                            messages.push(MessageLine::shell(
+                            let mut msg = MessageLine::shell(
                                 cmd.to_owned(),
                                 body,
                                 success,
                                 persistent_session_id,
-                            ));
+                            );
+                            msg.shell_pid = response.get("pid").and_then(|v| v.as_u64()).map(|v| v as u32);
+                            messages.push(msg);
                         } else {
                             let summary = format_tool_summary(name, &args, &response);
                             messages.push(MessageLine::tool(summary));
