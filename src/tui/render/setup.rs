@@ -167,9 +167,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
     let total_lines = fields.len() + 1; // fields + Save button
     let viewport = body_area.height as usize;
     let active_idx = app.setup.active_field.index();
-    let start = if total_lines <= viewport {
-        0
-    } else if active_idx < viewport / 2 {
+    let start = if total_lines <= viewport || active_idx < viewport / 2 {
         0
     } else if active_idx >= total_lines - viewport / 2 {
         total_lines - viewport
