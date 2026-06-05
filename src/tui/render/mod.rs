@@ -28,7 +28,10 @@ pub(crate) fn render(frame: &mut Frame, app: &App) {
         crate::config::Theme::Light => Color::Rgb(248, 248, 248),
         _ => Color::Rgb(15, 15, 15),
     };
-    frame.render_widget(Block::default().style(Style::default().bg(bg_color)), frame.area());
+    frame.render_widget(
+        Block::default().style(Style::default().bg(bg_color)),
+        frame.area(),
+    );
 
     match app.screen {
         Screen::Setup => chat::render_chat(frame, app),

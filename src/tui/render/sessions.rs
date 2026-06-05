@@ -5,8 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use crate::app::App;
-use crate::tui::render::get_theme;
 use crate::tui::render::chat::centered_rect;
+use crate::tui::render::get_theme;
 
 /// Called from render_chat when Screen::Sessions — renders popup over dimmed chat bg.
 pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
@@ -74,12 +74,21 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
     // Search row
     let search_line = if app.sessions.query.is_empty() {
         Line::from(vec![
-            Span::styled("Search: ", Style::default().fg(dim_text).add_modifier(Modifier::BOLD)),
-            Span::styled("type to filter...", Style::default().fg(dim_text).add_modifier(Modifier::ITALIC)),
+            Span::styled(
+                "Search: ",
+                Style::default().fg(dim_text).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "type to filter...",
+                Style::default().fg(dim_text).add_modifier(Modifier::ITALIC),
+            ),
         ])
     } else {
         Line::from(vec![
-            Span::styled("Search: ", Style::default().fg(dim_text).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Search: ",
+                Style::default().fg(dim_text).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(app.sessions.query.clone(), Style::default().fg(modal_fg)),
             Span::styled("█", Style::default().fg(modal_fg)),
         ])
@@ -104,7 +113,11 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
     let total = filtered.len();
 
     if total == 0 {
-        let msg = if app.sessions.query.is_empty() { "No saved sessions" } else { "No matches found" };
+        let msg = if app.sessions.query.is_empty() {
+            "No saved sessions"
+        } else {
+            "No matches found"
+        };
         frame.render_widget(
             Paragraph::new(Span::styled(msg, Style::default().fg(dim_text))),
             list_area,
@@ -112,10 +125,15 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         let selected = app.sessions.selected.min(total.saturating_sub(1));
         let visible = list_area.height as usize;
-        let start = if total <= visible { 0 }
-            else if selected < visible / 2 { 0 }
-            else if selected >= total - visible / 2 { total - visible }
-            else { selected - visible / 2 };
+        let start = if total <= visible {
+            0
+        } else if selected < visible / 2 {
+            0
+        } else if selected >= total - visible / 2 {
+            total - visible
+        } else {
+            selected - visible / 2
+        };
         let count = visible.min(total.saturating_sub(start));
 
         for offset in 0..count {
@@ -132,7 +150,10 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
                 frame.render_widget(Block::default().style(Style::default().bg(select_bg)), row);
             }
             let id_style = if is_sel {
-                Style::default().bg(select_bg).fg(selected_fg).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(select_bg)
+                    .fg(selected_fg)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(modal_fg)
             };
@@ -156,7 +177,10 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
                 ])
                 .split(row);
 
-            frame.render_widget(Paragraph::new(Span::styled(id.as_str(), id_style)), row_cols[0]);
+            frame.render_widget(
+                Paragraph::new(Span::styled(id.as_str(), id_style)),
+                row_cols[0],
+            );
             frame.render_widget(Paragraph::new(Span::styled("  ", snip_style)), row_cols[1]);
             frame.render_widget(Paragraph::new(Span::styled(snip, snip_style)), row_cols[2]);
         }
@@ -171,11 +195,20 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
     // Footer
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("Up/Down ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Up/Down ",
+                Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("select  ", Style::default().fg(dim_text)),
-            Span::styled("Enter ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Enter ",
+                Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("resume  ", Style::default().fg(dim_text)),
-            Span::styled("Esc ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Esc ",
+                Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("cancel", Style::default().fg(dim_text)),
         ])),
         chunks[5],

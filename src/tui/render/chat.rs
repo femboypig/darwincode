@@ -2,7 +2,10 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, Padding, Paragraph, Wrap, Scrollbar, ScrollbarOrientation, ScrollbarState};
+use ratatui::widgets::{
+    Block, List, ListItem, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+    Wrap,
+};
 
 use crate::app::App;
 use crate::app::chat::TodoItem;
@@ -25,10 +28,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         let sidebar_width = if area.width >= 90 { 36 } else { 30 };
         let horizontal_split = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Min(20),
-                Constraint::Length(sidebar_width),
-            ])
+            .constraints([Constraint::Min(20), Constraint::Length(sidebar_width)])
             .split(area);
         let left_full_area = horizontal_split[0];
         let right_pane = horizontal_split[1];
@@ -72,10 +72,14 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         let q_lines = q_wrapped.len() as u16;
         let opt_count = app.ask_user.options.len() as u16;
         let custom_lines = if app.ask_user.is_custom {
-            if app.ask_user.custom_input.is_empty() { 1 } else {
+            if app.ask_user.custom_input.is_empty() {
+                1
+            } else {
                 app.ask_user.custom_input.split('\n').count() as u16
             }
-        } else { 0 };
+        } else {
+            0
+        };
         // q_lines + blank + opts (label only) + custom + 1 blank + 1 footer + 1 blank + 2 padding
         (q_lines + 1 + opt_count + custom_lines + 1 + 1 + 1 + 2).max(6)
     } else if app.screen == crate::app::Screen::Permissions {
@@ -88,147 +92,141 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         display_lines.clamp(1, 5) + 4
     };
 
-    let (
-        messages_area,
-        suggestions_area,
-        queue_area,
-        input_area,
-        logo_area,
-        tips_area,
-    ) = if app.chat.messages.is_empty() {
-        let logo_lines = logo_lines();
-        let logo_fits_flag = logo_fits(&logo_lines, left_pane.width, 5);
+    let (messages_area, suggestions_area, queue_area, input_area, logo_area, tips_area) =
+        if app.chat.messages.is_empty() {
+            let logo_lines = logo_lines();
+            let logo_fits_flag = logo_fits(&logo_lines, left_pane.width, 5);
 
-        let remaining_height = left_pane
-            .height
-            .saturating_sub(input_height + suggestion_height);
-        let half_height = remaining_height / 2;
-        let top_height = half_height;
-        let bottom_height = remaining_height.saturating_sub(half_height);
+            let remaining_height = left_pane
+                .height
+                .saturating_sub(input_height + suggestion_height);
+            let half_height = remaining_height / 2;
+            let top_height = half_height;
+            let bottom_height = remaining_height.saturating_sub(half_height);
 
-        let main_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(top_height),
-                Constraint::Length(suggestion_height),
-                Constraint::Length(input_height),
-                Constraint::Length(bottom_height),
-            ])
-            .split(left_pane);
+            let main_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(top_height),
+                    Constraint::Length(suggestion_height),
+                    Constraint::Length(input_height),
+                    Constraint::Length(bottom_height),
+                ])
+                .split(left_pane);
 
-        let logo_spacer = if top_height >= 8 {
-            3
-        } else if top_height >= 7 {
-            2
-        } else if top_height >= 6 {
-            1
-        } else {
-            0
-        };
+            let logo_spacer = if top_height >= 8 {
+                3
+            } else if top_height >= 7 {
+                2
+            } else if top_height >= 6 {
+                1
+            } else {
+                0
+            };
 
-        let top_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(5), // Logo (5 lines)
-                Constraint::Length(logo_spacer),
-            ])
-            .split(main_chunks[0]);
+            let top_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(0),
+                    Constraint::Length(5), // Logo (5 lines)
+                    Constraint::Length(logo_spacer),
+                ])
+                .split(main_chunks[0]);
 
-        let bottom_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1), // Spacer
-                Constraint::Length(1), // Tips line
-                Constraint::Min(0),
-            ])
-            .split(main_chunks[3]);
+            let bottom_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // Spacer
+                    Constraint::Length(1), // Tips line
+                    Constraint::Min(0),
+                ])
+                .split(main_chunks[3]);
 
-        let centered_suggestions_box = if suggestion_height > 0 {
-            Some(
-                Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Percentage(15),
-                        Constraint::Percentage(70),
-                        Constraint::Percentage(15),
-                    ])
-                    .split(main_chunks[1])[1],
+            let centered_suggestions_box = if suggestion_height > 0 {
+                Some(
+                    Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([
+                            Constraint::Percentage(15),
+                            Constraint::Percentage(70),
+                            Constraint::Percentage(15),
+                        ])
+                        .split(main_chunks[1])[1],
+                )
+            } else {
+                None
+            };
+
+            let centered_input_box = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(70),
+                    Constraint::Percentage(15),
+                ])
+                .split(main_chunks[2])[1];
+
+            let logo_area = if logo_fits_flag && top_height >= 5 {
+                Some(top_chunks[1])
+            } else {
+                None
+            };
+
+            let tips_area = if bottom_height >= 2 {
+                Some(bottom_chunks[1])
+            } else {
+                None
+            };
+
+            (
+                None,
+                centered_suggestions_box,
+                None,
+                Some(centered_input_box),
+                logo_area,
+                tips_area,
             )
         } else {
-            None
-        };
-
-        let centered_input_box = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(15),
-                Constraint::Percentage(70),
-                Constraint::Percentage(15),
-            ])
-            .split(main_chunks[2])[1];
-
-        let logo_area = if logo_fits_flag && top_height >= 5 {
-            Some(top_chunks[1])
-        } else {
-            None
-        };
-
-        let tips_area = if bottom_height >= 2 {
-            Some(bottom_chunks[1])
-        } else {
-            None
-        };
-
-        (
-            None,
-            centered_suggestions_box,
-            None,
-            Some(centered_input_box),
-            logo_area,
-            tips_area,
-        )
-    } else {
-        let queue_height = if app.chat.message_queue.is_empty() {
-            0
-        } else {
-            (app.chat.message_queue.len().min(3) as u16) + 1
-        };
-
-        let spacer_height = if suggestion_height > 0 || queue_height > 0 {
-            0
-        } else {
-            1
-        };
-
-        let normal_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(4),
-                Constraint::Length(suggestion_height),
-                Constraint::Length(queue_height),
-                Constraint::Length(spacer_height), // dynamic vertical spacer
-                Constraint::Length(input_height),
-            ])
-            .split(left_pane);
-
-        (
-            Some(normal_chunks[0]),
-            if suggestion_height > 0 {
-                Some(normal_chunks[1])
+            let queue_height = if app.chat.message_queue.is_empty() {
+                0
             } else {
-                None
-            },
-            if queue_height > 0 {
-                Some(normal_chunks[2])
+                (app.chat.message_queue.len().min(3) as u16) + 1
+            };
+
+            let spacer_height = if suggestion_height > 0 || queue_height > 0 {
+                0
             } else {
-                None
-            },
-            Some(normal_chunks[4]),
-            None,
-            None,
-        )
-    };
+                1
+            };
+
+            let normal_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(4),
+                    Constraint::Length(suggestion_height),
+                    Constraint::Length(queue_height),
+                    Constraint::Length(spacer_height), // dynamic vertical spacer
+                    Constraint::Length(input_height),
+                ])
+                .split(left_pane);
+
+            (
+                Some(normal_chunks[0]),
+                if suggestion_height > 0 {
+                    Some(normal_chunks[1])
+                } else {
+                    None
+                },
+                if queue_height > 0 {
+                    Some(normal_chunks[2])
+                } else {
+                    None
+                },
+                Some(normal_chunks[4]),
+                None,
+                None,
+            )
+        };
 
     if let Some(logo_area) = logo_area {
         let logo = logo_lines_for_area(logo_area.width, 5);
@@ -264,7 +262,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             tips_area,
         );
     }
-
 
     if let Some(messages_area) = messages_area {
         if !app.chat.todos.is_empty() && right_pane.is_none() {
@@ -342,7 +339,10 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     // Draw the vertical blue line on the left (separated by 1 column)
     let mut blue_line_lines = Vec::new();
     for _ in 0..input_height {
-        blue_line_lines.push(Line::from(Span::styled("┃", Style::default().fg(border_color))));
+        blue_line_lines.push(Line::from(Span::styled(
+            "┃",
+            Style::default().fg(border_color),
+        )));
     }
     frame.render_widget(
         Paragraph::new(blue_line_lines),
@@ -473,8 +473,8 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     } else if app.screen == crate::app::Screen::Permissions {
         render_permissions_in_input_box(frame, app, text_block_area);
     } else {
-    // Render the scrollable paragraph
-    frame.render_widget(
+        // Render the scrollable paragraph
+        frame.render_widget(
             Paragraph::new(paragraph_content)
                 .style(Style::default().fg(fg_color))
                 .scroll((input_scroll, 0)),
@@ -512,7 +512,10 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             height: 1,
         };
         let model_rect = Rect {
-            x: mode_model_row_area.x.saturating_add(mode_len).saturating_add(3), // after mode label + separator " · "
+            x: mode_model_row_area
+                .x
+                .saturating_add(mode_len)
+                .saturating_add(3), // after mode label + separator " · "
             y: mode_model_row_area.y,
             width: model_len,
             height: 1,
@@ -556,7 +559,9 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     let has_modal = app.model_picker_open
         || app.screen == crate::app::Screen::Sessions
         || app.screen == crate::app::Screen::Setup
-        || app.pending.as_ref().map_or(false, |p| matches!(p, crate::app::PendingTask::ConfirmFunction { .. }));
+        || app.pending.as_ref().is_some_and(|p| {
+            matches!(p, crate::app::PendingTask::ConfirmFunction { .. })
+        });
 
     if has_modal {
         dim_buffer(frame, area);
@@ -613,7 +618,9 @@ fn dim_buffer(frame: &mut Frame, area: Rect) {
 }
 
 fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
-    let Some(crate::app::PendingTask::ConfirmFunction { name, args }) = &app.pending else { return };
+    let Some(crate::app::PendingTask::ConfirmFunction { name, args }) = &app.pending else {
+        return;
+    };
     let theme = get_theme(app);
     let modal_bg = match theme {
         crate::config::Theme::Light => Color::Rgb(240, 240, 240),
@@ -643,7 +650,9 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
         width: popup_area.width.saturating_sub(margin * 2),
         height: popup_area.height.saturating_sub(margin * 2),
     };
-    if content.height == 0 || content.width == 0 { return; }
+    if content.height == 0 || content.width == 0 {
+        return;
+    }
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -664,25 +673,47 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
         height: 1,
     };
     let path_str = if name == "edit" || name == "write" || name == "patch" {
-        args.get("path").and_then(|v| v.as_str())
-            .or_else(|| args.get("edits").and_then(|v| v.as_array())
-                .and_then(|a| a.first())
-                .and_then(|e| e.get("path"))
-                .and_then(|v| v.as_str()))
+        args.get("path")
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                args.get("edits")
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|e| e.get("path"))
+                    .and_then(|v| v.as_str())
+            })
             .unwrap_or("")
-    } else { "" };
+    } else {
+        ""
+    };
 
     let title_line = if path_str.is_empty() {
         Line::from(vec![
-            Span::styled("Confirm Tool Execution", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Confirm Tool Execution",
+                Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  •  ", Style::default().fg(dim_text)),
-            Span::styled(name.as_str(), Style::default().fg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                name.as_str(),
+                Style::default()
+                    .fg(Color::Rgb(245, 158, 11))
+                    .add_modifier(Modifier::BOLD),
+            ),
         ])
     } else {
         Line::from(vec![
-            Span::styled("Confirm Tool Execution", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Confirm Tool Execution",
+                Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  •  ", Style::default().fg(dim_text)),
-            Span::styled(name.as_str(), Style::default().fg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                name.as_str(),
+                Style::default()
+                    .fg(Color::Rgb(245, 158, 11))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  ", Style::default()),
             Span::styled(path_str, Style::default().fg(dim_text)),
         ])
@@ -708,34 +739,54 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
         if name == "edit" {
             if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
                 for edit_val in edits.iter() {
-                    let old_str = edit_val.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-                    let new_str = edit_val.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                    let old_str = edit_val
+                        .get("old_string")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let new_str = edit_val
+                        .get("new_string")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     for line in old_str.lines() {
                         body_lines.push(Line::from(Span::styled(
                             format!("- {line}"),
-                            Style::default().fg(Color::Rgb(255, 120, 120)).bg(Color::Rgb(50, 15, 15)),
+                            Style::default()
+                                .fg(Color::Rgb(255, 120, 120))
+                                .bg(Color::Rgb(50, 15, 15)),
                         )));
                     }
                     for line in new_str.lines() {
                         body_lines.push(Line::from(Span::styled(
                             format!("+ {line}"),
-                            Style::default().fg(Color::Rgb(120, 220, 120)).bg(Color::Rgb(15, 45, 15)),
+                            Style::default()
+                                .fg(Color::Rgb(120, 220, 120))
+                                .bg(Color::Rgb(15, 45, 15)),
                         )));
                     }
                 }
             } else {
-                let old_str = args.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-                let new_str = args.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                let old_str = args
+                    .get("old_string")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let new_str = args
+                    .get("new_string")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 for line in old_str.lines() {
                     body_lines.push(Line::from(Span::styled(
                         format!("- {line}"),
-                        Style::default().fg(Color::Rgb(255, 120, 120)).bg(Color::Rgb(50, 15, 15)),
+                        Style::default()
+                            .fg(Color::Rgb(255, 120, 120))
+                            .bg(Color::Rgb(50, 15, 15)),
                     )));
                 }
                 for line in new_str.lines() {
                     body_lines.push(Line::from(Span::styled(
                         format!("+ {line}"),
-                        Style::default().fg(Color::Rgb(120, 220, 120)).bg(Color::Rgb(15, 45, 15)),
+                        Style::default()
+                            .fg(Color::Rgb(120, 220, 120))
+                            .bg(Color::Rgb(15, 45, 15)),
                     )));
                 }
             }
@@ -744,16 +795,22 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
             for line in content.lines() {
                 body_lines.push(Line::from(Span::styled(
                     format!("+ {line}"),
-                    Style::default().fg(Color::Rgb(120, 220, 120)).bg(Color::Rgb(15, 45, 15)),
+                    Style::default()
+                        .fg(Color::Rgb(120, 220, 120))
+                        .bg(Color::Rgb(15, 45, 15)),
                 )));
             }
         } else if name == "patch" {
             let patch = args.get("patch").and_then(|v| v.as_str()).unwrap_or("");
             for line in patch.lines() {
                 let style = if line.starts_with('+') && !line.starts_with("+++") {
-                    Style::default().fg(Color::Rgb(120, 220, 120)).bg(Color::Rgb(15, 45, 15))
+                    Style::default()
+                        .fg(Color::Rgb(120, 220, 120))
+                        .bg(Color::Rgb(15, 45, 15))
                 } else if line.starts_with('-') && !line.starts_with("---") {
-                    Style::default().fg(Color::Rgb(255, 120, 120)).bg(Color::Rgb(50, 15, 15))
+                    Style::default()
+                        .fg(Color::Rgb(255, 120, 120))
+                        .bg(Color::Rgb(50, 15, 15))
                 } else if line.starts_with("@@") {
                     Style::default().fg(Color::Cyan)
                 } else {
@@ -764,7 +821,10 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             let args_str = serde_json::to_string_pretty(args).unwrap_or_default();
             for line in args_str.lines() {
-                body_lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(modal_fg))));
+                body_lines.push(Line::from(Span::styled(
+                    line.to_string(),
+                    Style::default().fg(modal_fg),
+                )));
             }
         }
 
@@ -787,13 +847,9 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
                 .end_symbol(Some("v"))
                 .track_symbol(Some("|"))
                 .thumb_symbol("#");
-            let mut scrollbar_state = ScrollbarState::new(body_lines.len())
-                .position(current_scroll as usize);
-            frame.render_stateful_widget(
-                scrollbar,
-                body_area,
-                &mut scrollbar_state,
-            );
+            let mut scrollbar_state =
+                ScrollbarState::new(body_lines.len()).position(current_scroll as usize);
+            frame.render_stateful_widget(scrollbar, body_area, &mut scrollbar_state);
         }
     }
 
@@ -812,15 +868,24 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
     };
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("Y ", Style::default().fg(Color::Rgb(120, 220, 120)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Y ",
+                Style::default()
+                    .fg(Color::Rgb(120, 220, 120))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("allow  ", Style::default().fg(dim_text)),
-            Span::styled("N ", Style::default().fg(Color::Rgb(255, 120, 120)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "N ",
+                Style::default()
+                    .fg(Color::Rgb(255, 120, 120))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("deny", Style::default().fg(dim_text)),
         ])),
         footer_area,
     );
 }
-
 
 fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
     let theme = get_theme(app);
@@ -843,7 +908,9 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
         width: area.width.saturating_sub(5),
         height: area.height.saturating_sub(1),
     };
-    if inner.height == 0 || inner.width == 0 { return; }
+    if inner.height == 0 || inner.width == 0 {
+        return;
+    }
 
     let q_wrapped = wrap_text_to_lines(app.ask_user.question.as_str(), inner.width as usize);
     let q_height = q_wrapped.len() as u16;
@@ -851,10 +918,17 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
     // Render question
     for (i, line) in q_wrapped.iter().enumerate() {
         let row_y = inner.y + i as u16;
-        if row_y >= inner.bottom() { break; }
+        if row_y >= inner.bottom() {
+            break;
+        }
         frame.render_widget(
             Paragraph::new(Span::styled(line.as_str(), Style::default().fg(modal_fg))),
-            Rect { x: inner.x, y: row_y, width: inner.width, height: 1 },
+            Rect {
+                x: inner.x,
+                y: row_y,
+                width: inner.width,
+                height: 1,
+            },
         );
     }
 
@@ -866,18 +940,28 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut row_y = list_start_y;
     for idx in 0..total_options {
-        if row_y >= footer_y.saturating_sub(1) { break; } // leave 1 blank before footer
+        if row_y >= footer_y.saturating_sub(1) {
+            break;
+        } // leave 1 blank before footer
         let is_selected = idx == selected;
         let is_custom = idx == app.ask_user.options.len();
-        let label: &str = if is_custom { "Type your own answer" } else { &app.ask_user.options[idx] };
+        let label: &str = if is_custom {
+            "Type your own answer"
+        } else {
+            &app.ask_user.options[idx]
+        };
 
         let num_style = if is_selected {
-            Style::default().fg(selected_color).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(selected_color)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(dim_text)
         };
         let label_style = if is_selected {
-            Style::default().fg(selected_color).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(selected_color)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)
         };
@@ -889,7 +973,12 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled("  ", Style::default()),
                 Span::styled(label, label_style),
             ])),
-            Rect { x: inner.x, y: row_y, width: inner.width, height: 1 },
+            Rect {
+                x: inner.x,
+                y: row_y,
+                width: inner.width,
+                height: 1,
+            },
         );
         row_y += 1;
 
@@ -906,14 +995,26 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
             let input_style = if app.ask_user.custom_input.is_empty() {
                 Style::default().fg(dim_text)
             } else {
-                Style::default().fg(selected_color).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(selected_color)
+                    .add_modifier(Modifier::BOLD)
             };
             frame.render_widget(
                 Paragraph::new(Span::styled(display, input_style)),
-                Rect { x: inner.x, y: row_y, width: inner.width, height: 1 },
+                Rect {
+                    x: inner.x,
+                    y: row_y,
+                    width: inner.width,
+                    height: 1,
+                },
             );
-            let cx = inner.x + prefix_len as u16 + if app.ask_user.custom_input.is_empty() { 0 }
-                else { app.ask_user.custom_input.chars().count() as u16 };
+            let cx = inner.x
+                + prefix_len as u16
+                + if app.ask_user.custom_input.is_empty() {
+                    0
+                } else {
+                    app.ask_user.custom_input.chars().count() as u16
+                };
             if cx < inner.right() {
                 frame.set_cursor_position((cx, row_y));
             }
@@ -925,24 +1026,44 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
     if footer_y < inner.bottom() {
         let footer = if app.ask_user.is_custom {
             Line::from(vec![
-                Span::styled("Enter ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Enter ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("submit  ", Style::default().fg(dim_text)),
-                Span::styled("Esc ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Esc ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("dismiss", Style::default().fg(dim_text)),
             ])
         } else {
             Line::from(vec![
-                Span::styled("Up/Down ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Up/Down ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("select  ", Style::default().fg(dim_text)),
-                Span::styled("Enter ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Enter ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("submit  ", Style::default().fg(dim_text)),
-                Span::styled("Esc ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Esc ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("dismiss", Style::default().fg(dim_text)),
             ])
         };
         frame.render_widget(
             Paragraph::new(footer),
-            Rect { x: inner.x, y: footer_y, width: inner.width, height: 1 },
+            Rect {
+                x: inner.x,
+                y: footer_y,
+                width: inner.width,
+                height: 1,
+            },
         );
     }
 }
@@ -968,12 +1089,22 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
         width: area.width.saturating_sub(5),
         height: area.height.saturating_sub(1),
     };
-    if inner.height == 0 || inner.width == 0 { return; }
+    if inner.height == 0 || inner.width == 0 {
+        return;
+    }
 
     // Title
     frame.render_widget(
-        Paragraph::new(Span::styled("Select permission level", Style::default().fg(modal_fg))),
-        Rect { x: inner.x, y: inner.y, width: inner.width, height: 1 },
+        Paragraph::new(Span::styled(
+            "Select permission level",
+            Style::default().fg(modal_fg),
+        )),
+        Rect {
+            x: inner.x,
+            y: inner.y,
+            width: inner.width,
+            height: 1,
+        },
     );
 
     let options = crate::app::PermissionPickerState::options();
@@ -988,12 +1119,16 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
         let is_selected = idx == selected;
 
         let num_style = if is_selected {
-            Style::default().fg(selected_color).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(selected_color)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(dim_text)
         };
         let label_style = if is_selected {
-            Style::default().fg(selected_color).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(selected_color)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)
         };
@@ -1005,7 +1140,12 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
                     Span::styled("  ", Style::default()),
                     Span::styled(label, label_style),
                 ])),
-                Rect { x: inner.x, y: row_y, width: inner.width, height: 1 },
+                Rect {
+                    x: inner.x,
+                    y: row_y,
+                    width: inner.width,
+                    height: 1,
+                },
             );
             row_y += 1;
         }
@@ -1016,7 +1156,12 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
                     Span::styled("    ", Style::default()),
                     Span::styled(desc, Style::default().fg(dim_text)),
                 ])),
-                Rect { x: inner.x, y: row_y, width: inner.width, height: 1 },
+                Rect {
+                    x: inner.x,
+                    y: row_y,
+                    width: inner.width,
+                    height: 1,
+                },
             );
             row_y += 1;
         }
@@ -1026,18 +1171,31 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
     if footer_y < inner.bottom() {
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled("Up/Down ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Up/Down ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("select  ", Style::default().fg(dim_text)),
-                Span::styled("Enter ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Enter ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("apply  ", Style::default().fg(dim_text)),
-                Span::styled("Esc ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Esc ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("cancel", Style::default().fg(dim_text)),
             ])),
-            Rect { x: inner.x, y: footer_y, width: inner.width, height: 1 },
+            Rect {
+                x: inner.x,
+                y: footer_y,
+                width: inner.width,
+                height: 1,
+            },
         );
     }
 }
-
 
 fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
     let theme = get_theme(app);
@@ -1377,7 +1535,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                 // Header line with command
                 let (cleaned_title, title_vis_w) =
                     clean_and_truncate_to_visual_width(&title, block_width.saturating_sub(4));
-                
+
                 let title_fg = if is_focused_shell {
                     Color::Rgb(59, 130, 246)
                 } else {
@@ -1441,8 +1599,10 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                         };
 
                     for line in display_lines {
-                        let is_truncation_marker = line.starts_with("... [") && line.ends_with("] ...");
-                        let (cleaned, line_vis_w) = clean_and_truncate_to_visual_width(&line, body_w);
+                        let is_truncation_marker =
+                            line.starts_with("... [") && line.ends_with("] ...");
+                        let (cleaned, line_vis_w) =
+                            clean_and_truncate_to_visual_width(&line, body_w);
                         let text_style = if is_truncation_marker {
                             Style::default()
                                 .fg(Color::Yellow)
@@ -1504,7 +1664,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                             _ => (Color::Rgb(24, 24, 24), Color::Rgb(255, 255, 255)),
                         };
                         let user_style = Style::default().bg(user_bg).fg(user_fg);
-                        
+
                         let border_color = if app.chat.shell_focused {
                             Color::DarkGray
                         } else {
@@ -1650,7 +1810,10 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut line_lines = Vec::new();
     for _ in 0..area.height {
-        line_lines.push(Line::from(Span::styled("┃", Style::default().fg(border_color))));
+        line_lines.push(Line::from(Span::styled(
+            "┃",
+            Style::default().fg(border_color),
+        )));
     }
     frame.render_widget(
         Paragraph::new(line_lines),
@@ -1670,7 +1833,10 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     // Draw background for suggestions box to match prompt background color
-    frame.render_widget(Block::default().style(Style::default().bg(bg_color)), list_area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(bg_color)),
+        list_area,
+    );
 
     let total_len = suggestions.len();
     let window_size = 10;
@@ -1686,9 +1852,14 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
         selected_idx - window_size / 2
     };
 
-    let visible_suggestions: Vec<_> = suggestions.into_iter().skip(start_idx).take(window_size).collect();
+    let visible_suggestions: Vec<_> = suggestions
+        .into_iter()
+        .skip(start_idx)
+        .take(window_size)
+        .collect();
 
-    let max_name_len = visible_suggestions.iter()
+    let max_name_len = visible_suggestions
+        .iter()
         .map(|s| s.name.chars().count())
         .max()
         .unwrap_or(0);
@@ -1704,12 +1875,11 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![
                 Span::styled(
                     format!(" {}", suggestion.name),
-                    Style::default().fg(Color::Black).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Black)
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    padding_spaces,
-                    Style::default().fg(Color::Black),
-                ),
+                Span::styled(padding_spaces, Style::default().fg(Color::Black)),
                 Span::styled(
                     suggestion.description,
                     Style::default().fg(Color::Rgb(60, 60, 60)),
@@ -1719,21 +1889,19 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![
                 Span::styled(
                     format!(" {}", suggestion.name),
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    padding_spaces,
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::styled(
-                    suggestion.description,
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(padding_spaces, Style::default().fg(Color::DarkGray)),
+                Span::styled(suggestion.description, Style::default().fg(Color::DarkGray)),
             ])
         };
 
         let item_style = if is_active {
-            Style::default().bg(Color::Rgb(134, 194, 172)).fg(Color::Black)
+            Style::default()
+                .bg(Color::Rgb(134, 194, 172))
+                .fg(Color::Black)
         } else {
             Style::default()
         };
@@ -1846,7 +2014,9 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(
         Paragraph::new(Span::styled(
             "TODO",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
         todo_chunks[0],
@@ -1863,10 +2033,30 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
         }
     };
 
-    let in_progress: Vec<&TodoItem> = app.chat.todos.iter().filter(|t| t.status == "in_progress").collect();
-    let pending: Vec<&TodoItem> = app.chat.todos.iter().filter(|t| t.status == "pending").collect();
-    let completed: Vec<&TodoItem> = app.chat.todos.iter().filter(|t| t.status == "completed").collect();
-    let cancelled: Vec<&TodoItem> = app.chat.todos.iter().filter(|t| t.status == "cancelled").collect();
+    let in_progress: Vec<&TodoItem> = app
+        .chat
+        .todos
+        .iter()
+        .filter(|t| t.status == "in_progress")
+        .collect();
+    let pending: Vec<&TodoItem> = app
+        .chat
+        .todos
+        .iter()
+        .filter(|t| t.status == "pending")
+        .collect();
+    let completed: Vec<&TodoItem> = app
+        .chat
+        .todos
+        .iter()
+        .filter(|t| t.status == "completed")
+        .collect();
+    let cancelled: Vec<&TodoItem> = app
+        .chat
+        .todos
+        .iter()
+        .filter(|t| t.status == "cancelled")
+        .collect();
 
     let mut all_sorted_todos = Vec::new();
     all_sorted_todos.extend(in_progress);
@@ -1888,7 +2078,9 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
             ),
             "cancelled" => (
                 Span::styled("◌ ", Style::default().fg(Color::DarkGray)),
-                Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
             ),
             _ => (
                 Span::styled("○ ", Style::default().fg(Color::DarkGray)),

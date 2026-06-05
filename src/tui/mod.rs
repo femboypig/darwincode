@@ -506,15 +506,23 @@ fn run_loop(
                 }
                 Event::Mouse(mouse_event) => match mouse_event.kind {
                     event::MouseEventKind::ScrollUp => {
-                        if matches!(app.pending, Some(crate::app::PendingTask::ConfirmFunction { .. })) {
-                            app.confirm_scroll.set(app.confirm_scroll.get().saturating_sub(1));
+                        if matches!(
+                            app.pending,
+                            Some(crate::app::PendingTask::ConfirmFunction { .. })
+                        ) {
+                            app.confirm_scroll
+                                .set(app.confirm_scroll.get().saturating_sub(1));
                         } else {
                             app.chat.scroll = app.chat.scroll.saturating_add(1);
                         }
                     }
                     event::MouseEventKind::ScrollDown => {
-                        if matches!(app.pending, Some(crate::app::PendingTask::ConfirmFunction { .. })) {
-                            app.confirm_scroll.set(app.confirm_scroll.get().saturating_add(1));
+                        if matches!(
+                            app.pending,
+                            Some(crate::app::PendingTask::ConfirmFunction { .. })
+                        ) {
+                            app.confirm_scroll
+                                .set(app.confirm_scroll.get().saturating_add(1));
                         } else {
                             app.chat.scroll = app.chat.scroll.saturating_sub(1);
                         }
@@ -523,18 +531,17 @@ fn run_loop(
                         let click_x = mouse_event.column;
                         let click_y = mouse_event.row;
 
-                        if let Some(rect) = app.chat.mode_area.get() {
-                            if click_x >= rect.x
+                        if let Some(rect) = app.chat.mode_area.get()
+                            && click_x >= rect.x
                                 && click_x < rect.x + rect.width
                                 && click_y == rect.y
                             {
                                 app.toggle_dev_mode();
                                 continue;
                             }
-                        }
 
-                        if let Some(rect) = app.chat.model_area.get() {
-                            if click_x >= rect.x
+                        if let Some(rect) = app.chat.model_area.get()
+                            && click_x >= rect.x
                                 && click_x < rect.x + rect.width
                                 && click_y == rect.y
                             {
@@ -545,10 +552,9 @@ fn run_loop(
                                 }
                                 continue;
                             }
-                        }
 
-                        if let Some(rect) = app.chat.messages_area.get() {
-                            if click_x >= rect.x
+                        if let Some(rect) = app.chat.messages_area.get()
+                            && click_x >= rect.x
                                 && click_x < rect.x + rect.width
                                 && click_y >= rect.y
                                 && click_y < rect.y + rect.height
@@ -761,7 +767,6 @@ fn run_loop(
                                     }
                                 }
                             }
-                        }
                     }
                     _ => {}
                 },

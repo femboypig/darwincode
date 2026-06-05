@@ -39,26 +39,28 @@ pub(crate) fn handle_chat_key(
                 }
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                app.confirm_scroll.set(app.confirm_scroll.get().saturating_add(1));
+                app.confirm_scroll
+                    .set(app.confirm_scroll.get().saturating_add(1));
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                app.confirm_scroll.set(app.confirm_scroll.get().saturating_sub(1));
+                app.confirm_scroll
+                    .set(app.confirm_scroll.get().saturating_sub(1));
             }
             KeyCode::PageDown => {
-                app.confirm_scroll.set(app.confirm_scroll.get().saturating_add(10));
+                app.confirm_scroll
+                    .set(app.confirm_scroll.get().saturating_add(10));
             }
             KeyCode::PageUp => {
-                app.confirm_scroll.set(app.confirm_scroll.get().saturating_sub(10));
+                app.confirm_scroll
+                    .set(app.confirm_scroll.get().saturating_sub(10));
             }
             _ => {
                 if app
                     .keybindings
                     .matches(crate::tui::keybindings::TuiAction::Cancel, key)
-                {
-                    if let Some(action) = app.answer_function_confirmation(false) {
+                    && let Some(action) = app.answer_function_confirmation(false) {
                         handle_function_action(action, sender);
                     }
-                }
             }
         }
         return Ok(());
@@ -256,8 +258,16 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
-        let is_running_process = crate::tui::RUNNING_PROCESS_PID.lock().ok().and_then(|g| *g).is_some();
-        let is_active_persistent = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock().ok().and_then(|g| g.clone()).is_some();
+        let is_running_process = crate::tui::RUNNING_PROCESS_PID
+            .lock()
+            .ok()
+            .and_then(|g| *g)
+            .is_some();
+        let is_active_persistent = crate::tui::ACTIVE_PERSISTENT_SESSION_ID
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .is_some();
 
         let mut has_running_command_in_history = false;
         for msg in &app.chat.history {
@@ -268,12 +278,18 @@ pub(crate) fn handle_chat_key(
                         && let Some(response_val) = resp.get("response")
                     {
                         let status = response_val.get("status");
-                        let error_val = response_val.get("error").and_then(|v| v.as_str()).unwrap_or("");
-                        let is_aborted = error_val.contains("terminated by user") || error_val.contains("Ctrl+C");
+                        let error_val = response_val
+                            .get("error")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let is_aborted = error_val.contains("terminated by user")
+                            || error_val.contains("Ctrl+C");
 
                         let is_running = status.and_then(|s| s.as_str()) == Some("running")
                             || error_val == "Command timed out / is still running"
-                            || (status.is_none() && !is_aborted && response_val.get("exit_code").is_none());
+                            || (status.is_none()
+                                && !is_aborted
+                                && response_val.get("exit_code").is_none());
 
                         if is_running {
                             has_running_command_in_history = true;
@@ -654,9 +670,9 @@ fn handle_interrupt_signal(app: &mut App) {
     if let Some(ref session_id) = app.chat.focused_shell_session_id {
         target_session_id = Some(session_id.clone());
     } else if let Ok(guard) = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock()
-        && let Some(ref session_id) = guard.as_ref()
+        && let Some(session_id) = guard.as_ref()
     {
-        target_session_id = Some((*session_id).clone());
+        target_session_id = Some(session_id.clone());
     }
 
     let mut history_target = None;
@@ -670,15 +686,24 @@ fn handle_interrupt_signal(app: &mut App) {
                     && let Some(response_val) = resp.get("response")
                 {
                     let status = response_val.get("status");
-                    let error_val = response_val.get("error").and_then(|v| v.as_str()).unwrap_or("");
-                    let is_aborted = error_val.contains("terminated by user") || error_val.contains("Ctrl+C");
+                    let error_val = response_val
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let is_aborted =
+                        error_val.contains("terminated by user") || error_val.contains("Ctrl+C");
 
                     let is_running = status.and_then(|s| s.as_str()) == Some("running")
                         || error_val == "Command timed out / is still running"
-                        || (status.is_none() && !is_aborted && response_val.get("exit_code").is_none());
+                        || (status.is_none()
+                            && !is_aborted
+                            && response_val.get("exit_code").is_none());
 
                     if is_running {
-                        let resp_pid = response_val.get("pid").and_then(|v| v.as_u64()).map(|v| v as u32);
+                        let resp_pid = response_val
+                            .get("pid")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as u32);
 
                         let mut persistent_session_id = None;
                         for k in (0..i).rev() {
@@ -688,7 +713,10 @@ fn handle_interrupt_signal(app: &mut App) {
                                         && call.get("name").and_then(|v| v.as_str()) == Some("sh")
                                     {
                                         if let Some(args) = call.get("args") {
-                                            persistent_session_id = args.get("persistent_session_id").and_then(|v| v.as_str()).map(|s| s.to_owned());
+                                            persistent_session_id = args
+                                                .get("persistent_session_id")
+                                                .and_then(|v| v.as_str())
+                                                .map(|s| s.to_owned());
                                         }
                                         break;
                                     }
@@ -777,7 +805,10 @@ fn handle_interrupt_signal(app: &mut App) {
             && let Some(response_val) = resp.get_mut("response")
             && let Some(obj) = response_val.as_object_mut()
         {
-            obj.insert("error".to_owned(), serde_json::json!("Process terminated by user via Ctrl+C"));
+            obj.insert(
+                "error".to_owned(),
+                serde_json::json!("Process terminated by user via Ctrl+C"),
+            );
             obj.insert("status".to_owned(), serde_json::Value::Null);
         }
     } else if let Some(pid) = target_pid {
@@ -788,13 +819,18 @@ fn handle_interrupt_signal(app: &mut App) {
                         && resp.get("name").and_then(|v| v.as_str()) == Some("sh")
                         && let Some(response_val) = resp.get_mut("response")
                     {
-                        let resp_pid = response_val.get("pid").and_then(|v| v.as_u64()).map(|v| v as u32);
-                        if resp_pid == Some(pid) {
-                            if let Some(obj) = response_val.as_object_mut() {
-                                obj.insert("error".to_owned(), serde_json::json!("Process terminated by user via Ctrl+C"));
+                        let resp_pid = response_val
+                            .get("pid")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as u32);
+                        if resp_pid == Some(pid)
+                            && let Some(obj) = response_val.as_object_mut() {
+                                obj.insert(
+                                    "error".to_owned(),
+                                    serde_json::json!("Process terminated by user via Ctrl+C"),
+                                );
                                 obj.insert("status".to_owned(), serde_json::Value::Null);
                             }
-                        }
                     }
                 }
             }
@@ -810,7 +846,10 @@ fn handle_interrupt_signal(app: &mut App) {
         }
     }
 
-    app.chat.messages = crate::app::session::rebuild_messages_from_history(&app.chat.history, app.chat.config.show_thoughts);
+    app.chat.messages = crate::app::session::rebuild_messages_from_history(
+        &app.chat.history,
+        app.chat.config.show_thoughts,
+    );
     app.save_session();
     app.status = "Aborted by user".to_owned();
 }

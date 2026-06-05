@@ -37,17 +37,11 @@ pub(crate) fn render_permissions(frame: &mut Frame, app: &App) {
         Block::default().style(Style::default().bg(dim_overlay)),
         area,
     );
-    frame.render_widget(
-        Block::default().style(Style::default().bg(modal_bg)),
-        area,
-    );
+    frame.render_widget(Block::default().style(Style::default().bg(modal_bg)), area);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(area);
 
     let main_area = chunks[0];
@@ -68,7 +62,12 @@ pub(crate) fn render_permissions(frame: &mut Frame, app: &App) {
     let selected = app.permissions.selected.min(total.saturating_sub(1));
 
     // Title line: "Select permission level"
-    let title_row = Rect { x: inner.x, y: inner.y, width: inner.width, height: 1 };
+    let title_row = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: 1,
+    };
     frame.render_widget(
         Paragraph::new(Span::styled(
             "Select permission level",
@@ -90,17 +89,26 @@ pub(crate) fn render_permissions(frame: &mut Frame, app: &App) {
         }
 
         let num_style = if is_selected {
-            Style::default().fg(selected_color).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(selected_color)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(dim_text)
         };
         let label_style = if is_selected {
-            Style::default().fg(selected_color).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(selected_color)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)
         };
 
-        let label_row = Rect { x: inner.x, y: label_y, width: inner.width, height: 1 };
+        let label_row = Rect {
+            x: inner.x,
+            y: label_y,
+            width: inner.width,
+            height: 1,
+        };
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled(format!("{}.", idx + 1), num_style),
@@ -112,7 +120,12 @@ pub(crate) fn render_permissions(frame: &mut Frame, app: &App) {
 
         let desc_y = label_y + 1;
         if desc_y < inner.bottom() {
-            let desc_row = Rect { x: inner.x, y: desc_y, width: inner.width, height: 1 };
+            let desc_row = Rect {
+                x: inner.x,
+                y: desc_y,
+                width: inner.width,
+                height: 1,
+            };
             frame.render_widget(
                 Paragraph::new(Line::from(vec![
                     Span::styled("    ", Style::default()),
@@ -126,14 +139,28 @@ pub(crate) fn render_permissions(frame: &mut Frame, app: &App) {
     // Footer
     let footer_y = inner.bottom().saturating_sub(1);
     if footer_y > list_start_y {
-        let footer_row = Rect { x: inner.x, y: footer_y, width: inner.width, height: 1 };
+        let footer_row = Rect {
+            x: inner.x,
+            y: footer_y,
+            width: inner.width,
+            height: 1,
+        };
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled("Up/Down ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Up/Down ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("select  ", Style::default().fg(dim_text)),
-                Span::styled("Enter ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Enter ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("apply  ", Style::default().fg(dim_text)),
-                Span::styled("Esc ", Style::default().fg(modal_fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Esc ",
+                    Style::default().fg(modal_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("cancel", Style::default().fg(dim_text)),
             ])),
             footer_row,

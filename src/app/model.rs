@@ -27,11 +27,7 @@ impl ModelPickerState {
         self.models
             .iter()
             .enumerate()
-            .filter(|(_, m)| {
-                m.trim_start_matches("models/")
-                    .to_lowercase()
-                    .contains(&q)
-            })
+            .filter(|(_, m)| m.trim_start_matches("models/").to_lowercase().contains(&q))
             .map(|(i, _)| i)
             .collect()
     }

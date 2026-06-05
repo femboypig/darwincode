@@ -324,21 +324,24 @@ pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
         let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_owned();
+            let id = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_owned();
             if id.is_empty() {
                 continue;
             }
 
             let meta_path = path.with_extension("meta");
-            if meta_path.exists() {
-                if let Ok(cipher_data) = std::fs::read(&meta_path)
+            if meta_path.exists()
+                && let Ok(cipher_data) = std::fs::read(&meta_path)
                     && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
                     && let Ok(meta) = serde_json::from_slice::<SessionMeta>(&plain_data)
                 {
                     result.push(meta);
                     continue;
                 }
-            }
 
             if let Ok(cipher_data) = std::fs::read(&path)
                 && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
@@ -576,7 +579,10 @@ pub fn rebuild_messages_from_history(
                                 }
                                 output.push_str(stderr);
                             }
-                            if !error_field.is_empty() && error_field != "null" && !is_still_running_err {
+                            if !error_field.is_empty()
+                                && error_field != "null"
+                                && !is_still_running_err
+                            {
                                 if !output.is_empty() {
                                     output.push('\n');
                                 }
@@ -608,7 +614,10 @@ pub fn rebuild_messages_from_history(
                                 success,
                                 persistent_session_id,
                             );
-                            msg.shell_pid = response.get("pid").and_then(|v| v.as_u64()).map(|v| v as u32);
+                            msg.shell_pid = response
+                                .get("pid")
+                                .and_then(|v| v.as_u64())
+                                .map(|v| v as u32);
                             messages.push(msg);
                         } else {
                             let summary = format_tool_summary(name, &args, &response);

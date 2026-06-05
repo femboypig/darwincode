@@ -34,7 +34,9 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         width: popup_area.width.saturating_sub(margin * 2),
         height: popup_area.height.saturating_sub(margin * 2),
     };
-    if content.height == 0 || content.width == 0 { return; }
+    if content.height == 0 || content.width == 0 {
+        return;
+    }
 
     let api_key_display = if app.setup.api_key.is_empty() {
         "not set".to_owned()
@@ -49,11 +51,11 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Title
-            Constraint::Length(1), // Separator
-            Constraint::Min(1),    // Fields
-            Constraint::Length(1), // Separator
-            Constraint::Length(1), // Footer tips
+            Constraint::Length(1),          // Title
+            Constraint::Length(1),          // Separator
+            Constraint::Min(1),             // Fields
+            Constraint::Length(1),          // Separator
+            Constraint::Length(1),          // Footer tips
             Constraint::Length(tip_height), // OpenAI tip
         ])
         .split(content);
@@ -277,7 +279,9 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
                         .fg(Color::Rgb(16, 185, 129))
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(field_color).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(field_color)
+                        .add_modifier(Modifier::BOLD)
                 }
             } else {
                 Style::default()
