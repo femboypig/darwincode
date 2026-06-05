@@ -6,25 +6,17 @@ use ratatui::widgets::{Block, Paragraph};
 
 use crate::app::App;
 use crate::tui::render::chat::centered_rect;
-use crate::tui::render::get_theme;
 
 /// Called from render_chat when Screen::Sessions — renders popup over dimmed chat bg.
 pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
-    let theme = get_theme(app);
-    let modal_bg = match theme {
-        crate::config::Theme::Light => Color::Rgb(240, 240, 240),
-        _ => Color::Rgb(24, 24, 24),
-    };
-    let modal_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(30, 30, 30),
-        _ => Color::Rgb(220, 220, 220),
-    };
-    let dim_text = match theme {
-        crate::config::Theme::Light => Color::Rgb(140, 140, 140),
-        _ => Color::Rgb(110, 110, 110),
-    };
-    let select_bg = Color::Rgb(134, 194, 172);
-    let selected_fg = Color::Rgb(20, 20, 20);
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let modal_bg = active_theme
+        .background_panel
+        .unwrap_or(Color::Rgb(24, 24, 24));
+    let modal_fg = active_theme.text;
+    let dim_text = active_theme.text_muted;
+    let select_bg = active_theme.accent;
+    let selected_fg = active_theme.background.unwrap_or(Color::Rgb(20, 20, 20));
 
     let popup_area = centered_rect(55, 60, area);
     frame.render_widget(ratatui::widgets::Clear, popup_area);
