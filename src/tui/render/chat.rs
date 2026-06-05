@@ -95,7 +95,12 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     let (messages_area, suggestions_area, queue_area, input_area, logo_area, tips_area) =
         if app.chat.messages.is_empty() {
             let active_theme = crate::tui::render::get_active_theme(app);
-            let logo_lines = logo_lines(Style::default().fg(active_theme.primary));
+            let logo_fg = if active_theme.is_light {
+                Color::Black
+            } else {
+                Color::White
+            };
+            let logo_lines = logo_lines(Style::default().fg(logo_fg));
             let logo_fits_flag = logo_fits(&logo_lines, left_pane.width, 5);
 
             let remaining_height = left_pane
@@ -231,11 +236,12 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     if let Some(logo_area) = logo_area {
         let active_theme = crate::tui::render::get_active_theme(app);
-        let logo = logo_lines_for_area(
-            Style::default().fg(active_theme.primary),
-            logo_area.width,
-            5,
-        );
+        let logo_fg = if active_theme.is_light {
+            Color::Black
+        } else {
+            Color::White
+        };
+        let logo = logo_lines_for_area(Style::default().fg(logo_fg), logo_area.width, 5);
         frame.render_widget(Paragraph::new(logo).alignment(Alignment::Center), logo_area);
     }
 
@@ -1646,13 +1652,13 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     false
                 };
 
+                let active_theme = crate::tui::render::get_active_theme(app);
                 let border_color = if is_focused_shell {
                     Color::Rgb(59, 130, 246)
                 } else {
-                    Color::DarkGray
+                    active_theme.border
                 };
 
-                let active_theme = crate::tui::render::get_active_theme(app);
                 let bg_color = active_theme
                     .background_panel
                     .unwrap_or(Color::Rgb(28, 28, 28));
@@ -1760,7 +1766,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                                 .bg(bg_color)
                                 .add_modifier(Modifier::ITALIC)
                         } else {
-                            Style::default().fg(Color::DarkGray).bg(bg_color)
+                            Style::default().fg(active_theme.text_muted).bg(bg_color)
                         };
 
                         let mut body_spans = vec![
@@ -1818,7 +1824,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                         let user_style = Style::default().bg(user_bg).fg(user_fg);
 
                         let border_color = if app.chat.shell_focused {
-                            Color::DarkGray
+                            active_theme.border
                         } else {
                             Color::Rgb(59, 130, 246)
                         };
@@ -2039,18 +2045,19 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(
                     format!(" {}", suggestion.name),
                     Style::default()
-                        .fg(Color::White)
+                        .fg(active_theme.text)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(padding_spaces, Style::default().fg(Color::DarkGray)),
-                Span::styled(suggestion.description, Style::default().fg(Color::DarkGray)),
+                Span::styled(padding_spaces, Style::default().fg(active_theme.text_muted)),
+                Span::styled(
+                    suggestion.description,
+                    Style::default().fg(active_theme.text_muted),
+                ),
             ])
         };
 
         let item_style = if is_active {
-            Style::default()
-                .bg(Color::Rgb(134, 194, 172))
-                .fg(Color::Black)
+            Style::default().bg(active_theme.accent).fg(Color::Black)
         } else {
             Style::default()
         };
