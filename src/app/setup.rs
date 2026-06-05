@@ -74,7 +74,7 @@ impl SetupState {
             enable_bash_tools: config.enable_bash_tools,
             permission_level: config.permission_level,
             show_thoughts: config.show_thoughts,
-            theme: config.theme,
+            theme: config.theme.clone(),
             respect_gitignore: config.respect_gitignore,
             active_field: SetupField::ApiKey,
             models: Vec::new(),
@@ -92,7 +92,7 @@ impl SetupState {
             enable_bash_tools: self.enable_bash_tools,
             show_thoughts: self.show_thoughts,
             permission_level: self.permission_level,
-            theme: self.theme,
+            theme: self.theme.clone(),
             respect_gitignore: self.respect_gitignore,
         };
 
@@ -164,7 +164,7 @@ impl Default for SetupState {
             enable_bash_tools: config.enable_bash_tools,
             permission_level: config.permission_level,
             show_thoughts: config.show_thoughts,
-            theme: config.theme,
+            theme: config.theme.clone(),
             respect_gitignore: config.respect_gitignore,
             active_field: SetupField::ApiKey,
             models: Vec::new(),
