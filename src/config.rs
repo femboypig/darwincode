@@ -28,102 +28,158 @@ pub struct StoredConfig {
     pub respect_gitignore: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum Theme {
     #[default]
     Auto,
     Dark,
     Light,
+    Custom(String),
+}
+
+impl<'de> serde::Deserialize<'de> for Theme {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.to_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "dark" => Ok(Self::Dark),
+            "light" => Ok(Self::Light),
+            _ => Ok(Self::Custom(s)),
+        }
+    }
+}
+
+impl serde::Serialize for Theme {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Auto => serializer.serialize_str("auto"),
+            Self::Dark => serializer.serialize_str("dark"),
+            Self::Light => serializer.serialize_str("light"),
+            Self::Custom(name) => serializer.serialize_str(name),
+        }
+    }
 }
 
 impl Theme {
-    pub fn label(self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
-            Self::Auto => "Auto (System/Term)",
-            Self::Dark => "Dark",
-            Self::Light => "Light",
+            Self::Auto => "Auto (System/Term)".to_string(),
+            Self::Dark => "Dark".to_string(),
+            Self::Light => "Light".to_string(),
+            Self::Custom(name) => format!("Custom ({})", name),
         }
     }
 
-    pub fn next(self) -> Self {
+    pub fn next(&self) -> Self {
         match self {
             Self::Auto => Self::Dark,
             Self::Dark => Self::Light,
             Self::Light => Self::Auto,
+            Self::Custom(_) => Self::Auto,
         }
     }
 }
 
-pub fn resolve_theme(theme: Theme) -> Theme {
+fn resolve_auto_theme() -> Theme {
+    static AUTO_THEME_CACHE: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    AUTO_THEME_CACHE
+        .get_or_init(|| {
+            #[cfg(target_os = "windows")]
+            {
+                if let Ok(output) = std::process::Command::new("reg")
+                    .args(&[
+                        "query",
+                        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                        "/v",
+                        "AppsUseLightTheme",
+                    ])
+                    .output()
+                {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if stdout.contains("0x1") || stdout.contains("1") {
+                        return Theme::Light;
+                    }
+                }
+                Theme::Dark
+            }
+            #[cfg(target_os = "macos")]
+            {
+                if let Ok(output) = std::process::Command::new("defaults")
+                    .args(&["read", "-g", "AppleInterfaceStyle"])
+                    .output()
+                {
+                    let stdout = String::from_utf8_lossy(&output.stdout)
+                        .trim()
+                        .to_lowercase();
+                    if stdout.contains("dark") {
+                        return Theme::Dark;
+                    }
+                }
+                Theme::Light
+            }
+            #[cfg(target_os = "linux")]
+            {
+                // 1. Check COLORFGBG environment variable
+                if let Ok(colorfgbg) = std::env::var("COLORFGBG")
+                    && let Some(bg) = colorfgbg.split(';').next_back()
+                    && let Ok(bg_num) = bg.parse::<i32>()
+                {
+                    let is_light = bg_num == 7 || (9..=15).contains(&bg_num);
+                    if is_light {
+                        return Theme::Light;
+                    } else {
+                        return Theme::Dark;
+                    }
+                }
+                // 2. Check gsettings as a fallback (GNOME/Ubuntu preference)
+                if let Ok(output) = std::process::Command::new("gsettings")
+                    .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+                    .output()
+                {
+                    let stdout = String::from_utf8_lossy(&output.stdout)
+                        .trim()
+                        .to_lowercase();
+                    if stdout.contains("prefer-dark") {
+                        return Theme::Dark;
+                    } else if stdout.contains("prefer-light") {
+                        return Theme::Light;
+                    }
+                }
+                Theme::Dark
+            }
+            #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+            {
+                Theme::Dark
+            }
+        })
+        .clone()
+}
+
+pub fn resolve_theme(theme: &Theme) -> Theme {
     match theme {
         Theme::Dark => Theme::Dark,
         Theme::Light => Theme::Light,
-        Theme::Auto => {
-            static AUTO_THEME_CACHE: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-            *AUTO_THEME_CACHE.get_or_init(|| {
-                #[cfg(target_os = "windows")]
-                {
-                    if let Ok(output) = std::process::Command::new("reg")
-                        .args(&[
-                            "query",
-                            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-                            "/v",
-                            "AppsUseLightTheme",
-                        ])
-                        .output()
-                    {
-                        let stdout = String::from_utf8_lossy(&output.stdout);
-                        if stdout.contains("0x1") || stdout.contains("1") {
-                            return Theme::Light;
-                        }
-                    }
-                    Theme::Dark
-                }
-                #[cfg(target_os = "macos")]
-                {
-                    if let Ok(output) = std::process::Command::new("defaults")
-                        .args(&["read", "-g", "AppleInterfaceStyle"])
-                        .output()
-                    {
-                        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
-                        if stdout.contains("dark") {
-                            return Theme::Dark;
-                        }
-                    }
-                    Theme::Light
-                }
-                #[cfg(target_os = "linux")]
-                {
-                    // 1. Check COLORFGBG environment variable
-                    if let Ok(colorfgbg) = std::env::var("COLORFGBG")
-                        && let Some(bg) = colorfgbg.split(';').next_back()
-                            && let Ok(bg_num) = bg.parse::<i32>() {
-                                let is_light = bg_num == 7 || (9..=15).contains(&bg_num);
-                                if is_light {
-                                    return Theme::Light;
-                                } else {
-                                    return Theme::Dark;
-                                }
-                            }
-                    // 2. Check gsettings as a fallback (GNOME/Ubuntu preference)
-                    if let Ok(output) = std::process::Command::new("gsettings")
-                        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
-                        .output()
-                    {
-                        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
-                        if stdout.contains("prefer-dark") {
-                            return Theme::Dark;
-                        } else if stdout.contains("prefer-light") {
-                            return Theme::Light;
-                        }
-                    }
-                    Theme::Dark
-                }
-                #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-                {
-                    Theme::Dark
-                }
-            })
+        Theme::Custom(name) => Theme::Custom(name.clone()),
+        Theme::Auto => resolve_auto_theme(),
+    }
+}
+
+pub fn resolve_theme_mode(theme: &Theme) -> crate::tui::theme::ThemeMode {
+    match theme {
+        Theme::Dark => crate::tui::theme::ThemeMode::Dark,
+        Theme::Light => crate::tui::theme::ThemeMode::Light,
+        Theme::Custom(_) | Theme::Auto => {
+            if resolve_auto_theme() == Theme::Light {
+                crate::tui::theme::ThemeMode::Light
+            } else {
+                crate::tui::theme::ThemeMode::Dark
+            }
         }
     }
 }
@@ -348,8 +404,8 @@ mod tests {
 
     #[test]
     fn test_resolve_explicit_themes() {
-        assert_eq!(resolve_theme(Theme::Dark), Theme::Dark);
-        assert_eq!(resolve_theme(Theme::Light), Theme::Light);
+        assert_eq!(resolve_theme(&Theme::Dark), Theme::Dark);
+        assert_eq!(resolve_theme(&Theme::Light), Theme::Light);
     }
 
     #[test]
