@@ -491,6 +491,9 @@ pub fn custom_themes() -> &'static HashMap<String, ThemeConfig> {
         let builtins = vec![
             ("tokyonight", include_str!("themes/tokyonight.json")),
             ("nord", include_str!("themes/nord.json")),
+            ("gruvbox", include_str!("themes/gruvbox.json")),
+            ("ayu", include_str!("themes/ayu.json")),
+            ("everforest", include_str!("themes/everforest.json")),
         ];
 
         for (name, content) in builtins {
