@@ -377,7 +377,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     };
 
     let active_theme = crate::tui::render::get_active_theme(app);
-    let bg_color = active_theme.background_element.unwrap_or_else(|| {
+    let bg_color = active_theme.background_element.unwrap_or({
         if active_theme.is_light {
             Color::Rgb(240, 240, 240)
         } else {
@@ -638,7 +638,7 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
         return;
     };
     let active_theme = crate::tui::render::get_active_theme(app);
-    let modal_bg = active_theme.background_panel.unwrap_or_else(|| {
+    let modal_bg = active_theme.background_panel.unwrap_or({
         if active_theme.is_light {
             Color::Rgb(240, 240, 240)
         } else {
@@ -1193,7 +1193,7 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
     let active_theme = crate::tui::render::get_active_theme(app);
-    let modal_bg = active_theme.background_panel.unwrap_or_else(|| {
+    let modal_bg = active_theme.background_panel.unwrap_or({
         if active_theme.is_light {
             Color::Rgb(240, 240, 240)
         } else {
@@ -1387,7 +1387,7 @@ fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_theme_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
     let active_theme = crate::tui::render::get_active_theme(app);
-    let modal_bg = active_theme.background_panel.unwrap_or_else(|| {
+    let modal_bg = active_theme.background_panel.unwrap_or({
         if active_theme.is_light {
             Color::Rgb(240, 240, 240)
         } else {
@@ -1675,7 +1675,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     active_theme.border
                 };
 
-                let bg_color = active_theme.background_panel.unwrap_or_else(|| {
+                let bg_color = active_theme.background_panel.unwrap_or({
                     if active_theme.is_light {
                         Color::Rgb(240, 240, 240)
                     } else {
@@ -1837,7 +1837,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                         }
 
                         let active_theme = crate::tui::render::get_active_theme(app);
-                        let user_bg = active_theme.background_panel.unwrap_or_else(|| {
+                        let user_bg = active_theme.background_panel.unwrap_or({
                             if active_theme.is_light {
                                 Color::Rgb(240, 240, 240)
                             } else {
