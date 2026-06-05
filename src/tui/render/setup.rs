@@ -67,7 +67,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(Line::from(Span::styled(
             format!("{} DarwinCode Assistant Settings", icons::SETTINGS_MODE),
             Style::default()
-                .fg(Color::Rgb(59, 130, 246))
+                .fg(active_theme.primary)
                 .add_modifier(Modifier::BOLD),
         ))),
         title_area,
@@ -218,7 +218,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         };
         let marker_style = if is_active {
             Style::default()
-                .fg(Color::Rgb(59, 130, 246))
+                .fg(active_theme.primary)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(dim_text)
@@ -229,7 +229,9 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         );
 
         let label_style = if is_active {
-            Style::default().add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(active_theme.text)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(dim_text)
         };
@@ -246,12 +248,12 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         if is_save {
             let save_style = if is_active {
                 Style::default()
-                    .bg(Color::Rgb(59, 130, 246))
-                    .fg(Color::White)
+                    .bg(active_theme.primary)
+                    .fg(active_theme.background_panel.unwrap_or(Color::Black))
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
-                    .fg(Color::Rgb(59, 130, 246))
+                    .fg(active_theme.primary)
                     .add_modifier(Modifier::BOLD)
             };
             let save_text = if is_active {
@@ -269,7 +271,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
             let value_style = if is_active {
                 if is_editing {
                     Style::default()
-                        .fg(Color::Rgb(16, 185, 129))
+                        .fg(active_theme.success)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
@@ -277,7 +279,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
                         .add_modifier(Modifier::BOLD)
                 }
             } else {
-                Style::default()
+                Style::default().fg(active_theme.text)
             };
             frame.render_widget(
                 Paragraph::new(Span::styled(value.clone(), value_style)),
@@ -319,14 +321,20 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
                     .fg(Color::Rgb(245, 158, 11))
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("OpenAI key detected. Press ", Style::default()),
+            Span::styled(
+                "OpenAI key detected. Press ",
+                Style::default().fg(active_theme.text),
+            ),
             Span::styled(
                 "Ctrl+A",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(active_theme.success)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" to auto-apply OmniRoute defaults.", Style::default()),
+            Span::styled(
+                " to auto-apply OmniRoute defaults.",
+                Style::default().fg(active_theme.text),
+            ),
         ]))
         .alignment(Alignment::Center);
         frame.render_widget(tip_paragraph, chunks[5]);
