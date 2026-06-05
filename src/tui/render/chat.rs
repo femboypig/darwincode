@@ -377,11 +377,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     frame.render_widget(bg_block, text_block_area);
 
     // Inside the text block, padding is 1.
-    let inner_x = if app.screen == crate::app::Screen::AskUser {
-        text_block_area.x.saturating_add(3) // left margin slightly larger
-    } else {
-        text_block_area.x.saturating_add(3) // shift prompt text and mode indicator to the right
-    };
+    let inner_x = text_block_area.x.saturating_add(3);
     let inner_y = if app.screen == crate::app::Screen::AskUser {
         text_block_area.y
     } else {
@@ -1115,8 +1111,7 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
     let footer_y = inner.bottom().saturating_sub(2);
 
     let mut row_y = inner.y + 2; // title(1) + blank(1)
-    for idx in 0..total {
-        let (label, desc, _) = options[idx];
+    for (idx, &(label, desc, _)) in options.iter().enumerate().take(total) {
         let is_selected = idx == selected;
 
         let num_style = if is_selected {
@@ -1318,9 +1313,7 @@ fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
     let viewport = list_area.height as usize;
     let total = filtered.len();
     let selected = app.models.selected.min(total.saturating_sub(1));
-    let start = if total <= viewport {
-        0
-    } else if selected < viewport / 2 {
+    let start = if total <= viewport || selected < viewport / 2 {
         0
     } else if selected >= total - viewport / 2 {
         total - viewport
@@ -1843,9 +1836,7 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
     let window_size = 10;
     let selected_idx = app.chat.suggestion_idx.min(total_len.saturating_sub(1));
 
-    let start_idx = if total_len <= window_size {
-        0
-    } else if selected_idx < window_size / 2 {
+    let start_idx = if total_len <= window_size || selected_idx < window_size / 2 {
         0
     } else if selected_idx >= total_len - window_size / 2 {
         total_len - window_size
