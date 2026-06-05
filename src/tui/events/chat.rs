@@ -643,12 +643,11 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
         KeyCode::Backspace => {
             app.models.pop_query();
         }
-        KeyCode::Char(c) => {
+        KeyCode::Char(c)
             if !key.modifiers.contains(KeyModifiers::CONTROL)
-                && !key.modifiers.contains(KeyModifiers::ALT)
-            {
-                app.models.push_query(c);
-            }
+                && !key.modifiers.contains(KeyModifiers::ALT) =>
+        {
+            app.models.push_query(c);
         }
         _ => {}
     }
