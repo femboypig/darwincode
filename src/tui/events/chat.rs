@@ -38,6 +38,18 @@ pub(crate) fn handle_chat_key(
                     handle_function_action(action, sender);
                 }
             }
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.confirm_scroll.set(app.confirm_scroll.get().saturating_add(1));
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.confirm_scroll.set(app.confirm_scroll.get().saturating_sub(1));
+            }
+            KeyCode::PageDown => {
+                app.confirm_scroll.set(app.confirm_scroll.get().saturating_add(10));
+            }
+            KeyCode::PageUp => {
+                app.confirm_scroll.set(app.confirm_scroll.get().saturating_sub(10));
+            }
             _ => {
                 if app
                     .keybindings
@@ -46,30 +58,14 @@ pub(crate) fn handle_chat_key(
                     if let Some(action) = app.answer_function_confirmation(false) {
                         handle_function_action(action, sender);
                     }
-                } else if app
-                    .keybindings
-                    .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
-                {
-                    app.confirm_scroll = app.confirm_scroll.saturating_sub(1);
-                } else if app
-                    .keybindings
-                    .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
-                {
-                    app.confirm_scroll = app.confirm_scroll.saturating_add(1);
-                } else if app
-                    .keybindings
-                    .matches(crate::tui::keybindings::TuiAction::PageUp, key)
-                {
-                    app.confirm_scroll = app.confirm_scroll.saturating_sub(10);
-                } else if app
-                    .keybindings
-                    .matches(crate::tui::keybindings::TuiAction::PageDown, key)
-                {
-                    app.confirm_scroll = app.confirm_scroll.saturating_add(10);
                 }
             }
         }
         return Ok(());
+    }
+
+    if app.model_picker_open {
+        return handle_model_picker_key(app, key);
     }
 
     if app.chat.shell_focused {
@@ -83,41 +79,7 @@ pub(crate) fn handle_chat_key(
             .matches(crate::tui::keybindings::TuiAction::Cancel, key);
 
         if is_ctrl_c || is_esc {
-            let mut pid = None;
-            if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
-                pid = guard.take();
-            }
-            if let Some(pid) = pid {
-                #[cfg(unix)]
-                {
-                    let _ = std::process::Command::new("kill")
-                        .arg("-9")
-                        .arg(format!("-{}", pid))
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status();
-                }
-                #[cfg(not(unix))]
-                {
-                    let _ = std::process::Command::new("taskkill")
-                        .arg("/F")
-                        .arg("/PID")
-                        .arg(pid.to_string())
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status();
-                }
-            }
-            app.cancel_generation();
-            app.chat.shell_focused = false;
-            app.chat.focused_shell_session_id = None;
-            app.chat.focused_shell_pid = None;
-            for m in &mut app.chat.messages {
-                if m.is_shell {
-                    *m.cached_wrapped.borrow_mut() = None;
-                }
-            }
-            app.status = "Aborted by user".to_owned();
+            handle_interrupt_signal(app);
             return Ok(());
         }
 
@@ -294,40 +256,42 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
-        if app.pending.is_some() || app.chat.focused_shell_pid.is_some() {
-            let mut pid = None;
-            if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
-                pid = guard.take();
-            }
-            if pid.is_none() {
-                pid = app.chat.focused_shell_pid;
-            }
-            if let Some(pid) = pid {
-                #[cfg(unix)]
-                {
-                    let _ = std::process::Command::new("kill")
-                        .arg("-9")
-                        .arg(format!("-{}", pid))
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status();
-                }
-                #[cfg(not(unix))]
-                {
-                    let _ = std::process::Command::new("taskkill")
-                        .arg("/F")
-                        .arg("/PID")
-                        .arg(pid.to_string())
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status();
+        let is_running_process = crate::tui::RUNNING_PROCESS_PID.lock().ok().and_then(|g| *g).is_some();
+        let is_active_persistent = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock().ok().and_then(|g| g.clone()).is_some();
+
+        let mut has_running_command_in_history = false;
+        for msg in &app.chat.history {
+            if msg.role == "function" {
+                for part in &msg.parts {
+                    if let Some(resp) = part.get("functionResponse")
+                        && resp.get("name").and_then(|v| v.as_str()) == Some("sh")
+                        && let Some(response_val) = resp.get("response")
+                    {
+                        let status = response_val.get("status");
+                        let error_val = response_val.get("error").and_then(|v| v.as_str()).unwrap_or("");
+                        let is_aborted = error_val.contains("terminated by user") || error_val.contains("Ctrl+C");
+
+                        let is_running = status.and_then(|s| s.as_str()) == Some("running")
+                            || error_val == "Command timed out / is still running"
+                            || (status.is_none() && !is_aborted && response_val.get("exit_code").is_none());
+
+                        if is_running {
+                            has_running_command_in_history = true;
+                            break;
+                        }
+                    }
                 }
             }
-            app.cancel_generation();
-            app.chat.shell_focused = false;
-            app.chat.focused_shell_session_id = None;
-            app.chat.focused_shell_pid = None;
-            app.status = "Aborted by user".to_owned();
+        }
+
+        if app.pending.is_some()
+            || app.chat.focused_shell_pid.is_some()
+            || is_running_process
+            || is_active_persistent
+            || app.cancel_token.is_some()
+            || has_running_command_in_history
+        {
+            handle_interrupt_signal(app);
             return Ok(());
         } else {
             app.should_quit = true;
@@ -339,39 +303,7 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
-        let mut pid = None;
-        if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
-            pid = guard.take();
-        }
-        if pid.is_none() {
-            pid = app.chat.focused_shell_pid;
-        }
-        if let Some(pid) = pid {
-            #[cfg(unix)]
-            {
-                let _ = std::process::Command::new("kill")
-                    .arg("-9")
-                    .arg(format!("-{}", pid))
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-            }
-            #[cfg(not(unix))]
-            {
-                let _ = std::process::Command::new("taskkill")
-                    .arg("/F")
-                    .arg("/PID")
-                    .arg(pid.to_string())
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-            }
-        }
-        app.cancel_generation();
-        app.chat.shell_focused = false;
-        app.chat.focused_shell_session_id = None;
-        app.chat.focused_shell_pid = None;
-        app.status = "Stopped".to_owned();
+        handle_interrupt_signal(app);
         return Ok(());
     }
 
@@ -413,6 +345,7 @@ pub(crate) fn handle_chat_key(
                         request.history,
                         request.cancel_token,
                         request.generation_id,
+                        request.dev_mode,
                         sender.clone(),
                     );
                 }
@@ -434,6 +367,16 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
     {
+        let suggestions = app.command_suggestions();
+        if !suggestions.is_empty() {
+            app.chat.suggestion_idx = if app.chat.suggestion_idx == 0 {
+                suggestions.len().saturating_sub(1)
+            } else {
+                app.chat.suggestion_idx - 1
+            };
+            return Ok(());
+        }
+
         if app.chat.input.contains('\n') {
             let old_cursor = app.chat.cursor;
             app.chat.move_cursor_up();
@@ -450,6 +393,12 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
     {
+        let suggestions = app.command_suggestions();
+        if !suggestions.is_empty() {
+            app.chat.suggestion_idx = (app.chat.suggestion_idx + 1) % suggestions.len();
+            return Ok(());
+        }
+
         if app.chat.input.contains('\n') {
             let old_cursor = app.chat.cursor;
             app.chat.move_cursor_down();
@@ -522,6 +471,9 @@ pub(crate) fn handle_chat_key(
         }
         (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
             app.chat.redo();
+        }
+        (KeyCode::Tab, KeyModifiers::CONTROL) | (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
+            app.toggle_dev_mode();
         }
         (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
             let text = app.chat.input.clone();
@@ -624,4 +576,241 @@ pub(crate) fn handle_chat_key(
     }
 
     Ok(())
+}
+
+fn handle_model_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::Cancel, key)
+    {
+        app.cancel_models();
+        return Ok(());
+    }
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::ToggleModels, key)
+    {
+        app.cancel_models();
+        return Ok(());
+    }
+
+    match key.code {
+        KeyCode::Esc => {
+            app.cancel_models();
+        }
+        KeyCode::Enter => {
+            app.apply_selected_model();
+        }
+        KeyCode::Up => {
+            app.select_previous_model();
+        }
+        KeyCode::Down => {
+            app.select_next_model();
+        }
+        KeyCode::PageUp => {
+            let len = app.models.filtered_indices().len();
+            for _ in 0..5 {
+                if len > 0 {
+                    app.models.selected = app.models.selected.checked_sub(1).unwrap_or(len - 1);
+                }
+            }
+        }
+        KeyCode::PageDown => {
+            let len = app.models.filtered_indices().len();
+            for _ in 0..5 {
+                if len > 0 {
+                    app.models.selected = (app.models.selected + 1) % len;
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            app.models.pop_query();
+        }
+        KeyCode::Char(c) => {
+            if !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT)
+            {
+                app.models.push_query(c);
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_interrupt_signal(app: &mut App) {
+    app.cancel_generation();
+
+    let mut target_pid = None;
+    let mut target_session_id = None;
+
+    if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+        target_pid = guard.take();
+    }
+    if target_pid.is_none() {
+        target_pid = app.chat.focused_shell_pid;
+    }
+
+    if let Some(ref session_id) = app.chat.focused_shell_session_id {
+        target_session_id = Some(session_id.clone());
+    } else if let Ok(guard) = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock()
+        && let Some(ref session_id) = guard.as_ref()
+    {
+        target_session_id = Some((*session_id).clone());
+    }
+
+    let mut history_target = None;
+    for i in (0..app.chat.history.len()).rev() {
+        if app.chat.history[i].role == "function" {
+            let mut found = false;
+            for j in 0..app.chat.history[i].parts.len() {
+                let part = &app.chat.history[i].parts[j];
+                if let Some(resp) = part.get("functionResponse")
+                    && resp.get("name").and_then(|v| v.as_str()) == Some("sh")
+                    && let Some(response_val) = resp.get("response")
+                {
+                    let status = response_val.get("status");
+                    let error_val = response_val.get("error").and_then(|v| v.as_str()).unwrap_or("");
+                    let is_aborted = error_val.contains("terminated by user") || error_val.contains("Ctrl+C");
+
+                    let is_running = status.and_then(|s| s.as_str()) == Some("running")
+                        || error_val == "Command timed out / is still running"
+                        || (status.is_none() && !is_aborted && response_val.get("exit_code").is_none());
+
+                    if is_running {
+                        let resp_pid = response_val.get("pid").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+                        let mut persistent_session_id = None;
+                        for k in (0..i).rev() {
+                            if app.chat.history[k].role == "model" {
+                                for call_part in &app.chat.history[k].parts {
+                                    if let Some(call) = call_part.get("functionCall")
+                                        && call.get("name").and_then(|v| v.as_str()) == Some("sh")
+                                    {
+                                        if let Some(args) = call.get("args") {
+                                            persistent_session_id = args.get("persistent_session_id").and_then(|v| v.as_str()).map(|s| s.to_owned());
+                                        }
+                                        break;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+
+                        history_target = Some((i, j, persistent_session_id, resp_pid));
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if found {
+                break;
+            }
+        }
+    }
+
+    if let Some((_, _, ref p_sess_id, resp_pid)) = history_target {
+        if target_session_id.is_none() && p_sess_id.is_some() {
+            target_session_id = p_sess_id.clone();
+        }
+        if target_pid.is_none() && resp_pid.is_some() {
+            target_pid = resp_pid;
+        }
+    }
+
+    let mut killed = false;
+
+    if let Some(ref session_id) = target_session_id {
+        let registry = crate::tui::PERSISTENT_SESSIONS.get();
+        if let Some(registry_mutex) = registry
+            && let Ok(map) = registry_mutex.lock()
+            && let Some(session) = map.get(session_id)
+        {
+            let p_pid = session.pid;
+            #[cfg(unix)]
+            {
+                let _ = std::process::Command::new("kill")
+                    .arg("-2")
+                    .arg(format!("-{}", p_pid))
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .arg("/F")
+                    .arg("/PID")
+                    .arg(p_pid.to_string())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+            }
+            killed = true;
+        }
+    }
+
+    if !killed && let Some(pid) = target_pid {
+        #[cfg(unix)]
+        {
+            let _ = std::process::Command::new("kill")
+                .arg("-9")
+                .arg(format!("-{}", pid))
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .arg("/F")
+                .arg("/PID")
+                .arg(pid.to_string())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    }
+
+    if let Some((i, j, _, _)) = history_target {
+        if let Some(resp) = app.chat.history[i].parts[j].get_mut("functionResponse")
+            && let Some(response_val) = resp.get_mut("response")
+            && let Some(obj) = response_val.as_object_mut()
+        {
+            obj.insert("error".to_owned(), serde_json::json!("Process terminated by user via Ctrl+C"));
+            obj.insert("status".to_owned(), serde_json::Value::Null);
+        }
+    } else if let Some(pid) = target_pid {
+        for msg in &mut app.chat.history {
+            if msg.role == "function" {
+                for part in &mut msg.parts {
+                    if let Some(resp) = part.get_mut("functionResponse")
+                        && resp.get("name").and_then(|v| v.as_str()) == Some("sh")
+                        && let Some(response_val) = resp.get_mut("response")
+                    {
+                        let resp_pid = response_val.get("pid").and_then(|v| v.as_u64()).map(|v| v as u32);
+                        if resp_pid == Some(pid) {
+                            if let Some(obj) = response_val.as_object_mut() {
+                                obj.insert("error".to_owned(), serde_json::json!("Process terminated by user via Ctrl+C"));
+                                obj.insert("status".to_owned(), serde_json::Value::Null);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    app.chat.shell_focused = false;
+    app.chat.focused_shell_session_id = None;
+    app.chat.focused_shell_pid = None;
+    for m in &mut app.chat.messages {
+        if m.is_shell {
+            *m.cached_wrapped.borrow_mut() = None;
+        }
+    }
+
+    app.chat.messages = crate::app::session::rebuild_messages_from_history(&app.chat.history, app.chat.config.show_thoughts);
+    app.save_session();
+    app.status = "Aborted by user".to_owned();
 }
