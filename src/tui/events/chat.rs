@@ -71,6 +71,10 @@ pub(crate) fn handle_chat_key(
         return handle_model_picker_key(app, key);
     }
 
+    if app.theme_picker_open {
+        return handle_theme_picker_key(app, key);
+    }
+
     if app.chat.shell_focused {
         let is_ctrl_c = (key.code == KeyCode::Char('c')
             && key.modifiers.contains(KeyModifiers::CONTROL))
@@ -648,6 +652,59 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
                 && !key.modifiers.contains(KeyModifiers::ALT) =>
         {
             app.models.push_query(c);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_theme_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::Cancel, key)
+    {
+        app.cancel_themes();
+        return Ok(());
+    }
+
+    match key.code {
+        KeyCode::Esc => {
+            app.cancel_themes();
+        }
+        KeyCode::Enter => {
+            app.apply_selected_theme();
+        }
+        KeyCode::Up => {
+            app.select_previous_theme();
+        }
+        KeyCode::Down => {
+            app.select_next_theme();
+        }
+        KeyCode::PageUp => {
+            let len = app.theme_picker.filtered_indices().len();
+            for _ in 0..5 {
+                if len > 0 {
+                    app.theme_picker.selected =
+                        app.theme_picker.selected.checked_sub(1).unwrap_or(len - 1);
+                }
+            }
+        }
+        KeyCode::PageDown => {
+            let len = app.theme_picker.filtered_indices().len();
+            for _ in 0..5 {
+                if len > 0 {
+                    app.theme_picker.selected = (app.theme_picker.selected + 1) % len;
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            app.theme_picker.pop_query();
+        }
+        KeyCode::Char(c)
+            if !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT) =>
+        {
+            app.theme_picker.push_query(c);
         }
         _ => {}
     }
