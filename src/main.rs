@@ -106,10 +106,6 @@ fn main() -> Result<()> {
 
     let mut app = App::new(config);
 
-    if let Ok(sessions) = crate::app::session::list_saved_sessions() {
-        *app.sessions_cache.borrow_mut() = Some(sessions);
-    }
-
     if let Some(ref session_id) = session_override {
         if let Err(e) = app.resume_session(session_id) {
             app.status = format!(
