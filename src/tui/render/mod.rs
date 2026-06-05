@@ -13,16 +13,28 @@ use ratatui::widgets::{Block, Paragraph};
 use crate::app::{App, Screen};
 
 pub(crate) fn get_theme(app: &App) -> crate::config::Theme {
-    let raw_theme = if app.screen == Screen::Setup {
-        &app.setup.theme
+    if app.theme_picker_open
+        && let Some(theme) = app.theme_picker.selected_theme()
+    {
+        crate::config::resolve_theme(&theme)
     } else {
-        &app.chat.config.theme
-    };
-    crate::config::resolve_theme(raw_theme)
+        let raw_theme = if app.screen == Screen::Setup {
+            &app.setup.theme
+        } else {
+            &app.chat.config.theme
+        };
+        crate::config::resolve_theme(raw_theme)
+    }
 }
 
 pub(crate) fn get_active_theme(app: &App) -> crate::tui::theme::ActiveTheme {
-    let raw_theme = if app.screen == Screen::Setup {
+    let temp_theme;
+    let raw_theme = if app.theme_picker_open
+        && let Some(theme) = app.theme_picker.selected_theme()
+    {
+        temp_theme = theme;
+        &temp_theme
+    } else if app.screen == Screen::Setup {
         &app.setup.theme
     } else {
         &app.chat.config.theme
