@@ -3,12 +3,14 @@ pub mod model;
 pub mod permission;
 pub mod session;
 pub mod setup;
+pub mod theme_picker;
 
 pub use chat::{ChatCommand, ChatState, CommandSuggestion, MessageLine};
 pub use model::ModelPickerState;
 pub use permission::PermissionPickerState;
 pub use session::SessionPickerState;
 pub use setup::{SetupField, SetupState};
+pub use theme_picker::ThemePickerState;
 
 use crate::api::{ChatMessage, GeminiResponse};
 use crate::config::{PermissionLevel, StoredConfig};
@@ -109,6 +111,8 @@ pub struct App {
         std::sync::Arc<std::sync::Mutex<Option<Vec<crate::app::session::SessionMeta>>>>,
     pub dev_mode: DevelopMode,
     pub model_picker_open: bool,
+    pub theme_picker: ThemePickerState,
+    pub theme_picker_open: bool,
 }
 
 impl App {
@@ -125,33 +129,38 @@ impl App {
         });
 
         match config {
-            Some(config) => Self {
-                screen: Screen::Chat,
-                setup: SetupState::default(),
-                chat: ChatState::new(config),
-                models: ModelPickerState::default(),
-                permissions: PermissionPickerState::default(),
-                sessions: SessionPickerState::default(),
-                status: "Ready".to_owned(),
-                pending: None,
-                tick: 0,
-                should_quit: false,
-                keybindings,
-                cancel_token: None,
-                last_file_backups: Vec::new(),
-                generation_id: 0,
-                confirm_scroll: std::cell::Cell::new(0),
-                ask_user: AskUserState {
-                    question: String::new(),
-                    options: Vec::new(),
-                    selected_idx: 0,
-                    custom_input: String::new(),
-                    is_custom: false,
-                },
-                sessions_cache: sessions_cache.clone(),
-                dev_mode: DevelopMode::Build,
-                model_picker_open: false,
-            },
+            Some(config) => {
+                let theme_picker = ThemePickerState::new(&config.theme);
+                Self {
+                    screen: Screen::Chat,
+                    setup: SetupState::default(),
+                    chat: ChatState::new(config),
+                    models: ModelPickerState::default(),
+                    permissions: PermissionPickerState::default(),
+                    sessions: SessionPickerState::default(),
+                    status: "Ready".to_owned(),
+                    pending: None,
+                    tick: 0,
+                    should_quit: false,
+                    keybindings,
+                    cancel_token: None,
+                    last_file_backups: Vec::new(),
+                    generation_id: 0,
+                    confirm_scroll: std::cell::Cell::new(0),
+                    ask_user: AskUserState {
+                        question: String::new(),
+                        options: Vec::new(),
+                        selected_idx: 0,
+                        custom_input: String::new(),
+                        is_custom: false,
+                    },
+                    sessions_cache: sessions_cache.clone(),
+                    dev_mode: DevelopMode::Build,
+                    model_picker_open: false,
+                    theme_picker,
+                    theme_picker_open: false,
+                }
+            }
             None => Self {
                 screen: Screen::Setup,
                 setup: SetupState::default(),
@@ -179,6 +188,8 @@ impl App {
                 sessions_cache,
                 dev_mode: DevelopMode::Build,
                 model_picker_open: false,
+                theme_picker: ThemePickerState::new(&crate::config::Theme::Auto),
+                theme_picker_open: false,
             },
         }
     }
@@ -860,6 +871,11 @@ impl App {
                 None
             }
             ChatCommand::Models => self.begin_load_chat_models().map(SubmitAction::LoadModels),
+            ChatCommand::Theme => {
+                self.theme_picker = ThemePickerState::new(&self.chat.config.theme);
+                self.theme_picker_open = true;
+                None
+            }
             ChatCommand::Permissions(level) => {
                 if let Some(level) = level {
                     self.chat.config.permission_level = level;
@@ -1348,6 +1364,39 @@ impl App {
                 self.status = format!("Model set to {}", self.chat.config.model);
                 self.model_picker_open = false;
                 self.models.clear_query();
+            }
+            Err(error) => {
+                self.status = error.to_string();
+            }
+        }
+    }
+
+    pub fn cancel_themes(&mut self) {
+        self.theme_picker_open = false;
+        self.theme_picker.clear_query();
+        self.status = "Ready".to_owned();
+    }
+
+    pub fn select_next_theme(&mut self) {
+        self.theme_picker.select_next();
+    }
+
+    pub fn select_previous_theme(&mut self) {
+        self.theme_picker.select_previous();
+    }
+
+    pub fn apply_selected_theme(&mut self) {
+        let Some(theme) = self.theme_picker.selected_theme() else {
+            self.status = "No theme selected".to_owned();
+            return;
+        };
+
+        self.chat.config.theme = theme;
+        match self.chat.config.save() {
+            Ok(()) => {
+                self.status = format!("Theme set to {}", self.chat.config.theme.label());
+                self.theme_picker_open = false;
+                self.theme_picker.clear_query();
             }
             Err(error) => {
                 self.status = error.to_string();
