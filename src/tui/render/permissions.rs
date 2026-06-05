@@ -5,32 +5,19 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use crate::app::App;
-use crate::tui::render::{get_theme, render_statusbar};
+use crate::tui::render::render_statusbar;
 
 #[allow(dead_code)]
 pub(crate) fn render_permissions(frame: &mut Frame, app: &App) {
     let area = frame.area();
-    let theme = get_theme(app);
-    let modal_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(30, 30, 30),
-        _ => Color::Rgb(220, 220, 220),
-    };
-    let dim_text = match theme {
-        crate::config::Theme::Light => Color::Rgb(140, 140, 140),
-        _ => Color::Rgb(110, 110, 110),
-    };
-    let selected_color = match theme {
-        crate::config::Theme::Light => Color::Rgb(190, 60, 100),
-        _ => Color::Rgb(236, 72, 153),
-    };
-    let dim_overlay = match theme {
-        crate::config::Theme::Light => Color::Rgb(200, 200, 205),
-        _ => Color::Rgb(10, 10, 13),
-    };
-    let modal_bg = match theme {
-        crate::config::Theme::Light => Color::Rgb(240, 240, 240),
-        _ => Color::Rgb(20, 20, 23),
-    };
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let modal_fg = active_theme.text;
+    let dim_text = active_theme.text_muted;
+    let selected_color = active_theme.accent;
+    let dim_overlay = active_theme.background.unwrap_or(Color::Rgb(10, 10, 13));
+    let modal_bg = active_theme
+        .background_panel
+        .unwrap_or(Color::Rgb(20, 20, 23));
 
     // Dim overlay then content (same pattern as ask)
     frame.render_widget(
