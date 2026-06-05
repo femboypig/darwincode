@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/femboypig/darwincode/main/theme.json",
+  "defs": {
+    "bg": "#1a1b26",
+    "panel_bg": "#16161e",
+    "fg": "#c0caf5",
+    "fg_muted": "#565f89",
+    "red": "#f7768e",
+    "orange": "#ff9e64",
+    "yellow": "#e0af68",
+    "green": "#9ece6a",
+    "teal": "#73daca",
+    "blue": "#7aa2f7",
+    "magenta": "#bb9af7",
+    "border": "#3b4261"
+  },
+  "theme": {
+    "primary": "blue",
+    "secondary": "fg_muted",
+    "accent": "teal",
+    "error": "red",
+    "warning": "orange",
+    "success": "green",
+    "info": "teal",
+    "text": "fg",
+    "textMuted": "fg_muted",
+    "background": "bg",
+    "backgroundPanel": "panel_bg",
+    "backgroundElement": "panel_bg",
+    "border": "border",
+    "borderActive": "blue",
+    "borderSubtle": "border"
+  }
+}

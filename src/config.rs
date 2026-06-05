@@ -72,7 +72,7 @@ impl Theme {
             Self::Auto => "Auto (System/Term)".to_string(),
             Self::Dark => "Dark".to_string(),
             Self::Light => "Light".to_string(),
-            Self::Custom(name) => format!("Custom ({})", name),
+            Self::Custom(name) => name.clone(),
         }
     }
 

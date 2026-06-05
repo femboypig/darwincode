@@ -544,6 +544,75 @@ impl ThemeConfig {
     }
 }
 
+pub fn init_project_dir() {
+    if let Some(proj_root) = find_project_root() {
+        let dc_dir = proj_root.join(".darwincode");
+        let themes_dir = dc_dir.join("themes");
+
+        let _ = std::fs::create_dir_all(&themes_dir);
+
+        // Create README.md if it does not exist
+        let readme_path = dc_dir.join("README.md");
+        if !readme_path.exists() {
+            let readme_content = r##"# Darwincode Project Configuration
+
+This directory contains configuration files for `darwincode` that are specific to this project repository.
+
+## Custom Themes
+You can add custom theme JSON files under the `themes/` directory.
+For example, a theme file named `themes/my_cool_theme.json` will be discovered automatically and can be activated by running `/theme` or setting `"theme": "Custom(my_cool_theme)"` in your config.
+
+To get started, check out the template theme at `themes/custom_template.json`.
+
+All theme config structures must conform to the schema:
+https://raw.githubusercontent.com/femboypig/darwincode/main/theme.json
+"##;
+            let _ = std::fs::write(&readme_path, readme_content);
+        }
+
+        // Create custom_template.json if it does not exist
+        let template_path = themes_dir.join("custom_template.json");
+        if !template_path.exists() {
+            let template_content = r##"{
+  "$schema": "https://raw.githubusercontent.com/femboypig/darwincode/main/theme.json",
+  "defs": {
+    "bg": "#1a1b26",
+    "panel_bg": "#16161e",
+    "fg": "#c0caf5",
+    "fg_muted": "#565f89",
+    "red": "#f7768e",
+    "orange": "#ff9e64",
+    "yellow": "#e0af68",
+    "green": "#9ece6a",
+    "teal": "#73daca",
+    "blue": "#7aa2f7",
+    "magenta": "#bb9af7",
+    "border": "#3b4261"
+  },
+  "theme": {
+    "primary": "blue",
+    "secondary": "fg_muted",
+    "accent": "teal",
+    "error": "red",
+    "warning": "orange",
+    "success": "green",
+    "info": "teal",
+    "text": "fg",
+    "textMuted": "fg_muted",
+    "background": "bg",
+    "backgroundPanel": "panel_bg",
+    "backgroundElement": "panel_bg",
+    "border": "border",
+    "borderActive": "blue",
+    "borderSubtle": "border"
+  }
+}
+"##;
+            let _ = std::fs::write(&template_path, template_content);
+        }
+    }
+}
+
 pub fn find_project_root() -> Option<PathBuf> {
     let mut cwd = std::env::current_dir().ok()?;
     loop {
@@ -573,6 +642,8 @@ pub fn custom_themes() -> &'static HashMap<String, ThemeConfig> {
             ("gruvbox", include_str!("themes/gruvbox.json")),
             ("ayu", include_str!("themes/ayu.json")),
             ("everforest", include_str!("themes/everforest.json")),
+            ("github", include_str!("themes/github.json")),
+            ("dracula", include_str!("themes/dracula.json")),
         ];
 
         for (name, content) in builtins {
@@ -643,6 +714,8 @@ mod tests {
             ("gruvbox", include_str!("themes/gruvbox.json")),
             ("ayu", include_str!("themes/ayu.json")),
             ("everforest", include_str!("themes/everforest.json")),
+            ("github", include_str!("themes/github.json")),
+            ("dracula", include_str!("themes/dracula.json")),
         ];
 
         for (name, content) in builtins {
@@ -664,6 +737,8 @@ mod tests {
             ("gruvbox", include_str!("themes/gruvbox.json")),
             ("ayu", include_str!("themes/ayu.json")),
             ("everforest", include_str!("themes/everforest.json")),
+            ("github", include_str!("themes/github.json")),
+            ("dracula", include_str!("themes/dracula.json")),
         ];
 
         for (name, content) in builtins {

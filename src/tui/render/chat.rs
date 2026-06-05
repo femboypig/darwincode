@@ -377,9 +377,13 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     };
 
     let active_theme = crate::tui::render::get_active_theme(app);
-    let bg_color = active_theme
-        .background_element
-        .unwrap_or(Color::Rgb(24, 24, 24));
+    let bg_color = active_theme.background_element.unwrap_or_else(|| {
+        if active_theme.is_light {
+            Color::Rgb(240, 240, 240)
+        } else {
+            Color::Rgb(24, 24, 24)
+        }
+    });
     let fg_color = active_theme.text;
 
     // Render background block
@@ -634,9 +638,13 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
         return;
     };
     let active_theme = crate::tui::render::get_active_theme(app);
-    let modal_bg = active_theme
-        .background_panel
-        .unwrap_or(Color::Rgb(24, 24, 24));
+    let modal_bg = active_theme.background_panel.unwrap_or_else(|| {
+        if active_theme.is_light {
+            Color::Rgb(240, 240, 240)
+        } else {
+            Color::Rgb(24, 24, 24)
+        }
+    });
     let modal_fg = active_theme.text;
     let dim_text = active_theme.text_muted;
 
@@ -1185,9 +1193,13 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
     let active_theme = crate::tui::render::get_active_theme(app);
-    let modal_bg = active_theme
-        .background_panel
-        .unwrap_or(Color::Rgb(24, 24, 24));
+    let modal_bg = active_theme.background_panel.unwrap_or_else(|| {
+        if active_theme.is_light {
+            Color::Rgb(240, 240, 240)
+        } else {
+            Color::Rgb(24, 24, 24)
+        }
+    });
     let modal_fg = active_theme.text;
     let placeholder_fg = active_theme.text_muted;
     let list_fg = active_theme.text;
@@ -1375,9 +1387,13 @@ fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_theme_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
     let active_theme = crate::tui::render::get_active_theme(app);
-    let modal_bg = active_theme
-        .background_panel
-        .unwrap_or(Color::Rgb(24, 24, 24));
+    let modal_bg = active_theme.background_panel.unwrap_or_else(|| {
+        if active_theme.is_light {
+            Color::Rgb(240, 240, 240)
+        } else {
+            Color::Rgb(24, 24, 24)
+        }
+    });
     let modal_fg = active_theme.text;
     let placeholder_fg = active_theme.text_muted;
     let list_fg = active_theme.text;
@@ -1659,9 +1675,13 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     active_theme.border
                 };
 
-                let bg_color = active_theme
-                    .background_panel
-                    .unwrap_or(Color::Rgb(28, 28, 28));
+                let bg_color = active_theme.background_panel.unwrap_or_else(|| {
+                    if active_theme.is_light {
+                        Color::Rgb(240, 240, 240)
+                    } else {
+                        Color::Rgb(28, 28, 28)
+                    }
+                });
                 let card_style = Style::default().bg(bg_color);
 
                 let block_width = (area.width as usize).saturating_sub(5).max(1);
@@ -1817,9 +1837,13 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                         }
 
                         let active_theme = crate::tui::render::get_active_theme(app);
-                        let user_bg = active_theme
-                            .background_panel
-                            .unwrap_or(Color::Rgb(24, 24, 24));
+                        let user_bg = active_theme.background_panel.unwrap_or_else(|| {
+                            if active_theme.is_light {
+                                Color::Rgb(240, 240, 240)
+                            } else {
+                                Color::Rgb(24, 24, 24)
+                            }
+                        });
                         let user_fg = active_theme.text;
                         let user_style = Style::default().bg(user_bg).fg(user_fg);
 

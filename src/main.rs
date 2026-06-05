@@ -10,6 +10,9 @@ use crate::app::App;
 use crate::config::StoredConfig;
 
 fn main() -> Result<()> {
+    // Automatically initialize the project-specific .darwincode directory structure
+    crate::tui::theme::init_project_dir();
+
     let args_vec: Vec<String> = std::env::args().skip(1).collect();
     let mut continue_session = false;
     let mut show_version = false;
