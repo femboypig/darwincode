@@ -551,3 +551,29 @@ mod dirs {
             .or_else(|| std::env::var_os("USERPROFILE").map(|h| PathBuf::from(h).join(".config")))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_builtin_themes_parse() {
+        let builtins = vec![
+            ("tokyonight", include_str!("themes/tokyonight.json")),
+            ("nord", include_str!("themes/nord.json")),
+            ("gruvbox", include_str!("themes/gruvbox.json")),
+            ("ayu", include_str!("themes/ayu.json")),
+            ("everforest", include_str!("themes/everforest.json")),
+        ];
+
+        for (name, content) in builtins {
+            let res = serde_json::from_str::<ThemeConfig>(content);
+            assert!(
+                res.is_ok(),
+                "Failed to parse built-in theme '{}': {:?}",
+                name,
+                res.err()
+            );
+        }
+    }
+}
