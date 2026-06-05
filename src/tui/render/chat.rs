@@ -362,15 +362,11 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         height: input_height,
     };
 
-    let theme = get_theme(app);
-    let bg_color = match theme {
-        crate::config::Theme::Light => Color::Rgb(240, 240, 240),
-        _ => Color::Rgb(24, 24, 24),
-    };
-    let fg_color = match theme {
-        crate::config::Theme::Light => Color::Rgb(0, 0, 0),
-        _ => Color::Rgb(255, 255, 255),
-    };
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let bg_color = active_theme
+        .background_element
+        .unwrap_or(Color::Rgb(24, 24, 24));
+    let fg_color = active_theme.text;
 
     // Render background block
     let bg_block = Block::default().style(Style::default().bg(bg_color));
@@ -452,10 +448,8 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     let paragraph_content: Vec<Line> = if app.chat.input.is_empty() {
         let placeholder = "Ask anything... \"Fix a TODO in the codebase\"";
-        let placeholder_color = match theme {
-            crate::config::Theme::Light => Color::Rgb(150, 150, 150),
-            _ => Color::Rgb(110, 110, 110),
-        };
+        let active_theme = crate::tui::render::get_active_theme(app);
+        let placeholder_color = active_theme.text_muted;
         vec![Line::from(Span::styled(
             placeholder,
             Style::default().fg(placeholder_color),
@@ -618,19 +612,12 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
     let Some(crate::app::PendingTask::ConfirmFunction { name, args }) = &app.pending else {
         return;
     };
-    let theme = get_theme(app);
-    let modal_bg = match theme {
-        crate::config::Theme::Light => Color::Rgb(240, 240, 240),
-        _ => Color::Rgb(24, 24, 24),
-    };
-    let modal_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(30, 30, 30),
-        _ => Color::Rgb(220, 220, 220),
-    };
-    let dim_text = match theme {
-        crate::config::Theme::Light => Color::Rgb(140, 140, 140),
-        _ => Color::Rgb(100, 100, 100),
-    };
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let modal_bg = active_theme
+        .background_panel
+        .unwrap_or(Color::Rgb(24, 24, 24));
+    let modal_fg = active_theme.text;
+    let dim_text = active_theme.text_muted;
 
     // Compact centered modal popup: 55% width, 45% height
     let popup_area = centered_rect(55, 45, area);
@@ -885,19 +872,10 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
-    let theme = get_theme(app);
-    let modal_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(30, 30, 30),
-        _ => Color::Rgb(220, 220, 220),
-    };
-    let dim_text = match theme {
-        crate::config::Theme::Light => Color::Rgb(140, 140, 140),
-        _ => Color::Rgb(110, 110, 110),
-    };
-    let selected_color = match theme {
-        crate::config::Theme::Light => Color::Rgb(190, 60, 100),
-        _ => Color::Rgb(236, 72, 153),
-    };
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let modal_fg = active_theme.text;
+    let dim_text = active_theme.text_muted;
+    let selected_color = active_theme.accent;
 
     let inner = Rect {
         x: area.x + 3,
@@ -1066,19 +1044,10 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
-    let theme = get_theme(app);
-    let modal_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(30, 30, 30),
-        _ => Color::Rgb(220, 220, 220),
-    };
-    let dim_text = match theme {
-        crate::config::Theme::Light => Color::Rgb(140, 140, 140),
-        _ => Color::Rgb(110, 110, 110),
-    };
-    let selected_color = match theme {
-        crate::config::Theme::Light => Color::Rgb(190, 60, 100),
-        _ => Color::Rgb(236, 72, 153),
-    };
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let modal_fg = active_theme.text;
+    let dim_text = active_theme.text_muted;
+    let selected_color = active_theme.accent;
 
     let inner = Rect {
         x: area.x + 3,
@@ -1194,30 +1163,17 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
-    let theme = get_theme(app);
-    let modal_bg = match theme {
-        crate::config::Theme::Light => Color::Rgb(240, 240, 240),
-        _ => Color::Rgb(24, 24, 24),
-    };
-    let modal_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(0, 0, 0),
-        _ => Color::Rgb(255, 255, 255),
-    };
-    let placeholder_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(150, 150, 150),
-        _ => Color::Rgb(110, 110, 110),
-    };
-    let list_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(40, 40, 40),
-        _ => Color::Rgb(220, 220, 220),
-    };
-    let hint_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(150, 150, 150),
-        _ => Color::Rgb(110, 110, 110),
-    };
-    let active_bullet_color = Color::Rgb(80, 200, 120);
-    let active_bullet_color_on_select = Color::Rgb(40, 110, 70);
-    let select_bg = Color::Rgb(134, 194, 172);
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let modal_bg = active_theme
+        .background_panel
+        .unwrap_or(Color::Rgb(24, 24, 24));
+    let modal_fg = active_theme.text;
+    let placeholder_fg = active_theme.text_muted;
+    let list_fg = active_theme.text;
+    let hint_fg = active_theme.text_muted;
+    let active_bullet_color = active_theme.success;
+    let active_bullet_color_on_select = active_theme.secondary;
+    let select_bg = active_theme.accent;
 
     let popup_area = centered_rect(36, 48, area);
     frame.render_widget(ratatui::widgets::Clear, popup_area);
@@ -1453,8 +1409,8 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
         let cached_ok = {
             let cache = message.cached_wrapped.borrow();
-            if let Some((w, t, ref cached_lines)) = *cache {
-                if w == width as usize && t == get_theme(app) {
+            if let Some((w, ref t, ref cached_lines)) = *cache {
+                if w == width as usize && *t == get_theme(app) {
                     Some(cached_lines.clone())
                 } else {
                     None
@@ -1491,11 +1447,10 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     Color::DarkGray
                 };
 
-                let theme = get_theme(app);
-                let bg_color = match theme {
-                    crate::config::Theme::Light => Color::Rgb(235, 235, 235),
-                    _ => Color::Rgb(28, 28, 28),
-                };
+                let active_theme = crate::tui::render::get_active_theme(app);
+                let bg_color = active_theme
+                    .background_panel
+                    .unwrap_or(Color::Rgb(28, 28, 28));
                 let card_style = Style::default().bg(bg_color);
 
                 let block_width = (area.width as usize).saturating_sub(5).max(1);
@@ -1533,10 +1488,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                 let title_fg = if is_focused_shell {
                     Color::Rgb(59, 130, 246)
                 } else {
-                    match theme {
-                        crate::config::Theme::Light => Color::Rgb(0, 0, 0),
-                        _ => Color::Rgb(255, 255, 255),
-                    }
+                    active_theme.text
                 };
                 let title_style = Style::default()
                     .fg(title_fg)
@@ -1639,7 +1591,10 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     (content.clone(), false)
                 };
 
-                let parsed_lines = parse_markdown_lines(&display_content);
+                let parsed_lines = parse_markdown_lines(
+                    &display_content,
+                    &crate::tui::render::get_active_theme(app),
+                );
                 match message.author {
                     "You" => {
                         let mut wrapped_parsed_lines = wrap_lines(parsed_lines, width as usize);
@@ -1650,13 +1605,11 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                             )));
                         }
 
-                        let theme = get_theme(app);
-                        let (user_bg, user_fg) = match theme {
-                            crate::config::Theme::Light => {
-                                (Color::Rgb(240, 240, 240), Color::Rgb(0, 0, 0))
-                            }
-                            _ => (Color::Rgb(24, 24, 24), Color::Rgb(255, 255, 255)),
-                        };
+                        let active_theme = crate::tui::render::get_active_theme(app);
+                        let user_bg = active_theme
+                            .background_panel
+                            .unwrap_or(Color::Rgb(24, 24, 24));
+                        let user_fg = active_theme.text;
                         let user_style = Style::default().bg(user_bg).fg(user_fg);
 
                         let border_color = if app.chat.shell_focused {
@@ -1790,11 +1743,10 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let theme = get_theme(app);
-    let bg_color = match theme {
-        crate::config::Theme::Light => Color::Rgb(240, 240, 240),
-        _ => Color::Rgb(24, 24, 24),
-    };
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let bg_color = active_theme
+        .background_panel
+        .unwrap_or(Color::Rgb(24, 24, 24));
 
     let border_color = if app.chat.shell_focused {
         Color::DarkGray
@@ -1901,10 +1853,7 @@ fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
         items.push(ListItem::new(line).style(item_style));
     }
 
-    let fg_color = match theme {
-        crate::config::Theme::Light => Color::Rgb(0, 0, 0),
-        _ => Color::Rgb(255, 255, 255),
-    };
+    let fg_color = active_theme.text;
     let block = Block::default();
     let list_widget = List::new(items)
         .block(block)
@@ -1976,15 +1925,11 @@ fn clean_and_truncate_to_visual_width(s: &str, max_w: usize) -> (String, usize) 
 }
 
 fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
-    let theme = get_theme(app);
-    let sidebar_bg = match theme {
-        crate::config::Theme::Light => Color::Rgb(240, 240, 240),
-        _ => Color::Rgb(24, 24, 24),
-    };
-    let sidebar_fg = match theme {
-        crate::config::Theme::Light => Color::Rgb(0, 0, 0),
-        _ => Color::Rgb(255, 255, 255),
-    };
+    let active_theme = crate::tui::render::get_active_theme(app);
+    let sidebar_bg = active_theme
+        .background_panel
+        .unwrap_or(Color::Rgb(24, 24, 24));
+    let sidebar_fg = active_theme.text;
 
     let block = Block::default()
         .style(Style::default().bg(sidebar_bg).fg(sidebar_fg))
