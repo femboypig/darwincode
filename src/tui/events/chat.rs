@@ -58,9 +58,10 @@ pub(crate) fn handle_chat_key(
                 if app
                     .keybindings
                     .matches(crate::tui::keybindings::TuiAction::Cancel, key)
-                    && let Some(action) = app.answer_function_confirmation(false) {
-                        handle_function_action(action, sender);
-                    }
+                    && let Some(action) = app.answer_function_confirmation(false)
+                {
+                    handle_function_action(action, sender);
+                }
             }
         }
         return Ok(());
@@ -824,13 +825,14 @@ fn handle_interrupt_signal(app: &mut App) {
                             .and_then(|v| v.as_u64())
                             .map(|v| v as u32);
                         if resp_pid == Some(pid)
-                            && let Some(obj) = response_val.as_object_mut() {
-                                obj.insert(
-                                    "error".to_owned(),
-                                    serde_json::json!("Process terminated by user via Ctrl+C"),
-                                );
-                                obj.insert("status".to_owned(), serde_json::Value::Null);
-                            }
+                            && let Some(obj) = response_val.as_object_mut()
+                        {
+                            obj.insert(
+                                "error".to_owned(),
+                                serde_json::json!("Process terminated by user via Ctrl+C"),
+                            );
+                            obj.insert("status".to_owned(), serde_json::Value::Null);
+                        }
                     }
                 }
             }

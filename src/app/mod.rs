@@ -118,9 +118,10 @@ impl App {
         let cache_clone = sessions_cache.clone();
         std::thread::spawn(move || {
             if let Ok(sessions) = crate::app::session::list_saved_sessions()
-                && let Ok(mut guard) = cache_clone.lock() {
-                    *guard = Some(sessions);
-                }
+                && let Ok(mut guard) = cache_clone.lock()
+            {
+                *guard = Some(sessions);
+            }
         });
 
         match config {
@@ -775,16 +776,17 @@ impl App {
 
         if (input.starts_with("/resume ") || input.starts_with("/resum"))
             && let Ok(cache) = self.sessions_cache.lock()
-                && let Some(sessions) = cache.as_ref() {
-                    return sessions
-                        .iter()
-                        .map(|meta| CommandSuggestion {
-                            name: format!("/resume {}", meta.id),
-                            description: meta.snippet.clone(),
-                        })
-                        .filter(|s| s.name.starts_with(input))
-                        .collect();
-                }
+            && let Some(sessions) = cache.as_ref()
+        {
+            return sessions
+                .iter()
+                .map(|meta| CommandSuggestion {
+                    name: format!("/resume {}", meta.id),
+                    description: meta.snippet.clone(),
+                })
+                .filter(|s| s.name.starts_with(input))
+                .collect();
+        }
 
         if input.contains(' ') {
             return Vec::new();
@@ -1438,20 +1440,21 @@ impl App {
         let _ = session::save_session(&self.chat);
 
         if let Ok(mut cache) = self.sessions_cache.lock()
-            && let Some(ref mut list) = *cache {
-                let id = self.chat.session_id.clone();
-                let snippet = if let Some(first_msg) = self.chat.history.first()
-                    && let Some(first_part) = first_msg.parts.first()
-                    && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
-                {
-                    text.chars().take(40).collect::<String>()
-                } else {
-                    "Empty chat".to_owned()
-                };
+            && let Some(ref mut list) = *cache
+        {
+            let id = self.chat.session_id.clone();
+            let snippet = if let Some(first_msg) = self.chat.history.first()
+                && let Some(first_part) = first_msg.parts.first()
+                && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
+            {
+                text.chars().take(40).collect::<String>()
+            } else {
+                "Empty chat".to_owned()
+            };
 
-                list.retain(|s| s.id != id);
-                list.insert(0, crate::app::session::SessionMeta { id, snippet });
-            }
+            list.retain(|s| s.id != id);
+            list.insert(0, crate::app::session::SessionMeta { id, snippet });
+        }
     }
 
     pub fn apply_selected_session(&mut self) {
@@ -1557,9 +1560,10 @@ impl App {
         if let Ok(current_dir) = std::env::current_dir() {
             let abs_allowed = current_dir.join(".darwincode/plans");
             if let Ok(abs_path) = std::path::Path::new(path_str).canonicalize()
-                && let Ok(abs_allowed_canonical) = abs_allowed.canonicalize() {
-                    return abs_path.starts_with(abs_allowed_canonical);
-                }
+                && let Ok(abs_allowed_canonical) = abs_allowed.canonicalize()
+            {
+                return abs_path.starts_with(abs_allowed_canonical);
+            }
             let abs_allowed_str = abs_allowed.to_string_lossy();
             if path_str.starts_with(&*abs_allowed_str) {
                 return true;

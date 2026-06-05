@@ -336,12 +336,12 @@ pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
             let meta_path = path.with_extension("meta");
             if meta_path.exists()
                 && let Ok(cipher_data) = std::fs::read(&meta_path)
-                    && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
-                    && let Ok(meta) = serde_json::from_slice::<SessionMeta>(&plain_data)
-                {
-                    result.push(meta);
-                    continue;
-                }
+                && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
+                && let Ok(meta) = serde_json::from_slice::<SessionMeta>(&plain_data)
+            {
+                result.push(meta);
+                continue;
+            }
 
             if let Ok(cipher_data) = std::fs::read(&path)
                 && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)

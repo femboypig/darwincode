@@ -533,69 +533,180 @@ fn run_loop(
 
                         if let Some(rect) = app.chat.mode_area.get()
                             && click_x >= rect.x
-                                && click_x < rect.x + rect.width
-                                && click_y == rect.y
-                            {
-                                app.toggle_dev_mode();
-                                continue;
-                            }
+                            && click_x < rect.x + rect.width
+                            && click_y == rect.y
+                        {
+                            app.toggle_dev_mode();
+                            continue;
+                        }
 
                         if let Some(rect) = app.chat.model_area.get()
                             && click_x >= rect.x
-                                && click_x < rect.x + rect.width
-                                && click_y == rect.y
-                            {
-                                if app.model_picker_open {
-                                    app.cancel_models();
-                                } else if let Some(config) = app.begin_load_chat_models() {
-                                    spawn_models_worker(config, sender.clone());
-                                }
-                                continue;
+                            && click_x < rect.x + rect.width
+                            && click_y == rect.y
+                        {
+                            if app.model_picker_open {
+                                app.cancel_models();
+                            } else if let Some(config) = app.begin_load_chat_models() {
+                                spawn_models_worker(config, sender.clone());
                             }
+                            continue;
+                        }
 
                         if let Some(rect) = app.chat.messages_area.get()
                             && click_x >= rect.x
-                                && click_x < rect.x + rect.width
-                                && click_y >= rect.y
-                                && click_y < rect.y + rect.height
+                            && click_x < rect.x + rect.width
+                            && click_y >= rect.y
+                            && click_y < rect.y + rect.height
+                        {
+                            let total_lines = app
+                                .chat
+                                .message_line_ranges
+                                .borrow()
+                                .last()
+                                .map(|(_, _, end)| *end)
+                                .unwrap_or(0);
+                            let viewport_height = rect.height as usize;
+                            let max_scroll = total_lines.saturating_sub(viewport_height);
+                            let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
+                            let scroll_y = max_scroll.saturating_sub(scroll_offset);
+
+                            let clicked_line = scroll_y + (click_y - rect.y) as usize;
+
+                            let mut clicked_msg_idx = None;
+                            for &(msg_idx, start_line, end_line) in
+                                app.chat.message_line_ranges.borrow().iter()
                             {
-                                let total_lines = app
-                                    .chat
-                                    .message_line_ranges
-                                    .borrow()
-                                    .last()
-                                    .map(|(_, _, end)| *end)
-                                    .unwrap_or(0);
-                                let viewport_height = rect.height as usize;
-                                let max_scroll = total_lines.saturating_sub(viewport_height);
-                                let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
-                                let scroll_y = max_scroll.saturating_sub(scroll_offset);
-
-                                let clicked_line = scroll_y + (click_y - rect.y) as usize;
-
-                                let mut clicked_msg_idx = None;
-                                for &(msg_idx, start_line, end_line) in
-                                    app.chat.message_line_ranges.borrow().iter()
-                                {
-                                    if clicked_line >= start_line && clicked_line < end_line {
-                                        clicked_msg_idx = Some(msg_idx);
-                                        break;
-                                    }
+                                if clicked_line >= start_line && clicked_line < end_line {
+                                    clicked_msg_idx = Some(msg_idx);
+                                    break;
                                 }
+                            }
 
-                                if let Some(msg_idx) = clicked_msg_idx
-                                    && app.chat.messages[msg_idx].is_shell
+                            if let Some(msg_idx) = clicked_msg_idx
+                                && app.chat.messages[msg_idx].is_shell
+                            {
+                                if let Some(session_id) =
+                                    app.chat.messages[msg_idx].shell_session_id.clone()
                                 {
-                                    if let Some(session_id) =
-                                        app.chat.messages[msg_idx].shell_session_id.clone()
+                                    if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
+                                        let opt: &mut Option<String> = &mut guard;
+                                        *opt = Some(session_id.clone());
+                                    }
+                                    app.chat.focused_shell_session_id = Some(session_id.clone());
+                                    app.chat.focused_shell_pid = None;
+                                    app.chat.shell_focused = true;
+
+                                    for m in &mut app.chat.messages {
+                                        if m.is_shell {
+                                            *m.cached_wrapped.borrow_mut() = None;
+                                        }
+                                    }
+
+                                    let mut scrolled = false;
+                                    if let Some(&(_, start_line, end_line)) = app
+                                        .chat
+                                        .message_line_ranges
+                                        .borrow()
+                                        .iter()
+                                        .find(|&&(idx, _, _)| idx == msg_idx)
+                                    {
+                                        let total_lines = app
+                                            .chat
+                                            .message_line_ranges
+                                            .borrow()
+                                            .last()
+                                            .map(|(_, _, end)| *end)
+                                            .unwrap_or(0);
+                                        let viewport_height = rect.height as usize;
+                                        let max_scroll =
+                                            total_lines.saturating_sub(viewport_height);
+                                        let msg_height = end_line.saturating_sub(start_line);
+                                        let mid_line = start_line + msg_height / 2;
+                                        let target_scroll_y =
+                                            mid_line.saturating_sub(viewport_height / 2);
+                                        let scroll_val = max_scroll.saturating_sub(target_scroll_y);
+                                        app.chat.scroll = scroll_val as u16;
+                                        scrolled = true;
+                                    }
+                                    if !scrolled {
+                                        app.chat.scroll = 0;
+                                    }
+
+                                    *app.chat.message_line_ranges.borrow_mut() = Vec::new();
+                                    app.status = "Ready".to_owned();
+                                } else {
+                                    let clicked_pid = app.chat.messages[msg_idx].shell_pid;
+                                    let fg_pid = RUNNING_PROCESS_PID.lock().ok().and_then(|g| *g);
+                                    let is_bg_alive = if let Some(pid) = clicked_pid {
+                                        let bg_registry = BACKGROUND_PROCESSES.get();
+                                        if let Some(registry_mutex) = bg_registry
+                                            && let Ok(registry_guard) = registry_mutex.lock()
+                                            && let Some(proc) = registry_guard.get(&pid)
+                                        {
+                                            proc.exit_status.lock().unwrap().is_none()
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    };
+
+                                    if let Some(pid) = fg_pid
+                                        && Some(pid) == clicked_pid
                                     {
                                         if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
-                                            let opt: &mut Option<String> = &mut guard;
-                                            *opt = Some(session_id.clone());
+                                            *guard = None;
                                         }
-                                        app.chat.focused_shell_session_id =
-                                            Some(session_id.clone());
-                                        app.chat.focused_shell_pid = None;
+                                        app.chat.focused_shell_session_id = None;
+                                        app.chat.focused_shell_pid = Some(pid);
+                                        app.chat.shell_focused = true;
+
+                                        for m in &mut app.chat.messages {
+                                            if m.is_shell {
+                                                *m.cached_wrapped.borrow_mut() = None;
+                                            }
+                                        }
+
+                                        let mut scrolled = false;
+                                        if let Some(&(_, start_line, end_line)) = app
+                                            .chat
+                                            .message_line_ranges
+                                            .borrow()
+                                            .iter()
+                                            .find(|&&(idx, _, _)| idx == msg_idx)
+                                        {
+                                            let total_lines = app
+                                                .chat
+                                                .message_line_ranges
+                                                .borrow()
+                                                .last()
+                                                .map(|(_, _, end)| *end)
+                                                .unwrap_or(0);
+                                            let viewport_height = rect.height as usize;
+                                            let max_scroll =
+                                                total_lines.saturating_sub(viewport_height);
+                                            let msg_height = end_line.saturating_sub(start_line);
+                                            let mid_line = start_line + msg_height / 2;
+                                            let target_scroll_y =
+                                                mid_line.saturating_sub(viewport_height / 2);
+                                            let scroll_val =
+                                                max_scroll.saturating_sub(target_scroll_y);
+                                            app.chat.scroll = scroll_val as u16;
+                                            scrolled = true;
+                                        }
+                                        if !scrolled {
+                                            app.chat.scroll = 0;
+                                        }
+
+                                        *app.chat.message_line_ranges.borrow_mut() = Vec::new();
+                                        app.status = "Ready".to_owned();
+                                    } else if is_bg_alive && let Some(pid) = clicked_pid {
+                                        if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
+                                            *guard = None;
+                                        }
+                                        app.chat.focused_shell_session_id = None;
+                                        app.chat.focused_shell_pid = Some(pid);
                                         app.chat.shell_focused = true;
 
                                         for m in &mut app.chat.messages {
@@ -638,135 +749,15 @@ fn run_loop(
                                         *app.chat.message_line_ranges.borrow_mut() = Vec::new();
                                         app.status = "Ready".to_owned();
                                     } else {
-                                        let clicked_pid = app.chat.messages[msg_idx].shell_pid;
-                                        let fg_pid =
-                                            RUNNING_PROCESS_PID.lock().ok().and_then(|g| *g);
-                                        let is_bg_alive = if let Some(pid) = clicked_pid {
-                                            let bg_registry = BACKGROUND_PROCESSES.get();
-                                            if let Some(registry_mutex) = bg_registry
-                                                && let Ok(registry_guard) = registry_mutex.lock()
-                                                && let Some(proc) = registry_guard.get(&pid)
-                                            {
-                                                proc.exit_status.lock().unwrap().is_none()
-                                            } else {
-                                                false
-                                            }
-                                        } else {
-                                            false
-                                        };
-
-                                        if let Some(pid) = fg_pid
-                                            && Some(pid) == clicked_pid
-                                        {
-                                            if let Ok(mut guard) =
-                                                ACTIVE_PERSISTENT_SESSION_ID.lock()
-                                            {
-                                                *guard = None;
-                                            }
-                                            app.chat.focused_shell_session_id = None;
-                                            app.chat.focused_shell_pid = Some(pid);
-                                            app.chat.shell_focused = true;
-
-                                            for m in &mut app.chat.messages {
-                                                if m.is_shell {
-                                                    *m.cached_wrapped.borrow_mut() = None;
-                                                }
-                                            }
-
-                                            let mut scrolled = false;
-                                            if let Some(&(_, start_line, end_line)) = app
-                                                .chat
-                                                .message_line_ranges
-                                                .borrow()
-                                                .iter()
-                                                .find(|&&(idx, _, _)| idx == msg_idx)
-                                            {
-                                                let total_lines = app
-                                                    .chat
-                                                    .message_line_ranges
-                                                    .borrow()
-                                                    .last()
-                                                    .map(|(_, _, end)| *end)
-                                                    .unwrap_or(0);
-                                                let viewport_height = rect.height as usize;
-                                                let max_scroll =
-                                                    total_lines.saturating_sub(viewport_height);
-                                                let msg_height =
-                                                    end_line.saturating_sub(start_line);
-                                                let mid_line = start_line + msg_height / 2;
-                                                let target_scroll_y =
-                                                    mid_line.saturating_sub(viewport_height / 2);
-                                                let scroll_val =
-                                                    max_scroll.saturating_sub(target_scroll_y);
-                                                app.chat.scroll = scroll_val as u16;
-                                                scrolled = true;
-                                            }
-                                            if !scrolled {
-                                                app.chat.scroll = 0;
-                                            }
-
-                                            *app.chat.message_line_ranges.borrow_mut() = Vec::new();
-                                            app.status = "Ready".to_owned();
-                                        } else if is_bg_alive && let Some(pid) = clicked_pid {
-                                            if let Ok(mut guard) =
-                                                ACTIVE_PERSISTENT_SESSION_ID.lock()
-                                            {
-                                                *guard = None;
-                                            }
-                                            app.chat.focused_shell_session_id = None;
-                                            app.chat.focused_shell_pid = Some(pid);
-                                            app.chat.shell_focused = true;
-
-                                            for m in &mut app.chat.messages {
-                                                if m.is_shell {
-                                                    *m.cached_wrapped.borrow_mut() = None;
-                                                }
-                                            }
-
-                                            let mut scrolled = false;
-                                            if let Some(&(_, start_line, end_line)) = app
-                                                .chat
-                                                .message_line_ranges
-                                                .borrow()
-                                                .iter()
-                                                .find(|&&(idx, _, _)| idx == msg_idx)
-                                            {
-                                                let total_lines = app
-                                                    .chat
-                                                    .message_line_ranges
-                                                    .borrow()
-                                                    .last()
-                                                    .map(|(_, _, end)| *end)
-                                                    .unwrap_or(0);
-                                                let viewport_height = rect.height as usize;
-                                                let max_scroll =
-                                                    total_lines.saturating_sub(viewport_height);
-                                                let msg_height =
-                                                    end_line.saturating_sub(start_line);
-                                                let mid_line = start_line + msg_height / 2;
-                                                let target_scroll_y =
-                                                    mid_line.saturating_sub(viewport_height / 2);
-                                                let scroll_val =
-                                                    max_scroll.saturating_sub(target_scroll_y);
-                                                app.chat.scroll = scroll_val as u16;
-                                                scrolled = true;
-                                            }
-                                            if !scrolled {
-                                                app.chat.scroll = 0;
-                                            }
-
-                                            *app.chat.message_line_ranges.borrow_mut() = Vec::new();
-                                            app.status = "Ready".to_owned();
-                                        } else {
-                                            app.chat
+                                        app.chat
                                                 .messages
                                                 .push(crate::app::MessageLine::error(
                                                     "This shell process has already terminated or does not support input.".to_owned()
                                                 ));
-                                        }
                                     }
                                 }
                             }
+                        }
                     }
                     _ => {}
                 },

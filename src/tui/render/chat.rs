@@ -559,9 +559,10 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     let has_modal = app.model_picker_open
         || app.screen == crate::app::Screen::Sessions
         || app.screen == crate::app::Screen::Setup
-        || app.pending.as_ref().is_some_and(|p| {
-            matches!(p, crate::app::PendingTask::ConfirmFunction { .. })
-        });
+        || app
+            .pending
+            .as_ref()
+            .is_some_and(|p| matches!(p, crate::app::PendingTask::ConfirmFunction { .. }));
 
     if has_modal {
         dim_buffer(frame, area);
