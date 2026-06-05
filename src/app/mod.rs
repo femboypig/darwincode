@@ -30,6 +30,7 @@ pub struct GenerationRequest {
     pub history: Vec<ChatMessage>,
     pub cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub generation_id: usize,
+    pub dev_mode: String,
 }
 
 #[derive(Clone, Debug)]
@@ -60,7 +61,6 @@ pub enum PendingTask {
 pub enum Screen {
     Setup,
     Chat,
-    Models,
     Permissions,
     Sessions,
     AskUser,
@@ -73,6 +73,12 @@ pub struct AskUserState {
     pub selected_idx: usize,
     pub custom_input: String,
     pub is_custom: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DevelopMode {
+    Plan,
+    Build,
 }
 
 #[derive(Clone, Debug)]
@@ -97,14 +103,26 @@ pub struct App {
     pub cancel_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub last_file_backups: Vec<FileBackup>,
     pub generation_id: usize,
-    pub confirm_scroll: u16,
+    pub confirm_scroll: std::cell::Cell<u16>,
     pub ask_user: AskUserState,
-    pub sessions_cache: std::cell::RefCell<Option<Vec<crate::app::session::SessionMeta>>>,
+    pub sessions_cache: std::sync::Arc<std::sync::Mutex<Option<Vec<crate::app::session::SessionMeta>>>>,
+    pub dev_mode: DevelopMode,
+    pub model_picker_open: bool,
 }
 
 impl App {
     pub fn new(config: Option<StoredConfig>) -> Self {
         let keybindings = crate::tui::keybindings::load_keybindings();
+        let sessions_cache = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let cache_clone = sessions_cache.clone();
+        std::thread::spawn(move || {
+            if let Ok(sessions) = crate::app::session::list_saved_sessions() {
+                if let Ok(mut guard) = cache_clone.lock() {
+                    *guard = Some(sessions);
+                }
+            }
+        });
+
         match config {
             Some(config) => Self {
                 screen: Screen::Chat,
@@ -121,7 +139,7 @@ impl App {
                 cancel_token: None,
                 last_file_backups: Vec::new(),
                 generation_id: 0,
-                confirm_scroll: 0,
+                confirm_scroll: std::cell::Cell::new(0),
                 ask_user: AskUserState {
                     question: String::new(),
                     options: Vec::new(),
@@ -129,7 +147,9 @@ impl App {
                     custom_input: String::new(),
                     is_custom: false,
                 },
-                sessions_cache: std::cell::RefCell::new(None),
+                sessions_cache: sessions_cache.clone(),
+                dev_mode: DevelopMode::Build,
+                model_picker_open: false,
             },
             None => Self {
                 screen: Screen::Setup,
@@ -147,7 +167,7 @@ impl App {
                 cancel_token: None,
                 last_file_backups: Vec::new(),
                 generation_id: 0,
-                confirm_scroll: 0,
+                confirm_scroll: std::cell::Cell::new(0),
                 ask_user: AskUserState {
                     question: String::new(),
                     options: Vec::new(),
@@ -155,13 +175,34 @@ impl App {
                     custom_input: String::new(),
                     is_custom: false,
                 },
-                sessions_cache: std::cell::RefCell::new(None),
+                sessions_cache,
+                dev_mode: DevelopMode::Build,
+                model_picker_open: false,
             },
         }
     }
 
     pub fn is_busy(&self) -> bool {
         self.pending.is_some()
+    }
+
+    pub fn dev_mode_label(&self) -> &'static str {
+        match self.dev_mode {
+            DevelopMode::Plan => "Plan",
+            DevelopMode::Build => "Build",
+        }
+    }
+
+    pub fn model_label(&self) -> &str {
+        self.chat.config.model.trim_start_matches("models/")
+    }
+
+    pub fn toggle_dev_mode(&mut self) {
+        self.dev_mode = match self.dev_mode {
+            DevelopMode::Plan => DevelopMode::Build,
+            DevelopMode::Build => DevelopMode::Plan,
+        };
+        self.status = format!("Switched to {} mode", self.dev_mode_label());
     }
 
     pub fn save_setup(&mut self) -> Result<()> {
@@ -201,7 +242,7 @@ impl App {
         if self.screen == Screen::Chat {
             let count = models.len();
             self.models = ModelPickerState::new(models, &self.chat.config.model);
-            self.screen = Screen::Models;
+            self.model_picker_open = true;
             self.status = format!("Loaded {count} models");
             return;
         }
@@ -279,6 +320,7 @@ impl App {
             history: self.chat.history.clone(),
             cancel_token,
             generation_id,
+            dev_mode: self.dev_mode_label().to_owned(),
         }))
     }
 
@@ -320,6 +362,7 @@ impl App {
             history: self.chat.history.clone(),
             cancel_token,
             generation_id,
+            dev_mode: self.dev_mode_label().to_owned(),
         }))
     }
 
@@ -538,7 +581,31 @@ impl App {
 
         if let Some((name, args)) = first_call {
             let permission = self.chat.config.permission_level;
-            let auto_allowed = permission == PermissionLevel::Chaos
+            
+            let is_blocked_by_plan = self.dev_mode == DevelopMode::Plan
+                && (name == "sh"
+                    || name == "write"
+                    || name == "edit"
+                    || name == "patch"
+                    || name == "kill");
+
+            let is_allowed_plan_file = if self.dev_mode == DevelopMode::Plan {
+                let mut allowed = false;
+                if name == "write" || name == "edit" || name == "patch" {
+                    if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
+                        allowed = Self::is_plan_file_allowed(path_str);
+                    } else if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+                        allowed = edits.iter().all(|e| {
+                            e.get("path").and_then(|v| v.as_str()).map(Self::is_plan_file_allowed).unwrap_or(false)
+                        });
+                    }
+                }
+                allowed
+            } else {
+                false
+            };
+
+            let auto_allowed = !is_blocked_by_plan && (permission == PermissionLevel::Chaos
                 || (permission == PermissionLevel::Safe
                     && (name == "read"
                         || name == "grep"
@@ -547,9 +614,9 @@ impl App {
                         || name == "ask"
                         || name == "todo"
                         || name == "ps"
-                        || name == "logs"));
+                        || name == "logs")));
 
-            if auto_allowed {
+            if auto_allowed || is_allowed_plan_file {
                 self.backup_before_execution(&name, &args);
                 self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
                 self.status = format!("Auto-executing {name}");
@@ -559,20 +626,26 @@ impl App {
                     args,
                     config: self.chat.config.clone(),
                 })
-            } else if permission == PermissionLevel::Safe
+            } else if (permission == PermissionLevel::Safe && !is_allowed_plan_file
                 && (name == "sh"
                     || name == "write"
                     || name == "edit"
                     || name == "patch"
-                    || name == "kill")
+                    || name == "kill"))
+                || (self.dev_mode == DevelopMode::Plan && is_blocked_by_plan && !is_allowed_plan_file)
             {
                 self.pending = Some(PendingTask::Generating);
+                let err_msg = if self.dev_mode == DevelopMode::Plan {
+                    "Permission denied: Plan mode only allows editing .darwincode/plans/*.md"
+                } else {
+                    "Permission denied: restricted mode"
+                };
                 self.complete_function_execution(
                     name,
-                    serde_json::json!({"error": "Permission denied: restricted mode"}),
+                    serde_json::json!({"error": err_msg}),
                 )
             } else {
-                self.confirm_scroll = 0;
+                self.confirm_scroll.set(0);
                 self.pending = Some(PendingTask::ConfirmFunction { name, args });
                 self.status = "Action required".to_owned();
                 None
@@ -598,20 +671,38 @@ impl App {
         if self.is_busy() {
             return;
         }
-        match crate::app::session::list_saved_sessions() {
-            Ok(list) => {
-                self.sessions.sessions = list;
-                self.sessions.selected = 0;
-                self.sessions.query = String::new();
-                self.screen = Screen::Sessions;
-                self.status =
-                    "Select a session to resume. Enter to apply, Esc to cancel.".to_owned();
-            }
-            Err(e) => {
-                self.chat.messages.push(MessageLine::error(format!(
-                    "Failed to list sessions: {}",
-                    e
-                )));
+        let cached = if let Ok(cache) = self.sessions_cache.lock() {
+            cache.clone()
+        } else {
+            None
+        };
+
+        if let Some(list) = cached {
+            self.sessions.sessions = list;
+            self.sessions.selected = 0;
+            self.sessions.query = String::new();
+            self.screen = Screen::Sessions;
+            self.status =
+                "Select a session to resume. Enter to apply, Esc to cancel.".to_owned();
+        } else {
+            match crate::app::session::list_saved_sessions() {
+                Ok(list) => {
+                    if let Ok(mut cache) = self.sessions_cache.lock() {
+                        *cache = Some(list.clone());
+                    }
+                    self.sessions.sessions = list;
+                    self.sessions.selected = 0;
+                    self.sessions.query = String::new();
+                    self.screen = Screen::Sessions;
+                    self.status =
+                        "Select a session to resume. Enter to apply, Esc to cancel.".to_owned();
+                }
+                Err(e) => {
+                    self.chat.messages.push(MessageLine::error(format!(
+                        "Failed to list sessions: {}",
+                        e
+                    )));
+                }
             }
         }
     }
@@ -679,22 +770,18 @@ impl App {
                 .collect();
         }
 
-        if input.starts_with("/resume ") || input == "/resume" {
-            let mut cache = self.sessions_cache.borrow_mut();
-            if cache.is_none()
-                && let Ok(sessions) = session::list_saved_sessions()
-            {
-                *cache = Some(sessions);
-            }
-            if let Some(sessions) = cache.as_ref() {
-                return sessions
-                    .iter()
-                    .map(|meta| CommandSuggestion {
-                        name: format!("/resume {}", meta.id),
-                        description: meta.snippet.clone(),
-                    })
-                    .filter(|s| s.name.starts_with(input))
-                    .collect();
+        if input.starts_with("/resume ") || input.starts_with("/resum") {
+            if let Ok(cache) = self.sessions_cache.lock() {
+                if let Some(sessions) = cache.as_ref() {
+                    return sessions
+                        .iter()
+                        .map(|meta| CommandSuggestion {
+                            name: format!("/resume {}", meta.id),
+                            description: meta.snippet.clone(),
+                        })
+                        .filter(|s| s.name.starts_with(input))
+                        .collect();
+                }
             }
         }
 
@@ -710,10 +797,15 @@ impl App {
     }
 
     pub fn accept_command_suggestion(&mut self) {
-        if let Some((start_idx, _)) =
-            self::chat::get_at_word_at_cursor(&self.chat.input, self.chat.cursor)
-        {
-            if let Some(suggestion) = self.command_suggestions().into_iter().next() {
+        let suggestions = self.command_suggestions();
+        if suggestions.is_empty() {
+            return;
+        }
+        let active_idx = self.chat.suggestion_idx.min(suggestions.len().saturating_sub(1));
+        if let Some(suggestion) = suggestions.into_iter().nth(active_idx) {
+            if let Some((start_idx, _)) =
+                self::chat::get_at_word_at_cursor(&self.chat.input, self.chat.cursor)
+            {
                 let char_indices: Vec<(usize, char)> = self.chat.input.char_indices().collect();
                 let prefix: String = char_indices[..start_idx].iter().map(|&(_, c)| c).collect();
                 let suffix: String = char_indices[self.chat.cursor..]
@@ -725,18 +817,34 @@ impl App {
 
                 let inserted_len = suggestion.name.chars().count();
                 self.chat.cursor = start_idx + inserted_len;
+                self.chat.suggestion_idx = 0;
+                return;
             }
-            return;
-        }
 
-        if let Some(suggestion) = self.command_suggestions().into_iter().next() {
             self.chat.input = format!("{} ", suggestion.name);
             self.chat.cursor = self.chat.input.chars().count();
+            self.chat.suggestion_idx = 0;
         }
     }
 
     fn run_command(&mut self, command: ChatCommand) -> Option<SubmitAction> {
         match command {
+            ChatCommand::Plan => {
+                self.dev_mode = DevelopMode::Plan;
+                self.status = "Switched to Plan mode".to_owned();
+                self.chat.messages.push(MessageLine::info(
+                    "Switched to **Plan** mode (read-only for workspace files)".to_owned(),
+                ));
+                None
+            }
+            ChatCommand::Build => {
+                self.dev_mode = DevelopMode::Build;
+                self.status = "Switched to Build mode".to_owned();
+                self.chat.messages.push(MessageLine::info(
+                    "Switched to **Build** mode (full tools access)".to_owned(),
+                ));
+                None
+            }
             ChatCommand::Settings => {
                 self.open_setup();
                 None
@@ -1184,11 +1292,14 @@ impl App {
                                  - **/history**: Show all saved chat session IDs\n\
                                  - **/undo**: Revert all file changes made in the last prompt\n\
                                  - **/shell [session_id_or_pid]**: List or focus active shell sessions\n\
+                                 - **/plan**: Switch to Plan mode (read-only for workspace files)\n\
+                                 - **/build**: Switch to Build mode (full tools access)\n\
                                  - **/help**: Display this help card\n\
                                  - **/exit** / **/quit**: Exit the application\n\n\
                                  Hotkeys (in Chat):\n\
                                  - **Ctrl+S**: Open Setup screen\n\
-                                 - **Ctrl+P**: Switch active Model instantly";
+                                 - **Ctrl+P**: Switch active Model instantly\n\
+                                 - **Ctrl+T**: Toggle between Plan and Build modes";
                 self.chat
                     .messages
                     .push(MessageLine::info(help_text.to_owned()));
@@ -1206,7 +1317,8 @@ impl App {
     }
 
     pub fn cancel_models(&mut self) {
-        self.screen = Screen::Chat;
+        self.model_picker_open = false;
+        self.models.clear_query();
         self.status = "Ready".to_owned();
     }
 
@@ -1228,7 +1340,8 @@ impl App {
         match self.chat.config.save() {
             Ok(()) => {
                 self.status = format!("Model set to {}", self.chat.config.model);
-                self.screen = Screen::Chat;
+                self.model_picker_open = false;
+                self.models.clear_query();
             }
             Err(error) => {
                 self.status = error.to_string();
@@ -1320,21 +1433,21 @@ impl App {
         }
         let _ = session::save_session(&self.chat);
 
-        let mut cache = self.sessions_cache.borrow_mut();
-        if let Some(ref mut list) = *cache {
-            let id = self.chat.session_id.clone();
-            let snippet = if let Some(first_msg) = self.chat.history.first()
-                && let Some(first_part) = first_msg.parts.first()
-                && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
-            {
-                text.chars().take(40).collect::<String>()
-            } else {
-                "Empty chat".to_owned()
-            };
+        if let Ok(mut cache) = self.sessions_cache.lock() {
+            if let Some(ref mut list) = *cache {
+                let id = self.chat.session_id.clone();
+                let snippet = if let Some(first_msg) = self.chat.history.first()
+                    && let Some(first_part) = first_msg.parts.first()
+                    && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
+                {
+                    text.chars().take(40).collect::<String>()
+                } else {
+                    "Empty chat".to_owned()
+                };
 
-            list.retain(|s| s.id != id);
-            list.insert(0, crate::app::session::SessionMeta { id, snippet });
-            list.sort_by(|a, b| b.id.cmp(&a.id));
+                list.retain(|s| s.id != id);
+                list.insert(0, crate::app::session::SessionMeta { id, snippet });
+            }
         }
     }
 
@@ -1373,6 +1486,46 @@ impl App {
             return None;
         }
 
+        let is_blocked_by_plan = self.dev_mode == DevelopMode::Plan
+            && (name == "sh"
+                || name == "write"
+                || name == "edit"
+                || name == "patch"
+                || name == "kill");
+
+        let is_allowed_plan_file = if self.dev_mode == DevelopMode::Plan {
+            let mut allowed = false;
+            if name == "write" || name == "edit" || name == "patch" {
+                if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
+                    allowed = Self::is_plan_file_allowed(path_str);
+                } else if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+                    allowed = edits.iter().all(|e| {
+                        e.get("path").and_then(|v| v.as_str()).map(Self::is_plan_file_allowed).unwrap_or(false)
+                    });
+                }
+            }
+            allowed
+        } else {
+            false
+        };
+
+        if is_blocked_by_plan && !is_allowed_plan_file {
+            self.chat.messages.push(MessageLine::error(
+                "Permission denied: Plan mode only allows editing .darwincode/plans/*.md".to_owned(),
+            ));
+            self.chat.message_queue.clear();
+            self.pending = None;
+            self.status = "Ready".to_owned();
+            if self.chat.messages.last().is_some_and(|m| m.pending) {
+                self.chat.messages.pop();
+            }
+            self.complete_function_execution(
+                name,
+                serde_json::json!({"error": "Permission denied: Plan mode only allows editing .darwincode/plans/*.md"}),
+            );
+            return None;
+        }
+
         self.pending = Some(PendingTask::ExecutingFunction { name: name.clone() });
         self.status = format!("Executing {name}");
         self.start_function_execution(&name, &args);
@@ -1382,6 +1535,30 @@ impl App {
             config: self.chat.config.clone(),
         })
     }
+
+fn is_plan_file_allowed(path_str: &str) -> bool {
+    let path = std::path::Path::new(path_str);
+    let is_md = path.extension().map(|ext| ext == "md").unwrap_or(false);
+    if !is_md {
+        return false;
+    }
+    if path_str.starts_with(".darwincode/plans/") || path_str.starts_with("./.darwincode/plans/") {
+        return true;
+    }
+    if let Ok(current_dir) = std::env::current_dir() {
+        let abs_allowed = current_dir.join(".darwincode/plans");
+        if let Ok(abs_path) = std::path::Path::new(path_str).canonicalize() {
+            if let Ok(abs_allowed_canonical) = abs_allowed.canonicalize() {
+                return abs_path.starts_with(abs_allowed_canonical);
+            }
+        }
+        let abs_allowed_str = abs_allowed.to_string_lossy();
+        if path_str.starts_with(&*abs_allowed_str) {
+            return true;
+        }
+    }
+    false
+}
 
     pub fn complete_function_execution(
         &mut self,
@@ -1542,6 +1719,7 @@ impl App {
             history: self.chat.history.clone(),
             cancel_token,
             generation_id,
+            dev_mode: self.dev_mode_label().to_owned(),
         }))
     }
 
