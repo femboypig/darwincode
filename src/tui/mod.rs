@@ -479,6 +479,7 @@ fn run_loop(
                         request.history,
                         request.cancel_token,
                         request.generation_id,
+                        request.dev_mode,
                         sender.clone(),
                     );
                 }
@@ -505,15 +506,48 @@ fn run_loop(
                 }
                 Event::Mouse(mouse_event) => match mouse_event.kind {
                     event::MouseEventKind::ScrollUp => {
-                        app.chat.scroll = app.chat.scroll.saturating_add(1);
+                        if matches!(app.pending, Some(crate::app::PendingTask::ConfirmFunction { .. })) {
+                            app.confirm_scroll.set(app.confirm_scroll.get().saturating_sub(1));
+                        } else {
+                            app.chat.scroll = app.chat.scroll.saturating_add(1);
+                        }
                     }
                     event::MouseEventKind::ScrollDown => {
-                        app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                        if matches!(app.pending, Some(crate::app::PendingTask::ConfirmFunction { .. })) {
+                            app.confirm_scroll.set(app.confirm_scroll.get().saturating_add(1));
+                        } else {
+                            app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                        }
                     }
                     event::MouseEventKind::Down(event::MouseButton::Left) => {
+                        let click_x = mouse_event.column;
+                        let click_y = mouse_event.row;
+
+                        if let Some(rect) = app.chat.mode_area.get() {
+                            if click_x >= rect.x
+                                && click_x < rect.x + rect.width
+                                && click_y == rect.y
+                            {
+                                app.toggle_dev_mode();
+                                continue;
+                            }
+                        }
+
+                        if let Some(rect) = app.chat.model_area.get() {
+                            if click_x >= rect.x
+                                && click_x < rect.x + rect.width
+                                && click_y == rect.y
+                            {
+                                if app.model_picker_open {
+                                    app.cancel_models();
+                                } else if let Some(config) = app.begin_load_chat_models() {
+                                    spawn_models_worker(config, sender.clone());
+                                }
+                                continue;
+                            }
+                        }
+
                         if let Some(rect) = app.chat.messages_area.get() {
-                            let click_x = mouse_event.column;
-                            let click_y = mouse_event.row;
                             if click_x >= rect.x
                                 && click_x < rect.x + rect.width
                                 && click_y >= rect.y
@@ -772,6 +806,7 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
                     request.history,
                     request.cancel_token,
                     request.generation_id,
+                    request.dev_mode,
                     sender.clone(),
                 );
             }
@@ -1805,6 +1840,7 @@ pub(crate) fn handle_function_action(
                 request.history,
                 request.cancel_token,
                 request.generation_id,
+                request.dev_mode,
                 sender.clone(),
             );
         }
@@ -1816,6 +1852,7 @@ pub(crate) fn spawn_generation_worker(
     history: Vec<crate::api::ChatMessage>,
     cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
     generation_id: usize,
+    dev_mode: String,
     sender: Sender<WorkerEvent>,
 ) {
     thread::spawn(move || {
@@ -1837,6 +1874,7 @@ pub(crate) fn spawn_generation_worker(
             let result = GeminiClient::new(config.clone()).generate_stream(
                 &history_c,
                 cancel_c,
+                &dev_mode,
                 move |chunk| {
                     let _ = sender_c.send(WorkerEvent::StreamChunk(generation_id, chunk));
                     Ok(())
