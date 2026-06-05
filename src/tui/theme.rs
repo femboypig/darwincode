@@ -3,12 +3,82 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(untagged)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SingleColor {
     Hex(String),   // e.g. "#2E3440"
     Ansi(u8),      // e.g. 3
     Named(String), // e.g. "none", "nord0", etc.
+}
+
+impl<'de> serde::Deserialize<'de> for SingleColor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct SingleColorVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SingleColorVisitor {
+            type Value = SingleColor;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a hex color string starting with '#', a color name string, or an ANSI u8 integer")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if value.starts_with('#') {
+                    Ok(SingleColor::Hex(value.to_string()))
+                } else {
+                    Ok(SingleColor::Named(value.to_string()))
+                }
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if value <= 255 {
+                    Ok(SingleColor::Ansi(value as u8))
+                } else {
+                    Err(serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Unsigned(value),
+                        &"an ANSI color code between 0 and 255",
+                    ))
+                }
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if (0..=255).contains(&value) {
+                    Ok(SingleColor::Ansi(value as u8))
+                } else {
+                    Err(serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Signed(value),
+                        &"an ANSI color code between 0 and 255",
+                    ))
+                }
+            }
+        }
+
+        deserializer.deserialize_any(SingleColorVisitor)
+    }
+}
+
+impl serde::Serialize for SingleColor {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            SingleColor::Hex(hex) => serializer.serialize_str(hex),
+            SingleColor::Ansi(code) => serializer.serialize_u8(*code),
+            SingleColor::Named(name) => serializer.serialize_str(name),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -140,6 +210,7 @@ pub enum ThemeMode {
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct ActiveTheme {
+    pub is_light: bool,
     pub primary: Color,
     pub secondary: Color,
     pub accent: Color,
@@ -202,6 +273,7 @@ impl Default for ActiveTheme {
     fn default() -> Self {
         // Fallback dark theme
         Self {
+            is_light: false,
             primary: Color::Rgb(255, 255, 255),
             secondary: Color::Rgb(110, 110, 110),
             accent: Color::Rgb(134, 194, 172),
@@ -262,6 +334,7 @@ impl Default for ActiveTheme {
 impl ActiveTheme {
     pub fn light_default() -> Self {
         Self {
+            is_light: true,
             primary: Color::Rgb(190, 60, 100),
             secondary: Color::Rgb(140, 140, 140),
             accent: Color::Rgb(190, 60, 100),
@@ -391,7 +464,13 @@ impl ThemeConfig {
         let text_muted = resolve(&self.theme.text_muted).unwrap_or(base_default.text_muted);
         let background = resolve_color_value(&self.theme.background, mode, defs, 0);
 
+        let is_light = match mode {
+            ThemeMode::Dark => false,
+            ThemeMode::Light => true,
+        };
+
         ActiveTheme {
+            is_light,
             primary,
             secondary,
             accent,
@@ -574,6 +653,36 @@ mod tests {
                 name,
                 res.err()
             );
+        }
+    }
+
+    #[test]
+    fn test_builtin_themes_resolve() {
+        let builtins = vec![
+            ("tokyonight", include_str!("themes/tokyonight.json")),
+            ("nord", include_str!("themes/nord.json")),
+            ("gruvbox", include_str!("themes/gruvbox.json")),
+            ("ayu", include_str!("themes/ayu.json")),
+            ("everforest", include_str!("themes/everforest.json")),
+        ];
+
+        for (name, content) in builtins {
+            let tc = serde_json::from_str::<ThemeConfig>(content)
+                .unwrap_or_else(|e| panic!("Failed to parse builtin '{}': {:?}", name, e));
+
+            // Check resolve in dark mode
+            let dark_resolved = tc.resolve(&ThemeMode::Dark);
+            if name == "tokyonight" {
+                assert_eq!(dark_resolved.primary, Color::Rgb(122, 162, 247));
+                assert!(!dark_resolved.is_light);
+            }
+
+            // Check resolve in light mode
+            let light_resolved = tc.resolve(&ThemeMode::Light);
+            if name == "tokyonight" {
+                assert_eq!(light_resolved.primary, Color::Rgb(52, 84, 140));
+                assert!(light_resolved.is_light);
+            }
         }
     }
 }
