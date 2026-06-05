@@ -1,7 +1,10 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
+pub fn highlight_code_line(
+    line: &str,
+    theme: &crate::tui::theme::ActiveTheme,
+) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let chars: Vec<char> = line.chars().collect();
     let mut i = 0;
@@ -34,7 +37,7 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                 }
                 i += 1;
             }
-            spans.push(Span::styled(s, Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(s, Style::default().fg(theme.syntax_comment)));
             continue;
         }
 
@@ -83,7 +86,7 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                 spans.push(Span::styled(
                     directive_text,
                     Style::default()
-                        .fg(Color::Magenta)
+                        .fg(theme.syntax_keyword)
                         .add_modifier(Modifier::BOLD),
                 ));
                 continue;
@@ -92,7 +95,7 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                 let comment_text: String = chars[i..].iter().collect();
                 spans.push(Span::styled(
                     comment_text,
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(theme.syntax_comment),
                 ));
                 break;
             }
@@ -103,7 +106,7 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
             let comment_text: String = chars[i..].iter().collect();
             spans.push(Span::styled(
                 comment_text,
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.syntax_comment),
             ));
             break;
         }
@@ -130,9 +133,9 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
 
             // JSON key heuristic: if next non-whitespace char is ':', style it as Blue instead of Green
             if quote == '"' && peek_next_non_ws(i) == Some(':') {
-                spans.push(Span::styled(s, Style::default().fg(Color::Blue)));
+                spans.push(Span::styled(s, Style::default().fg(theme.syntax_type)));
             } else {
-                spans.push(Span::styled(s, Style::default().fg(Color::Green)));
+                spans.push(Span::styled(s, Style::default().fg(theme.syntax_string)));
             }
             continue;
         }
@@ -146,7 +149,10 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                 decorator.push(chars[i]);
                 i += 1;
             }
-            spans.push(Span::styled(decorator, Style::default().fg(Color::Magenta)));
+            spans.push(Span::styled(
+                decorator,
+                Style::default().fg(theme.syntax_keyword),
+            ));
             continue;
         }
 
@@ -161,13 +167,16 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                 spans.push(Span::styled(
                     word,
                     Style::default()
-                        .fg(Color::Magenta)
+                        .fg(theme.syntax_keyword)
                         .add_modifier(Modifier::BOLD),
                 ));
             } else if is_built_in_type(&word) {
-                spans.push(Span::styled(word, Style::default().fg(Color::Blue)));
+                spans.push(Span::styled(word, Style::default().fg(theme.syntax_type)));
             } else {
-                spans.push(Span::styled(word, Style::default().fg(Color::Cyan)));
+                spans.push(Span::styled(
+                    word,
+                    Style::default().fg(theme.syntax_variable),
+                ));
             }
             continue;
         }
@@ -181,7 +190,7 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
                 num.push(chars[i]);
                 i += 1;
             }
-            spans.push(Span::styled(num, Style::default().fg(Color::Yellow)));
+            spans.push(Span::styled(num, Style::default().fg(theme.syntax_number)));
             continue;
         }
 
@@ -205,7 +214,10 @@ pub fn highlight_code_line(line: &str) -> Vec<Span<'static>> {
             i += 1;
         }
         if !other.is_empty() {
-            spans.push(Span::styled(other, Style::default().fg(Color::Cyan)));
+            spans.push(Span::styled(
+                other,
+                Style::default().fg(theme.syntax_punctuation),
+            ));
         }
     }
 
@@ -335,7 +347,10 @@ fn is_built_in_type(word: &str) -> bool {
     )
 }
 
-pub fn parse_markdown_lines(text: &str) -> Vec<Line<'static>> {
+pub fn parse_markdown_lines(
+    text: &str,
+    theme: &crate::tui::theme::ActiveTheme,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let mut in_code_block = false;
     let mut is_diff = false;
@@ -351,30 +366,39 @@ pub fn parse_markdown_lines(text: &str) -> Vec<Line<'static>> {
             }
             lines.push(Line::from(Span::styled(
                 raw_line.to_owned(),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.text_muted),
             )));
             continue;
         }
 
         if in_code_block {
             if is_diff {
-                let mut style = Style::default();
+                let mut style = Style::default().fg(theme.diff_context);
+                if let Some(bg) = theme.diff_context_bg {
+                    style = style.bg(bg);
+                }
                 let mut prefix = "";
                 if raw_line.starts_with('+') {
-                    style = Style::default().fg(Color::Black).bg(Color::Green);
+                    style = Style::default().fg(theme.diff_added);
+                    if let Some(bg) = theme.diff_added_bg {
+                        style = style.bg(bg);
+                    }
                     prefix = " ";
                 } else if raw_line.starts_with('-') {
-                    style = Style::default().fg(Color::Black).bg(Color::Red);
+                    style = Style::default().fg(theme.diff_removed);
+                    if let Some(bg) = theme.diff_removed_bg {
+                        style = style.bg(bg);
+                    }
                     prefix = " ";
                 } else if raw_line.starts_with("@@") {
-                    style = Style::default().fg(Color::DarkGray);
+                    style = Style::default().fg(theme.diff_hunk_header);
                 }
                 lines.push(Line::from(Span::styled(
                     format!("{prefix}{raw_line}"),
                     style,
                 )));
             } else {
-                lines.push(Line::from(highlight_code_line(raw_line)));
+                lines.push(Line::from(highlight_code_line(raw_line, theme)));
             }
             continue;
         }
@@ -386,14 +410,14 @@ pub fn parse_markdown_lines(text: &str) -> Vec<Line<'static>> {
                 Style::default()
                     .add_modifier(Modifier::BOLD)
                     .add_modifier(Modifier::UNDERLINED)
-                    .fg(Color::Yellow),
+                    .fg(theme.markdown_heading),
             )));
         } else if trimmed.starts_with("## ") || trimmed.starts_with("### ") {
             lines.push(Line::from(Span::styled(
                 raw_line.to_owned(),
                 Style::default()
                     .add_modifier(Modifier::BOLD)
-                    .fg(Color::Yellow),
+                    .fg(theme.markdown_heading),
             )));
         } else if trimmed.starts_with("* ")
             || trimmed.starts_with("- ")
@@ -401,23 +425,23 @@ pub fn parse_markdown_lines(text: &str) -> Vec<Line<'static>> {
                 && trimmed.contains(". "))
         {
             // Lists: highlight the marker
-            let mut spans = parse_inline_markdown(raw_line);
+            let mut spans = parse_inline_markdown(raw_line, theme);
             if !spans.is_empty() {
                 spans[0].style = spans[0]
                     .style
-                    .fg(Color::Yellow)
+                    .fg(theme.markdown_list_item)
                     .add_modifier(Modifier::BOLD);
             }
             lines.push(Line::from(spans));
         } else {
-            lines.push(Line::from(parse_inline_markdown(raw_line)));
+            lines.push(Line::from(parse_inline_markdown(raw_line, theme)));
         }
     }
 
     lines
 }
 
-fn parse_inline_markdown(line: &str) -> Vec<Span<'static>> {
+fn parse_inline_markdown(line: &str, theme: &crate::tui::theme::ActiveTheme) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut current = String::new();
     let mut chars = line.chars().peekable();
@@ -428,14 +452,20 @@ fn parse_inline_markdown(line: &str) -> Vec<Span<'static>> {
     while let Some(c) = chars.next() {
         if c == '`' {
             if !current.is_empty() {
-                spans.push(Span::styled(current.clone(), style_for(is_bold, is_code)));
+                spans.push(Span::styled(
+                    current.clone(),
+                    style_for(is_bold, is_code, theme),
+                ));
                 current.clear();
             }
             is_code = !is_code;
         } else if c == '*' && chars.peek() == Some(&'*') {
             chars.next(); // consume second '*'
             if !current.is_empty() {
-                spans.push(Span::styled(current.clone(), style_for(is_bold, is_code)));
+                spans.push(Span::styled(
+                    current.clone(),
+                    style_for(is_bold, is_code, theme),
+                ));
                 current.clear();
             }
             is_bold = !is_bold;
@@ -445,19 +475,19 @@ fn parse_inline_markdown(line: &str) -> Vec<Span<'static>> {
     }
 
     if !current.is_empty() {
-        spans.push(Span::styled(current, style_for(is_bold, is_code)));
+        spans.push(Span::styled(current, style_for(is_bold, is_code, theme)));
     }
 
     spans
 }
 
-fn style_for(is_bold: bool, is_code: bool) -> Style {
-    let mut style = Style::default();
+fn style_for(is_bold: bool, is_code: bool, theme: &crate::tui::theme::ActiveTheme) -> Style {
+    let mut style = Style::default().fg(theme.markdown_text);
     if is_bold {
-        style = style.add_modifier(Modifier::BOLD);
+        style = style.fg(theme.markdown_strong).add_modifier(Modifier::BOLD);
     }
     if is_code {
-        style = style.fg(Color::Cyan);
+        style = style.fg(theme.markdown_code);
     }
     style
 }
@@ -534,26 +564,28 @@ pub fn wrap_text_to_lines(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::theme::ActiveTheme;
 
     #[test]
     fn test_rich_highlighting() {
+        let theme = ActiveTheme::default();
         // Test JSON key
-        let spans = highlight_code_line("\"key\": \"value\"");
+        let spans = highlight_code_line("\"key\": \"value\"", &theme);
         assert_eq!(spans[0].content, "\"key\"");
-        assert_eq!(spans[0].style.fg, Some(Color::Blue)); // JSON key styled as blue
+        assert_eq!(spans[0].style.fg, Some(theme.syntax_type)); // JSON key styled as blue
 
         assert_eq!(spans[2].content, "\"value\"");
-        assert_eq!(spans[2].style.fg, Some(Color::Green)); // String value styled as green
+        assert_eq!(spans[2].style.fg, Some(theme.syntax_string)); // String value styled as green
 
         // Test Built-in type
-        let spans_types = highlight_code_line("let x: usize = 42;");
+        let spans_types = highlight_code_line("let x: usize = 42;", &theme);
         let usize_span = spans_types.iter().find(|s| s.content == "usize").unwrap();
-        assert_eq!(usize_span.style.fg, Some(Color::Blue)); // Type styled as blue
+        assert_eq!(usize_span.style.fg, Some(theme.syntax_type)); // Type styled as blue
 
         // Test Decorator
-        let spans_decorator = highlight_code_line("@app.route('/')");
+        let spans_decorator = highlight_code_line("@app.route('/')", &theme);
         assert_eq!(spans_decorator[0].content, "@app.route");
-        assert_eq!(spans_decorator[0].style.fg, Some(Color::Magenta)); // Decorator styled as magenta
+        assert_eq!(spans_decorator[0].style.fg, Some(theme.syntax_keyword)); // Decorator styled as magenta
     }
 
     #[test]
@@ -565,23 +597,26 @@ mod tests {
 
     #[test]
     fn test_parse_inline_markdown_bold() {
-        let spans = parse_inline_markdown("This is **bold** text");
+        let theme = ActiveTheme::default();
+        let spans = parse_inline_markdown("This is **bold** text", &theme);
         let bold_span = spans.iter().find(|s| s.content == "bold").unwrap();
         assert!(bold_span.style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
     fn test_parse_inline_markdown_bold_and_code() {
-        let spans = parse_inline_markdown("This is **bold and `code`** text");
+        let theme = ActiveTheme::default();
+        let spans = parse_inline_markdown("This is **bold and `code`** text", &theme);
         let code_span = spans.iter().find(|s| s.content == "code").unwrap();
         assert!(code_span.style.add_modifier.contains(Modifier::BOLD));
-        assert_eq!(code_span.style.fg, Some(Color::Cyan));
+        assert_eq!(code_span.style.fg, Some(theme.markdown_code));
     }
 
     #[test]
     fn test_parse_inline_markdown_code() {
-        let spans = parse_inline_markdown("This is `code` text");
+        let theme = ActiveTheme::default();
+        let spans = parse_inline_markdown("This is `code` text", &theme);
         let code_span = spans.iter().find(|s| s.content == "code").unwrap();
-        assert_eq!(code_span.style.fg, Some(Color::Cyan));
+        assert_eq!(code_span.style.fg, Some(theme.markdown_code));
     }
 }
