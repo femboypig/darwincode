@@ -1,7 +1,6 @@
 pub(crate) mod ask_user;
 pub(crate) mod chat;
 pub(crate) mod common;
-pub(crate) mod models;
 pub(crate) mod permissions;
 pub(crate) mod sessions;
 pub(crate) mod setup;
@@ -17,7 +16,6 @@ pub(crate) fn handle_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEv
     match app.screen {
         Screen::Setup => setup::handle_setup_key(app, sender, key),
         Screen::Chat => chat::handle_chat_key(app, sender, key),
-        Screen::Models => models::handle_models_key(app, key),
         Screen::Permissions => permissions::handle_permissions_key(app, sender, key),
         Screen::Sessions => sessions::handle_sessions_key(app, key),
         Screen::AskUser => ask_user::handle_ask_user_key(app, key),
@@ -30,6 +28,12 @@ pub(crate) fn handle_paste(app: &mut App, text: String) {
             app.pending,
             Some(crate::app::PendingTask::ConfirmFunction { .. })
         ) {
+            return;
+        }
+        if app.model_picker_open {
+            for c in text.chars() {
+                app.models.push_query(c);
+            }
             return;
         }
         app.chat.insert_text(&text);
