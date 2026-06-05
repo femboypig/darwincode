@@ -125,9 +125,7 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         let selected = app.sessions.selected.min(total.saturating_sub(1));
         let visible = list_area.height as usize;
-        let start = if total <= visible {
-            0
-        } else if selected < visible / 2 {
+        let start = if total <= visible || selected < visible / 2 {
             0
         } else if selected >= total - visible / 2 {
             total - visible
