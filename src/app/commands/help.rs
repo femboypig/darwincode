@@ -1,5 +1,5 @@
-use crate::app::core::App;
 use crate::app::chat::MessageLine;
+use crate::app::core::App;
 
 pub fn run(app: &mut App) {
     let help_text = "Available commands:\n\
@@ -40,4 +40,3 @@ mod tests {
         assert!(app.chat.messages[0].text.contains("Available commands:"));
     }
 }
-
