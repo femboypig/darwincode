@@ -496,11 +496,24 @@ fn run_loop(
             }
         }
 
+        if let Some((click_x, click_y)) = app.chat.last_mouse_drag_pos {
+            if let Some(rect) = app.chat.messages_area.get() {
+                if click_y < rect.y {
+                    app.chat.scroll = app.chat.scroll.saturating_add(1);
+                    update_selection_on_scroll(app, click_x, click_y);
+                } else if click_y >= rect.y + rect.height {
+                    app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                    update_selection_on_scroll(app, click_x, click_y);
+                }
+            }
+        }
+
         let _ = terminal.draw(|frame| render::render(frame, app));
 
         if event::poll(Duration::from_millis(100))? {
             match event::read()? {
                 Event::Key(key) => {
+                    app.chat.selection = None;
                     if key.kind != event::KeyEventKind::Release {
                         events::handle_key(app, sender, key)?;
                     }
@@ -516,6 +529,7 @@ fn run_loop(
                         } else {
                             app.chat.scroll = app.chat.scroll.saturating_add(1);
                         }
+                        update_selection_on_scroll(app, mouse_event.column, mouse_event.row);
                     }
                     event::MouseEventKind::ScrollDown => {
                         if matches!(
@@ -527,6 +541,7 @@ fn run_loop(
                         } else {
                             app.chat.scroll = app.chat.scroll.saturating_sub(1);
                         }
+                        update_selection_on_scroll(app, mouse_event.column, mouse_event.row);
                     }
                     event::MouseEventKind::Down(event::MouseButton::Left) => {
                         let click_x = mouse_event.column;
@@ -537,6 +552,8 @@ fn run_loop(
                             && click_x < rect.x + rect.width
                             && click_y == rect.y
                         {
+                            app.chat.selection = None;
+                            app.chat.last_mouse_drag_pos = None;
                             app.toggle_dev_mode();
                             continue;
                         }
@@ -546,6 +563,8 @@ fn run_loop(
                             && click_x < rect.x + rect.width
                             && click_y == rect.y
                         {
+                            app.chat.selection = None;
+                            app.chat.last_mouse_drag_pos = None;
                             if app.model_picker_open {
                                 app.cancel_models();
                             } else if let Some(config) = app.begin_load_chat_models() {
@@ -587,6 +606,8 @@ fn run_loop(
                             if let Some(msg_idx) = clicked_msg_idx
                                 && app.chat.messages[msg_idx].is_shell
                             {
+                                app.chat.selection = None;
+                                app.chat.last_mouse_drag_pos = None;
                                 if let Some(session_id) =
                                     app.chat.messages[msg_idx].shell_session_id.clone()
                                 {
@@ -757,6 +778,111 @@ fn run_loop(
                                                 ));
                                     }
                                 }
+                            } else if let Some(msg_idx) = clicked_msg_idx {
+                                let message = &app.chat.messages[msg_idx];
+                                if message.author == "Darwin" && !message.is_shell && !message.is_tool {
+                                    if let Some(&(_, start_line, _)) = app
+                                        .chat
+                                        .message_line_ranges
+                                        .borrow()
+                                        .iter()
+                                        .find(|&&(idx, _, _)| idx == msg_idx)
+                                    {
+                                        let rel_line = clicked_line.saturating_sub(start_line);
+                                        let text_start_x = rect.x + 6;
+                                        let rel_col = if click_x >= text_start_x {
+                                            (click_x - text_start_x) as usize
+                                        } else {
+                                            0
+                                        };
+
+                                        app.chat.selection = Some(crate::app::chat::MessageSelection {
+                                            msg_idx,
+                                            start_line: rel_line,
+                                            start_col: rel_col,
+                                            end_line: rel_line,
+                                            end_col: rel_col,
+                                        });
+                                        app.chat.last_mouse_drag_pos = Some((click_x, click_y));
+                                    }
+                                } else {
+                                    app.chat.selection = None;
+                                    app.chat.last_mouse_drag_pos = None;
+                                }
+                            } else {
+                                app.chat.selection = None;
+                                app.chat.last_mouse_drag_pos = None;
+                            }
+                        } else {
+                            app.chat.selection = None;
+                            app.chat.last_mouse_drag_pos = None;
+                        }
+                    }
+                    event::MouseEventKind::Drag(event::MouseButton::Left) => {
+                        if let Some(rect) = app.chat.messages_area.get() {
+                            let click_x = mouse_event.column;
+                            let click_y = mouse_event.row;
+
+                            app.chat.last_mouse_drag_pos = Some((click_x, click_y));
+
+                            // Handle scrolling if dragging outside the viewport vertical boundaries
+                            if click_y < rect.y {
+                                app.chat.scroll = app.chat.scroll.saturating_add(1);
+                            } else if click_y >= rect.y + rect.height {
+                                app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                            }
+
+                            if let Some(ref mut sel) = app.chat.selection {
+                                let clamped_y = click_y.clamp(rect.y, rect.y + rect.height - 1);
+                                
+                                let total_lines = app
+                                    .chat
+                                    .message_line_ranges
+                                    .borrow()
+                                    .last()
+                                    .map(|(_, _, end)| *end)
+                                    .unwrap_or(0);
+                                let viewport_height = rect.height as usize;
+                                let max_scroll = total_lines.saturating_sub(viewport_height);
+                                let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
+                                let scroll_y = max_scroll.saturating_sub(scroll_offset);
+
+                                let clicked_line = scroll_y + (clamped_y - rect.y) as usize;
+                                
+                                if let Some(&(_, start_line, end_line)) = app
+                                    .chat
+                                    .message_line_ranges
+                                    .borrow()
+                                    .iter()
+                                    .find(|&&(idx, _, _)| idx == sel.msg_idx)
+                                {
+                                    let clamped_line = clicked_line.clamp(start_line, end_line.saturating_sub(1));
+                                    let rel_line = clamped_line.saturating_sub(start_line);
+                                    
+                                    let text_start_x = rect.x + 6;
+                                    let rel_col = if click_x >= text_start_x {
+                                        (click_x - text_start_x) as usize
+                                    } else {
+                                        0
+                                    };
+                                    
+                                    sel.end_line = rel_line;
+                                    sel.end_col = rel_col;
+                                }
+                            }
+                        }
+                    }
+                    event::MouseEventKind::Up(event::MouseButton::Left) => {
+                        app.chat.last_mouse_drag_pos = None;
+                        if let Some(ref sel) = app.chat.selection {
+                            if sel.start_line != sel.end_line || sel.start_col != sel.end_col {
+                                let message = &app.chat.messages[sel.msg_idx];
+                                let text_to_copy = extract_selected_text(message, sel);
+                                if !text_to_copy.is_empty() {
+                                    if crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok() {
+                                        app.status = "Copied selection to clipboard".to_owned();
+                                    }
+                                }
                             }
                         }
                     }
@@ -773,6 +899,107 @@ fn run_loop(
     }
 
     Ok(())
+}
+
+fn get_line_text_excluding_margin(line: &ratatui::text::Line<'_>) -> String {
+    let mut s = String::new();
+    for span in &line.spans {
+        s.push_str(&span.content);
+    }
+    if s.starts_with("    ") {
+        s.chars().skip(4).collect()
+    } else {
+        s
+    }
+}
+
+fn extract_selected_text(
+    message: &crate::app::MessageLine,
+    selection: &crate::app::chat::MessageSelection,
+) -> String {
+    let cache = message.cached_wrapped.borrow();
+    let lines = if let Some((_, _, ref lines)) = *cache {
+        lines
+    } else {
+        return String::new();
+    };
+
+    let (min_line, min_col, max_line, max_col) = selection.normalized();
+    
+    let mut result = String::new();
+    for line_idx in min_line..=max_line {
+        if line_idx >= lines.len() {
+            break;
+        }
+        
+        let line_text = get_line_text_excluding_margin(&lines[line_idx]);
+        let line_chars: Vec<char> = line_text.chars().collect();
+        
+        if min_line == max_line {
+            let start = min_col.min(line_chars.len());
+            let end = max_col.min(line_chars.len());
+            if start < end {
+                result.push_str(&line_chars[start..end].iter().collect::<String>());
+            }
+        } else if line_idx == min_line {
+            let start = min_col.min(line_chars.len());
+            if start < line_chars.len() {
+                result.push_str(&line_chars[start..].iter().collect::<String>());
+            }
+            result.push('\n');
+        } else if line_idx == max_line {
+            let end = max_col.min(line_chars.len());
+            if end > 0 {
+                result.push_str(&line_chars[..end].iter().collect::<String>());
+            }
+        } else {
+            result.push_str(&line_text);
+            result.push('\n');
+        }
+    }
+    
+    result
+}
+
+fn update_selection_on_scroll(app: &mut App, click_x: u16, click_y: u16) {
+    if let Some(rect) = app.chat.messages_area.get() {
+        if let Some(ref mut sel) = app.chat.selection {
+            let clamped_y = click_y.clamp(rect.y, rect.y + rect.height - 1);
+            let total_lines = app
+                .chat
+                .message_line_ranges
+                .borrow()
+                .last()
+                .map(|(_, _, end)| *end)
+                .unwrap_or(0);
+            let viewport_height = rect.height as usize;
+            let max_scroll = total_lines.saturating_sub(viewport_height);
+            let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
+            let scroll_y = max_scroll.saturating_sub(scroll_offset);
+
+            let clicked_line = scroll_y + (clamped_y - rect.y) as usize;
+            if let Some(&(_, start_line, end_line)) = app
+                .chat
+                .message_line_ranges
+                .borrow()
+                .iter()
+                .find(|&&(idx, _, _)| idx == sel.msg_idx)
+            {
+                let clamped_line = clicked_line.clamp(start_line, end_line.saturating_sub(1));
+                let rel_line = clamped_line.saturating_sub(start_line);
+                
+                let text_start_x = rect.x + 6;
+                let rel_col = if click_x >= text_start_x {
+                    (click_x - text_start_x) as usize
+                } else {
+                    0
+                };
+                
+                sel.end_line = rel_line;
+                sel.end_col = rel_col;
+            }
+        }
+    }
 }
 
 fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<WorkerEvent>) {
