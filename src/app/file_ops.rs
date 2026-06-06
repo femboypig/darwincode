@@ -1,15 +1,18 @@
 use std::fs;
 
+#[allow(dead_code)]
 pub struct Edit {
     pub path: String,
     pub old: String,
     pub new: String,
 }
 
+#[allow(dead_code)]
 pub struct TransactionReport {
     pub applied: Vec<String>,
 }
 
+#[allow(dead_code)]
 pub fn apply_transactional_edits(edits: &[Edit]) -> Result<TransactionReport, Vec<String>> {
     let mut original_contents = Vec::new();
     let mut errors = Vec::new();
@@ -47,13 +50,12 @@ pub fn apply_transactional_edits(edits: &[Edit]) -> Result<TransactionReport, Ve
 
     let mut applied_paths = Vec::new();
     for edit in edits {
-        if let Some(parent) = std::path::Path::new(&edit.path).parent() {
-            if !parent.exists() {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    errors.push(format!("Failed to create directories for {}: {}", edit.path, e));
-                    break;
-                }
-            }
+        if let Some(parent) = std::path::Path::new(&edit.path).parent()
+            && !parent.exists()
+            && let Err(e) = fs::create_dir_all(parent)
+        {
+            errors.push(format!("Failed to create directories for {}: {}", edit.path, e));
+            break;
         }
 
         if let Err(e) = fs::write(&edit.path, &edit.new) {
