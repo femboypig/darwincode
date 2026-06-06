@@ -4,6 +4,8 @@ pub mod permission;
 pub mod session;
 pub mod setup;
 pub mod theme_picker;
+pub mod custom;
+pub mod agent_picker;
 
 pub use chat::{ChatCommand, ChatState, CommandSuggestion, MessageLine};
 pub use model::ModelPickerState;
@@ -11,6 +13,10 @@ pub use permission::PermissionPickerState;
 pub use session::SessionPickerState;
 pub use setup::{SetupField, SetupState};
 pub use theme_picker::ThemePickerState;
+pub use custom::{load_custom_agents, load_custom_commands};
+pub use agent_picker::AgentPickerState;
+
+
 
 use crate::api::{ChatMessage, GeminiResponse};
 use crate::config::{PermissionLevel, StoredConfig};
@@ -113,6 +119,9 @@ pub struct App {
     pub model_picker_open: bool,
     pub theme_picker: ThemePickerState,
     pub theme_picker_open: bool,
+    pub active_agent: Option<String>,
+    pub agent_picker: AgentPickerState,
+    pub agent_picker_open: bool,
 }
 
 impl App {
@@ -131,6 +140,8 @@ impl App {
         match config {
             Some(config) => {
                 let theme_picker = ThemePickerState::new(&config.theme);
+                let agent_picker = AgentPickerState::new(&config.active_agent);
+                let active_agent = config.active_agent.clone();
                 Self {
                     screen: Screen::Chat,
                     setup: SetupState::default(),
@@ -159,38 +170,47 @@ impl App {
                     model_picker_open: false,
                     theme_picker,
                     theme_picker_open: false,
+                    active_agent,
+                    agent_picker,
+                    agent_picker_open: false,
                 }
             }
-            None => Self {
-                screen: Screen::Setup,
-                setup: SetupState::default(),
-                chat: ChatState::new(StoredConfig::default()),
-                models: ModelPickerState::default(),
-                permissions: PermissionPickerState::default(),
-                sessions: SessionPickerState::default(),
-                status: "Enter a Gemini API key. Use Tab to move, Enter to run an action."
-                    .to_owned(),
-                pending: None,
-                tick: 0,
-                should_quit: false,
-                keybindings,
-                cancel_token: None,
-                last_file_backups: Vec::new(),
-                generation_id: 0,
-                confirm_scroll: std::cell::Cell::new(0),
-                ask_user: AskUserState {
-                    question: String::new(),
-                    options: Vec::new(),
-                    selected_idx: 0,
-                    custom_input: String::new(),
-                    is_custom: false,
-                },
-                sessions_cache,
-                dev_mode: DevelopMode::Build,
-                model_picker_open: false,
-                theme_picker: ThemePickerState::new(&crate::config::Theme::Auto),
-                theme_picker_open: false,
-            },
+            None => {
+                let agent_picker = AgentPickerState::new(&None);
+                Self {
+                    screen: Screen::Setup,
+                    setup: SetupState::default(),
+                    chat: ChatState::new(StoredConfig::default()),
+                    models: ModelPickerState::default(),
+                    permissions: PermissionPickerState::default(),
+                    sessions: SessionPickerState::default(),
+                    status: "Enter a Gemini API key. Use Tab to move, Enter to run an action."
+                        .to_owned(),
+                    pending: None,
+                    tick: 0,
+                    should_quit: false,
+                    keybindings,
+                    cancel_token: None,
+                    last_file_backups: Vec::new(),
+                    generation_id: 0,
+                    confirm_scroll: std::cell::Cell::new(0),
+                    ask_user: AskUserState {
+                        question: String::new(),
+                        options: Vec::new(),
+                        selected_idx: 0,
+                        custom_input: String::new(),
+                        is_custom: false,
+                    },
+                    sessions_cache,
+                    dev_mode: DevelopMode::Build,
+                    model_picker_open: false,
+                    theme_picker: ThemePickerState::new(&crate::config::Theme::Auto),
+                    theme_picker_open: false,
+                    active_agent: None,
+                    agent_picker,
+                    agent_picker_open: false,
+                }
+            }
         }
     }
 
@@ -1303,10 +1323,65 @@ impl App {
                 None
             }
 
+            ChatCommand::Agents => {
+                self.agent_picker = AgentPickerState::new(&self.active_agent);
+                self.agent_picker_open = true;
+                self.status = "Select agent. Enter to apply, Esc to cancel.".to_owned();
+                None
+            }
+            ChatCommand::Agent(name) => {
+                let custom_agents = crate::app::load_custom_agents();
+                if let Some(agent_name) = name {
+                    if agent_name.to_lowercase() == "none" {
+                        self.active_agent = None;
+                        self.chat.config.active_agent = None;
+                        self.chat.messages.push(MessageLine::info("Active agent cleared.".to_owned()));
+                        self.status = "Agent cleared".to_owned();
+                    } else if custom_agents.contains_key(&agent_name) {
+                        self.active_agent = Some(agent_name.clone());
+                        self.chat.config.active_agent = Some(agent_name.clone());
+                        let display_name = &custom_agents[&agent_name].name;
+                        self.chat.messages.push(MessageLine::info(format!("Active agent set to: **{}**", display_name)));
+                        self.status = format!("Agent set to {}", display_name);
+                    } else {
+                        self.chat.messages.push(MessageLine::error(format!("Agent '{}' not found.", agent_name)));
+                        self.status = format!("Agent '{}' not found", agent_name);
+                    }
+                } else {
+                    self.agent_picker = AgentPickerState::new(&self.active_agent);
+                    self.agent_picker_open = true;
+                    self.status = "Select agent. Enter to apply, Esc to cancel.".to_owned();
+                }
+                None
+            }
+            ChatCommand::Custom(name) => {
+                let custom_cmds = crate::app::load_custom_commands();
+                if let Some(config) = custom_cmds.get(&name) {
+                    if let Some(ref model_override) = config.model {
+                        self.chat.config.model = model_override.trim_start_matches("models/").to_owned();
+                    }
+                    match config.execute() {
+                        Ok(prompt_content) => {
+                            self.chat.input = prompt_content;
+                            self.chat.cursor = self.chat.input.chars().count();
+                            self.chat.suggestion_idx = 0;
+                            self.status = format!("Custom command /{} executed into input buffer", name);
+                        }
+                        Err(e) => {
+                            self.chat.messages.push(MessageLine::error(format!("Error executing custom command /{}: {}", name, e)));
+                            self.status = format!("Error executing custom command /{}", name);
+                        }
+                    }
+                }
+                None
+            }
+
             ChatCommand::Help => {
                 let help_text = "Available commands:\n\
                                  - **/settings**: Open configuration settings\n\
                                  - **/models**: List and select Gemini/OpenAI models\n\
+                                 - **/agents**: Open active agent selection picker\n\
+                                 - **/agent [name]**: Switch to active agent by name (or 'none' to clear)\n\
                                  - **/permissions [safe|guardian|chaos]**: View or set permission level\n\
                                  - **/resume [session_id]**: Load a saved session (or open selector)\n\
                                  - **/new**: Start a new chat session\n\
@@ -1402,6 +1477,47 @@ impl App {
                 self.status = error.to_string();
             }
         }
+    }
+
+    pub fn cancel_agents(&mut self) {
+        self.agent_picker_open = false;
+        self.agent_picker.clear_query();
+        self.status = "Ready".to_owned();
+    }
+
+    pub fn select_next_agent(&mut self) {
+        self.agent_picker.select_next();
+    }
+
+    pub fn select_previous_agent(&mut self) {
+        self.agent_picker.select_previous();
+    }
+
+    pub fn apply_selected_agent(&mut self) {
+        let Some((agent_id, display_name)) = self.agent_picker.selected_agent() else {
+            self.status = "No agent selected".to_owned();
+            return;
+        };
+
+        self.active_agent = agent_id.clone();
+        self.chat.config.active_agent = agent_id.clone();
+
+        self.status = if agent_id.is_some() {
+            format!("Agent set to {}", display_name)
+        } else {
+            "Agent cleared (Standard Agent)".to_owned()
+        };
+
+        if self.chat.messages.last().is_some_and(|m| m.pending) {
+            self.chat.messages.pop();
+        }
+        self.chat.messages.push(MessageLine::info(format!(
+            "Active agent set to: **{}**",
+            display_name
+        )));
+
+        self.agent_picker_open = false;
+        self.agent_picker.clear_query();
     }
 
     pub fn apply_permission_level(&mut self) -> Option<SubmitAction> {
