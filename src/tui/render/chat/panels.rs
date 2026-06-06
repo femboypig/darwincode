@@ -218,7 +218,7 @@ pub(crate) fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         let max_scroll = body_lines.len().saturating_sub(body_area.height as usize);
-        let current_scroll = app.ui.confirm_scroll.get().min(max_scroll as u16);
+        let current_scroll = app.ui.confirm_scroll.get().min(u16::try_from(max_scroll.min(usize::from(u16::MAX))).unwrap_or(u16::MAX));
         app.ui.confirm_scroll.set(current_scroll);
 
         frame.render_widget(
