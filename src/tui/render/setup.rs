@@ -33,14 +33,14 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let api_key_display = if app.setup.api_key.is_empty() {
+    let api_key_display = if app.ui.setup.api_key.is_empty() {
         "not set".to_owned()
     } else {
-        let count = app.setup.api_key.chars().count();
+        let count = app.ui.setup.api_key.chars().count();
         format!("{} ({} chars)", "*".repeat(count.min(12)), count)
     };
 
-    let has_tip = app.setup.api_key.starts_with("sk-");
+    let has_tip = app.ui.setup.api_key.starts_with("sk-");
     let tip_height = if has_tip { 1 } else { 0 };
 
     let chunks = Layout::default()
@@ -91,19 +91,19 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         ),
         (
             "Model",
-            app.setup.model.clone(),
+            app.ui.setup.model.clone(),
             SetupField::Model,
             Color::Rgb(168, 85, 247),
         ),
         (
             "Base URL",
-            app.setup.base_url.clone(),
+            app.ui.setup.base_url.clone(),
             SetupField::BaseUrl,
             Color::Rgb(59, 130, 246),
         ),
         (
             "Codebase Tools",
-            (if app.setup.enable_codebase_tools {
+            (if app.ui.setup.enable_codebase_tools {
                 icons::CHECK_ENABLED
             } else {
                 icons::CROSS_DISABLED
@@ -114,7 +114,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         ),
         (
             "Bash Execution",
-            (if app.setup.enable_bash_tools {
+            (if app.ui.setup.enable_bash_tools {
                 icons::CHECK_ENABLED
             } else {
                 icons::CROSS_DISABLED
@@ -125,13 +125,13 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         ),
         (
             "Security Mode",
-            app.setup.permission_level.label().to_owned(),
+            app.ui.setup.permission_level.label().to_owned(),
             SetupField::PermissionLevel,
             Color::Rgb(239, 68, 68),
         ),
         (
             "Thoughts View",
-            (if app.setup.show_thoughts {
+            (if app.ui.setup.show_thoughts {
                 icons::CHECK_SHOW_FULL
             } else {
                 icons::CROSS_LABEL_ONLY
@@ -142,13 +142,13 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         ),
         (
             "Theme",
-            app.setup.theme.label().to_owned(),
+            app.ui.setup.theme.label().to_owned(),
             SetupField::Theme,
             Color::Rgb(251, 146, 60),
         ),
         (
             "Respect Ignore Rules",
-            (if app.setup.respect_ignore_rules {
+            (if app.ui.setup.respect_ignore_rules {
                 icons::CHECK_ENABLED
             } else {
                 icons::CROSS_DISABLED
@@ -161,7 +161,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
 
     let total_lines = fields.len() + 1; // fields + Save button
     let viewport = body_area.height as usize;
-    let active_idx = app.setup.active_field.index();
+    let active_idx = app.ui.setup.active_field.index();
     let start = if total_lines <= viewport || active_idx < viewport / 2 {
         0
     } else if active_idx >= total_lines - viewport / 2 {
@@ -189,14 +189,14 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
             (
                 "Save and Start Assistant".to_owned(),
                 String::new(),
-                app.setup.active_field == SetupField::Save,
+                app.ui.setup.active_field == SetupField::Save,
             )
         } else {
             let (label, value, _, _) = &fields[idx];
             (
                 label.to_string(),
                 value.clone(),
-                app.setup.active_field == fields[idx].2,
+                app.ui.setup.active_field == fields[idx].2,
             )
         };
 
@@ -267,7 +267,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
             );
         } else {
             let field_color = fields[idx].3;
-            let is_editing = is_active && app.setup.is_editing;
+            let is_editing = is_active && app.ui.setup.is_editing;
             let value_style = if is_active {
                 if is_editing {
                     Style::default()
@@ -302,7 +302,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     // Footer
-    let footer_text = if app.setup.is_editing {
+    let footer_text = if app.ui.setup.is_editing {
         " Up/Down: Move • Enter: Save field • Esc: Cancel editing "
     } else {
         " Up/Down: Move • Enter/Space: Edit/Toggle • Left/Right: Cycle options • Esc: Exit "
