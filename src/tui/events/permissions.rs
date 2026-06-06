@@ -71,3 +71,30 @@ pub(crate) fn handle_permissions_key(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::StoredConfig;
+    use crossterm::event::{KeyEvent, KeyCode, KeyModifiers};
+    use std::sync::mpsc;
+
+    #[test]
+    fn test_handle_permissions_key_navigation() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        let (sender, _receiver) = mpsc::channel();
+
+        // Initially selected = 0 (Safe)
+        assert_eq!(app.ui.permissions.selected, 0);
+
+        // Press ScrollDown (Keybindings map Down key to ScrollDown)
+        let key_down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
+        handle_permissions_key(&mut app, &sender, key_down).unwrap();
+        assert_eq!(app.ui.permissions.selected, 1);
+
+        // Press ScrollUp
+        let key_up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+        handle_permissions_key(&mut app, &sender, key_up).unwrap();
+        assert_eq!(app.ui.permissions.selected, 0);
+    }
+}
