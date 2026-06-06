@@ -179,7 +179,9 @@ pub fn load_keybindings() -> (KeyBindings, Option<String>) {
                     Ok(data) => match serde_json::from_str::<KeyBindings>(&data) {
                         Ok(config) => config,
                         Err(e) => {
-                            eprintln!("[darwincode] keybindings config invalid: {e}; using defaults");
+                            eprintln!(
+                                "[darwincode] keybindings config invalid: {e}; using defaults"
+                            );
                             warning = Some("Keybindings config malformed".to_owned());
                             KeyBindings::default()
                         }
