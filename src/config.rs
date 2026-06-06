@@ -375,6 +375,8 @@ impl Default for StoredConfig {
 
 #[cfg(test)]
 pub static TEST_CONFIG_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+#[cfg(test)]
+pub static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub fn config_path() -> Result<PathBuf> {
     #[cfg(test)]
