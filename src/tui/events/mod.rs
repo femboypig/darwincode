@@ -4,6 +4,8 @@ pub(crate) mod common;
 pub(crate) mod permissions;
 pub(crate) mod sessions;
 pub(crate) mod setup;
+pub(crate) mod mouse;
+
 
 use anyhow::Result;
 use crossterm::event::KeyEvent;
