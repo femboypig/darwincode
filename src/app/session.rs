@@ -648,9 +648,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
-        unsafe {
-            std::env::set_var("HOME", &temp_dir);
-        }
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
 
         let config = crate::config::StoredConfig {
             api_key: "test_key".to_owned(),
@@ -676,6 +674,7 @@ mod tests {
         assert_eq!(messages[0].author, "You");
         assert_eq!(messages[0].text, "Hello!");
 
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = None;
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
