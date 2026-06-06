@@ -80,12 +80,12 @@ pub(crate) fn handle_setup_key(
         }
         (KeyCode::Up, _) | (KeyCode::BackTab, _) => {
             let current_idx = app.ui.setup.active_field.index();
-            let next_idx = (current_idx + 9) % 10;
+            let next_idx = (current_idx + 10) % 11;
             app.ui.setup.active_field = SetupField::from_index(next_idx);
         }
         (KeyCode::Down, _) | (KeyCode::Tab, _) => {
             let current_idx = app.ui.setup.active_field.index();
-            let next_idx = (current_idx + 1) % 10;
+            let next_idx = (current_idx + 1) % 11;
             app.ui.setup.active_field = SetupField::from_index(next_idx);
         }
         (KeyCode::Left, _) => match app.ui.setup.active_field {
@@ -159,6 +159,9 @@ pub(crate) fn handle_setup_key(
             }
             SetupField::RespectIgnoreRules => {
                 app.ui.setup.respect_ignore_rules = !app.ui.setup.respect_ignore_rules;
+            }
+            SetupField::TrustWorkspace => {
+                app.ui.setup.trust_workspace = !app.ui.setup.trust_workspace;
             }
             SetupField::ApiKey | SetupField::Model | SetupField::BaseUrl => {
                 app.ui.setup.is_editing = true;
@@ -318,6 +321,12 @@ mod tests {
         app.ui.setup.enable_bash_tools = false;
         handle_setup_key(&mut app, &sender, key_enter).unwrap();
         assert!(app.ui.setup.enable_bash_tools);
+
+        // TrustWorkspace toggle
+        app.ui.setup.active_field = SetupField::TrustWorkspace;
+        app.ui.setup.trust_workspace = false;
+        handle_setup_key(&mut app, &sender, key_enter).unwrap();
+        assert!(app.ui.setup.trust_workspace);
 
         // 8. Ctrl+A to apply OmniRoute defaults
         app.ui.setup.api_key = "sk-test".to_owned();
