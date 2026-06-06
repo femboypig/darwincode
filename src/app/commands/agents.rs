@@ -1,6 +1,6 @@
-use crate::app::core::App;
 use crate::app::agent_picker::AgentPickerState;
 use crate::app::chat::MessageLine;
+use crate::app::core::App;
 
 pub fn run_picker(app: &mut App) {
     app.ui.agent_picker = AgentPickerState::new(&app.core.active_agent);
@@ -14,7 +14,9 @@ pub fn run_agent(app: &mut App, name: Option<String>) {
         if agent_name.to_lowercase() == "none" {
             app.core.active_agent = None;
             app.chat.config.active_agent = None;
-            app.chat.messages.push(MessageLine::info("Active agent cleared.".to_owned()));
+            app.chat
+                .messages
+                .push(MessageLine::info("Active agent cleared.".to_owned()));
             app.status = "Agent cleared".to_owned();
         } else if custom_agents.contains_key(&agent_name) {
             app.core.active_agent = Some(agent_name.clone());
@@ -76,4 +78,3 @@ mod tests {
         assert!(app.chat.messages[0].text.contains("not found"));
     }
 }
-
