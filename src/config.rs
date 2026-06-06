@@ -248,7 +248,9 @@ impl StoredConfig {
                     let base_config = config.clone().unwrap_or_default();
                     if let Ok(mut config_val) = serde_json::to_value(&base_config) {
                         merge_json_values(&mut config_val, local_val);
-                        if let Ok(merged_config) = serde_json::from_value::<StoredConfig>(config_val) {
+                        if let Ok(merged_config) =
+                            serde_json::from_value::<StoredConfig>(config_val)
+                        {
                             config = Some(merged_config);
                         }
                     }
@@ -258,7 +260,6 @@ impl StoredConfig {
 
         Ok(config)
     }
-
 
     pub fn save(&self) -> Result<()> {
         let mut normalized_config = self.clone();
@@ -440,7 +441,6 @@ pub fn load_project_instructions() -> Option<String> {
     }
     None
 }
-
 
 fn merge_json_values(a: &mut serde_json::Value, b: serde_json::Value) {
     match (a, b) {
