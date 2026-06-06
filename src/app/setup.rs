@@ -94,6 +94,7 @@ impl SetupState {
             permission_level: self.permission_level,
             theme: self.theme.clone(),
             respect_ignore_rules: self.respect_ignore_rules,
+            trust_workspace: false,
             active_agent: None,
         };
 
