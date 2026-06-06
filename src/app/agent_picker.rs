@@ -92,11 +92,16 @@ mod tests {
         assert_eq!(picker.selected, 0);
         assert_eq!(picker.selected_agent().unwrap().0, None);
 
-        picker.agents.push((Some("test-agent".to_owned()), "Test Agent".to_owned()));
+        picker
+            .agents
+            .push((Some("test-agent".to_owned()), "Test Agent".to_owned()));
 
         picker.select_next();
         assert_eq!(picker.selected, 1);
-        assert_eq!(picker.selected_agent().unwrap().0, Some("test-agent".to_owned()));
+        assert_eq!(
+            picker.selected_agent().unwrap().0,
+            Some("test-agent".to_owned())
+        );
 
         picker.push_query('e');
         let filtered = picker.filtered_indices();
