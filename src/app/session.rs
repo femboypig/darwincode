@@ -264,12 +264,6 @@ pub fn save_session(chat: &ChatState) -> Result<()> {
     };
 
     let path = sessions_dir.join(format!("{}.json", chat.session_id));
-    let key = crate::crypto::derive_hardware_key()?;
-    let plain_data = serde_json::to_vec(&session)?;
-    let cipher_data = crate::crypto::encrypt_data(&plain_data, &key)?;
-    std::fs::write(&path, cipher_data)?;
-
-    // Save metadata cache
     let mut snippet = "Empty chat".to_owned();
     if let Some(first_msg) = chat.history.first() {
         let mut text = String::new();
@@ -287,10 +281,23 @@ pub fn save_session(chat: &ChatState) -> Result<()> {
         snippet,
     };
     let meta_path = sessions_dir.join(format!("{}.meta", chat.session_id));
-    if let Ok(plain_meta) = serde_json::to_vec(&meta)
-        && let Ok(cipher_meta) = crate::crypto::encrypt_data(&plain_meta, &key)
-    {
-        let _ = std::fs::write(meta_path, cipher_meta);
+
+    if crate::crypto::is_home_appdata_missing() {
+        let plain_data = serde_json::to_vec(&session)?;
+        std::fs::write(&path, plain_data)?;
+        let plain_meta = serde_json::to_vec(&meta)?;
+        let _ = std::fs::write(&meta_path, plain_meta);
+    } else {
+        let key = crate::crypto::derive_hardware_key()?;
+        let plain_data = serde_json::to_vec(&session)?;
+        let cipher_data = crate::crypto::encrypt_data(&plain_data, &key)?;
+        std::fs::write(&path, cipher_data)?;
+
+        if let Ok(plain_meta) = serde_json::to_vec(&meta)
+            && let Ok(cipher_meta) = crate::crypto::encrypt_data(&plain_meta, &key)
+        {
+            let _ = std::fs::write(meta_path, cipher_meta);
+        }
     }
 
     Ok(())
@@ -302,11 +309,17 @@ pub fn load_session(id: &str) -> Result<ChatSession> {
         .unwrap()
         .join("sessions");
     let path = sessions_dir.join(format!("{}.json", id));
-    let key = crate::crypto::derive_hardware_key()?;
-    let cipher_data = std::fs::read(path)?;
-    let plain_data = crate::crypto::decrypt_data(&cipher_data, &key)?;
-    let session = serde_json::from_slice(&plain_data)?;
-    Ok(session)
+    if crate::crypto::is_home_appdata_missing() {
+        let plain_data = std::fs::read(path)?;
+        let session = serde_json::from_slice(&plain_data)?;
+        Ok(session)
+    } else {
+        let key = crate::crypto::derive_hardware_key()?;
+        let cipher_data = std::fs::read(path)?;
+        let plain_data = crate::crypto::decrypt_data(&cipher_data, &key)?;
+        let session = serde_json::from_slice(&plain_data)?;
+        Ok(session)
+    }
 }
 
 pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
@@ -319,7 +332,13 @@ pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
     }
 
     let mut result = Vec::new();
-    let key = crate::crypto::derive_hardware_key()?;
+    let is_missing = crate::crypto::is_home_appdata_missing();
+    let key_opt = if is_missing {
+        None
+    } else {
+        crate::crypto::derive_hardware_key().ok()
+    };
+
     for entry in std::fs::read_dir(sessions_dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -334,50 +353,91 @@ pub fn list_saved_sessions() -> Result<Vec<SessionMeta>> {
             }
 
             let meta_path = path.with_extension("meta");
-            if meta_path.exists()
-                && let Ok(cipher_data) = std::fs::read(&meta_path)
-                && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
-                && let Ok(meta) = serde_json::from_slice::<SessionMeta>(&plain_data)
-            {
-                result.push(meta);
-                continue;
-            }
 
-            if let Ok(cipher_data) = std::fs::read(&path)
-                && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, &key)
-                && let Ok(session) = serde_json::from_slice::<serde_json::Value>(&plain_data)
-            {
-                let session_id = session
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_owned();
-                if session_id.is_empty() {
+            if is_missing {
+                if meta_path.exists()
+                    && let Ok(plain_data) = std::fs::read(&meta_path)
+                    && let Ok(meta) = serde_json::from_slice::<SessionMeta>(&plain_data)
+                {
+                    result.push(meta);
                     continue;
                 }
 
-                let mut snippet = "Empty chat".to_owned();
-                if let Some(history) = session.get("history").and_then(|v| v.as_array())
-                    && let Some(first_msg) = history.first()
-                    && let Some(parts) = first_msg.get("parts").and_then(|v| v.as_array())
-                    && let Some(first_part) = parts.first()
-                    && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
+                if let Ok(plain_data) = std::fs::read(&path)
+                    && let Ok(session) = serde_json::from_slice::<serde_json::Value>(&plain_data)
                 {
-                    snippet = text.chars().take(40).collect::<String>();
-                }
-                let meta = SessionMeta {
-                    id: session_id,
-                    snippet,
-                };
+                    let session_id = session
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_owned();
+                    if session_id.is_empty() {
+                        continue;
+                    }
 
-                // cache the meta file
-                if let Ok(plain_meta) = serde_json::to_vec(&meta)
-                    && let Ok(cipher_meta) = crate::crypto::encrypt_data(&plain_meta, &key)
+                    let mut snippet = "Empty chat".to_owned();
+                    if let Some(history) = session.get("history").and_then(|v| v.as_array())
+                        && let Some(first_msg) = history.first()
+                        && let Some(parts) = first_msg.get("parts").and_then(|v| v.as_array())
+                        && let Some(first_part) = parts.first()
+                        && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
+                    {
+                        snippet = text.chars().take(40).collect::<String>();
+                    }
+                    let meta = SessionMeta {
+                        id: session_id,
+                        snippet,
+                    };
+                    if let Ok(plain_meta) = serde_json::to_vec(&meta) {
+                        let _ = std::fs::write(&meta_path, plain_meta);
+                    }
+                    result.push(meta);
+                }
+            } else if let Some(ref key) = key_opt {
+                if meta_path.exists()
+                    && let Ok(cipher_data) = std::fs::read(&meta_path)
+                    && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, key)
+                    && let Ok(meta) = serde_json::from_slice::<SessionMeta>(&plain_data)
                 {
-                    let _ = std::fs::write(&meta_path, cipher_meta);
+                    result.push(meta);
+                    continue;
                 }
 
-                result.push(meta);
+                if let Ok(cipher_data) = std::fs::read(&path)
+                    && let Ok(plain_data) = crate::crypto::decrypt_data(&cipher_data, key)
+                    && let Ok(session) = serde_json::from_slice::<serde_json::Value>(&plain_data)
+                {
+                    let session_id = session
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_owned();
+                    if session_id.is_empty() {
+                        continue;
+                    }
+
+                    let mut snippet = "Empty chat".to_owned();
+                    if let Some(history) = session.get("history").and_then(|v| v.as_array())
+                        && let Some(first_msg) = history.first()
+                        && let Some(parts) = first_msg.get("parts").and_then(|v| v.as_array())
+                        && let Some(first_part) = parts.first()
+                        && let Some(text) = first_part.get("text").and_then(|v| v.as_str())
+                    {
+                        snippet = text.chars().take(40).collect::<String>();
+                    }
+                    let meta = SessionMeta {
+                        id: session_id,
+                        snippet,
+                    };
+
+                    if let Ok(plain_meta) = serde_json::to_vec(&meta)
+                        && let Ok(cipher_meta) = crate::crypto::encrypt_data(&plain_meta, key)
+                    {
+                        let _ = std::fs::write(&meta_path, cipher_meta);
+                    }
+
+                    result.push(meta);
+                }
             }
         }
     }
