@@ -4,7 +4,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
         let mut g = crate::tui::ASK_USER_CHANNEL.lock();
@@ -69,7 +70,8 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
             KeyCode::Enter => {
                 if app.ui.ask_user.selected_idx == app.ui.ask_user.options.len() {
                     app.ui.ask_user.is_custom = true;
-                } else if let Some(opt) = app.ui.ask_user.options.get(app.ui.ask_user.selected_idx) {
+                } else if let Some(opt) = app.ui.ask_user.options.get(app.ui.ask_user.selected_idx)
+                {
                     let answer = opt.clone();
                     let mut g = crate::tui::ASK_USER_CHANNEL.lock();
                     let tx = g.take().map(|(tx, _, _)| tx);
@@ -81,9 +83,12 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
 
                     if let Some(name) = app.core.pending_custom_command.take() {
                         if answer == "yes" {
-                            let custom_cmds = crate::app::load_custom_commands(app.chat.config.trust_workspace);
+                            let custom_cmds =
+                                crate::app::load_custom_commands(app.chat.config.trust_workspace);
                             if let Some((config, _)) = custom_cmds.get(&name) {
-                                crate::app::commands::custom::execute_custom_command_internal(app, &name, config);
+                                crate::app::commands::custom::execute_custom_command_internal(
+                                    app, &name, config,
+                                );
                             }
                         } else {
                             app.status = format!("Cancelled execution of /{}", name);
@@ -101,7 +106,7 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
 mod tests {
     use super::*;
     use crate::config::StoredConfig;
-    use crossterm::event::{KeyEvent, KeyCode, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn test_handle_ask_user_key_navigation() {
@@ -130,12 +135,24 @@ mod tests {
         app.ui.ask_user.custom_input = "y".to_owned();
 
         // Type 'e' and 's'
-        handle_ask_user_key(&mut app, KeyEvent::new(KeyCode::Char('e'), KeyModifiers::empty())).unwrap();
-        handle_ask_user_key(&mut app, KeyEvent::new(KeyCode::Char('s'), KeyModifiers::empty())).unwrap();
+        handle_ask_user_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('e'), KeyModifiers::empty()),
+        )
+        .unwrap();
+        handle_ask_user_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::empty()),
+        )
+        .unwrap();
         assert_eq!(app.ui.ask_user.custom_input, "yes");
 
         // Backspace
-        handle_ask_user_key(&mut app, KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty())).unwrap();
+        handle_ask_user_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty()),
+        )
+        .unwrap();
         assert_eq!(app.ui.ask_user.custom_input, "ye");
     }
 
@@ -175,7 +192,8 @@ mod tests {
 
         // 5. Submit regular option
         let (tx, rx) = std::sync::mpsc::channel();
-        *crate::tui::ASK_USER_CHANNEL.lock() = Some((tx, "question".to_owned(), vec!["yes".to_owned()]));
+        *crate::tui::ASK_USER_CHANNEL.lock() =
+            Some((tx, "question".to_owned(), vec!["yes".to_owned()]));
         app.ui.ask_user.is_custom = false;
         app.ui.ask_user.selected_idx = 0;
         app.ui.screen = Screen::AskUser;
