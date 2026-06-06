@@ -46,7 +46,7 @@ pub(crate) fn render_permissions(frame: &mut Frame, app: &App) {
 
     let options = crate::app::PermissionPickerState::options();
     let total = options.len();
-    let selected = app.permissions.selected.min(total.saturating_sub(1));
+    let selected = app.ui.permissions.selected.min(total.saturating_sub(1));
 
     // Title line: "Select permission level"
     let title_row = Rect {
