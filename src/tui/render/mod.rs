@@ -89,7 +89,11 @@ pub(crate) fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
 
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(20), Constraint::Length(30)])
+        .constraints([
+            Constraint::Min(20),
+            Constraint::Percentage(50),
+            Constraint::Length(25),
+        ])
         .split(area);
 
     let dir = std::env::current_dir()
@@ -102,10 +106,18 @@ pub(crate) fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         .style(base_style.add_modifier(Modifier::BOLD));
     frame.render_widget(left_paragraph, chunks[0]);
 
+    if let Some(ref warning) = app.last_warning {
+        let warning_text = format!("⚠️  {}", warning);
+        let warning_paragraph = Paragraph::new(warning_text)
+            .alignment(Alignment::Center)
+            .style(base_style.fg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD));
+        frame.render_widget(warning_paragraph, chunks[1]);
+    }
+
     let version = env!("CARGO_PKG_VERSION");
     let right_text = format!("darwincode {}  ", version);
     let right_paragraph = Paragraph::new(right_text)
         .alignment(Alignment::Right)
         .style(base_style);
-    frame.render_widget(right_paragraph, chunks[1]);
+    frame.render_widget(right_paragraph, chunks[2]);
 }
