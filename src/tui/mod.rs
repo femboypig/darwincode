@@ -827,23 +827,23 @@ fn load_darwincode_ignore_rules() -> Option<Vec<String>> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     loop {
         let ignore_path = current.join(".darwincode").join("ignore");
-        if ignore_path.exists() && ignore_path.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&ignore_path) {
-                let mut rules = Vec::new();
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                        let rule = trimmed
-                            .trim_start_matches('/')
-                            .trim_end_matches('/')
-                            .to_owned();
-                        if !rules.contains(&rule) {
-                            rules.push(rule);
-                        }
+        if ignore_path.exists() && ignore_path.is_file()
+            && let Ok(content) = std::fs::read_to_string(&ignore_path)
+        {
+            let mut rules = Vec::new();
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    let rule = trimmed
+                        .trim_start_matches('/')
+                        .trim_end_matches('/')
+                        .to_owned();
+                    if !rules.contains(&rule) {
+                        rules.push(rule);
                     }
                 }
-                return Some(rules);
             }
+            return Some(rules);
         }
         if !current.pop() {
             break;
@@ -868,18 +868,18 @@ fn load_gitignore_rules() -> Vec<String> {
     let mut current = base_dir;
     loop {
         let gitignore_path = current.join(".gitignore");
-        if gitignore_path.exists() && gitignore_path.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&gitignore_path) {
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                        let rule = trimmed
-                            .trim_start_matches('/')
-                            .trim_end_matches('/')
-                            .to_owned();
-                        if !rules.contains(&rule) {
-                            rules.push(rule);
-                        }
+        if gitignore_path.exists() && gitignore_path.is_file()
+            && let Ok(content) = std::fs::read_to_string(&gitignore_path)
+        {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    let rule = trimmed
+                        .trim_start_matches('/')
+                        .trim_end_matches('/')
+                        .to_owned();
+                    if !rules.contains(&rule) {
+                        rules.push(rule);
                     }
                 }
             }
@@ -940,10 +940,10 @@ fn should_ignore(path: &std::path::Path, rules: &[String]) -> bool {
                         return true;
                     }
                 } else {
-                    if let Some(file_name) = current.file_name().and_then(|s| s.to_str()) {
-                        if matches_wildcard(file_name, rule) {
-                            return true;
-                        }
+                    if let Some(file_name) = current.file_name().and_then(|s| s.to_str())
+                        && matches_wildcard(file_name, rule)
+                    {
+                        return true;
                     }
                 }
             }
@@ -1068,20 +1068,19 @@ pub(crate) fn handle_function_action(
             thread::spawn(move || {
                 if let Some(ref agent_id) = config.active_agent {
                     let custom_agents = crate::app::load_custom_agents();
-                    if let Some(agent_config) = custom_agents.get(agent_id) {
-                        if let Some(ref allowed) = agent_config.allowed_tools {
-                            if !allowed.contains(&name) {
-                                let err_msg = format!(
-                                    "Permission denied: tool '{}' is not allowed for the active agent '{}'.",
-                                    name, agent_id
-                                );
-                                let _ = sender.send(WorkerEvent::ToolResult(
-                                    name,
-                                    serde_json::json!({ "error": err_msg }),
-                                ));
-                                return;
-                            }
-                        }
+                    if let Some(agent_config) = custom_agents.get(agent_id)
+                        && let Some(ref allowed) = agent_config.allowed_tools
+                        && !allowed.contains(&name)
+                    {
+                        let err_msg = format!(
+                            "Permission denied: tool '{}' is not allowed for the active agent '{}'.",
+                            name, agent_id
+                        );
+                        let _ = sender.send(WorkerEvent::ToolResult(
+                            name,
+                            serde_json::json!({ "error": err_msg }),
+                        ));
+                        return;
                     }
                 }
 
@@ -2186,8 +2185,10 @@ mod tests {
     #[test]
     fn test_handle_function_action_blocked_tool() {
         let (sender, receiver) = std::sync::mpsc::channel();
-        let mut config = crate::config::StoredConfig::default();
-        config.active_agent = Some("reviewer".to_owned());
+        let config = crate::config::StoredConfig {
+            active_agent: Some("reviewer".to_owned()),
+            ..Default::default()
+        };
 
         if let Some(proj_root) = crate::config::find_project_root() {
             let agent_dir = proj_root.join(".darwincode").join("agents");
