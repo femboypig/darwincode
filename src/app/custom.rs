@@ -29,10 +29,10 @@ impl CustomCommandConfig {
             for (key, cmd) in context_map {
                 let output = if cfg!(target_os = "windows") {
                     std::process::Command::new("cmd")
-                        .args(&["/C", cmd])
+                        .args(["/C", cmd])
                         .output()
                 } else {
-                    std::process::Command::new("sh").args(&["-c", cmd]).output()
+                    std::process::Command::new("sh").args(["-c", cmd]).output()
                 };
 
                 let result_str = match output {
@@ -63,18 +63,15 @@ pub fn load_custom_commands() -> HashMap<String, CustomCommandConfig> {
         if let Ok(entries) = std::fs::read_dir(cmd_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() && path.extension().map_or(false, |ext| ext == "toml") {
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "toml") {
                     let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
                     if !file_name.contains("schema")
                         && !file_name.contains("template")
                         && !file_name.contains("example")
+                        && let Ok(toml_content) = std::fs::read_to_string(&path)
+                        && let Ok(config) = toml::from_str::<CustomCommandConfig>(&toml_content)
                     {
-                        if let Ok(toml_content) = std::fs::read_to_string(&path) {
-                            if let Ok(config) = toml::from_str::<CustomCommandConfig>(&toml_content)
-                            {
-                                commands.insert(file_name.to_owned(), config);
-                            }
-                        }
+                        commands.insert(file_name.to_owned(), config);
                     }
                 }
             }
@@ -90,17 +87,15 @@ pub fn load_custom_agents() -> HashMap<String, CustomAgentConfig> {
         if let Ok(entries) = std::fs::read_dir(agent_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() && path.extension().map_or(false, |ext| ext == "toml") {
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "toml") {
                     let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
                     if !file_name.contains("schema")
                         && !file_name.contains("template")
                         && !file_name.contains("example")
+                        && let Ok(toml_content) = std::fs::read_to_string(&path)
+                        && let Ok(config) = toml::from_str::<CustomAgentConfig>(&toml_content)
                     {
-                        if let Ok(toml_content) = std::fs::read_to_string(&path) {
-                            if let Ok(config) = toml::from_str::<CustomAgentConfig>(&toml_content) {
-                                agents.insert(file_name.to_owned(), config);
-                            }
-                        }
+                        agents.insert(file_name.to_owned(), config);
                     }
                 }
             }
