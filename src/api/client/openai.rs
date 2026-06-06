@@ -1,11 +1,11 @@
 #![allow(clippy::result_large_err)]
 #![allow(clippy::too_many_arguments)]
 
+use super::common::{execute_with_retry, lowercase_types, model_supports_vision};
+use crate::api::types::{ChatMessage, Content, FunctionDeclaration, GeminiResponse};
+use crate::config::StoredConfig;
 use anyhow::{Context, Result};
 use std::io::BufRead;
-use crate::api::types::{ChatMessage, Content, GeminiResponse, FunctionDeclaration};
-use crate::config::StoredConfig;
-use super::common::{lowercase_types, model_supports_vision, execute_with_retry};
 
 pub fn list_models_openai(config: &StoredConfig, agent: &ureq::Agent) -> Result<Vec<String>> {
     let url = format!("{}/models", config.base_url);
@@ -115,10 +115,8 @@ pub fn generate_stream_openai(
                                 }));
                             }
                         } else if let Some(inline_data) = part.get("inlineData")
-                            && let Some(mime) =
-                                inline_data.get("mimeType").and_then(|v| v.as_str())
-                            && let Some(data) =
-                                inline_data.get("data").and_then(|v| v.as_str())
+                            && let Some(mime) = inline_data.get("mimeType").and_then(|v| v.as_str())
+                            && let Some(data) = inline_data.get("data").and_then(|v| v.as_str())
                         {
                             content_array.push(serde_json::json!({
                                 "type": "image_url",
@@ -200,18 +198,16 @@ pub fn generate_stream_openai(
                     if let Some(call) = part.get("functionCall")
                         && let Some(name) = call.get("name").and_then(|v| v.as_str())
                     {
-                        let is_responded = if let Some(pos) =
-                            responded_names.iter().position(|n| n == name)
-                        {
-                            responded_names.remove(pos);
-                            true
-                        } else {
-                            false
-                        };
+                        let is_responded =
+                            if let Some(pos) = responded_names.iter().position(|n| n == name) {
+                                responded_names.remove(pos);
+                                true
+                            } else {
+                                false
+                            };
 
                         if is_responded {
-                            let args =
-                                call.get("args").cloned().unwrap_or(serde_json::json!({}));
+                            let args = call.get("args").cloned().unwrap_or(serde_json::json!({}));
                             let call_id = format!("call_{}", call_counter);
                             call_counter += 1;
                             tool_call_ids.push((name.to_owned(), call_id.clone()));
@@ -274,8 +270,7 @@ pub fn generate_stream_openai(
                             .get("response")
                             .cloned()
                             .unwrap_or(serde_json::json!({}));
-                        if let Some(pos) = tool_call_ids.iter().position(|(n, _)| n == name)
-                        {
+                        if let Some(pos) = tool_call_ids.iter().position(|(n, _)| n == name) {
                             let (_, call_id) = tool_call_ids.remove(pos);
                             openai_messages.push(serde_json::json!({
                                 "role": "tool",
@@ -339,8 +334,8 @@ pub fn generate_stream_openai(
                 continue;
             }
 
-            let chunk: serde_json::Value = serde_json::from_str(json_str)
-                .context("failed to parse stream chunk JSON")?;
+            let chunk: serde_json::Value =
+                serde_json::from_str(json_str).context("failed to parse stream chunk JSON")?;
 
             if let Some(err) = chunk.get("error") {
                 let msg = err
@@ -375,14 +370,11 @@ pub fn generate_stream_openai(
                     })]))?;
                 }
 
-                if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array())
-                {
+                if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                     for tc in tool_calls {
-                        let idx =
-                            tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                        let idx = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
                         if idx >= accumulated_tools.len() {
-                            accumulated_tools
-                                .resize(idx + 1, ToolCallAccumulator::default());
+                            accumulated_tools.resize(idx + 1, ToolCallAccumulator::default());
                         }
                         let acc = &mut accumulated_tools[idx];
                         if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
@@ -392,9 +384,7 @@ pub fn generate_stream_openai(
                             if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
                                 acc.name = Some(name.to_owned());
                             }
-                            if let Some(args) =
-                                func.get("arguments").and_then(|v| v.as_str())
-                            {
+                            if let Some(args) = func.get("arguments").and_then(|v| v.as_str()) {
                                 acc.arguments.push_str(args);
                             }
                         }
@@ -406,8 +396,8 @@ pub fn generate_stream_openai(
 
     for acc in accumulated_tools {
         if let Some(name) = acc.name {
-            let args: serde_json::Value = serde_json::from_str(&acc.arguments)
-                .unwrap_or_else(|_| serde_json::json!({}));
+            let args: serde_json::Value =
+                serde_json::from_str(&acc.arguments).unwrap_or_else(|_| serde_json::json!({}));
             on_chunk(GeminiResponse::Turn(vec![serde_json::json!({
                 "functionCall": {
                     "name": name,
