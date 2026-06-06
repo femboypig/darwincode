@@ -822,40 +822,133 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
     }
 }
 
+fn load_darwincode_ignore_rules() -> Option<Vec<String>> {
+    let mut current = crate::config::find_project_root()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    loop {
+        let ignore_path = current.join(".darwincode").join("ignore");
+        if ignore_path.exists() && ignore_path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&ignore_path) {
+                let mut rules = Vec::new();
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                        let rule = trimmed
+                            .trim_start_matches('/')
+                            .trim_end_matches('/')
+                            .to_owned();
+                        if !rules.contains(&rule) {
+                            rules.push(rule);
+                        }
+                    }
+                }
+                return Some(rules);
+            }
+        }
+        if !current.pop() {
+            break;
+        }
+    }
+    None
+}
+
 fn load_gitignore_rules() -> Vec<String> {
-    let mut rules = vec![
-        ".git".to_owned(),
-        "node_modules".to_owned(),
-        "target".to_owned(),
-        "dist".to_owned(),
-        "build".to_owned(),
-        ".next".to_owned(),
-    ];
-    if let Ok(content) = std::fs::read_to_string(".gitignore") {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                let rule = trimmed
-                    .trim_start_matches('/')
-                    .trim_end_matches('/')
-                    .to_owned();
-                if !rules.contains(&rule) {
-                    rules.push(rule);
+    let mut rules = Vec::new();
+
+    if let Some(dc_rules) = load_darwincode_ignore_rules() {
+        for rule in dc_rules {
+            if !rules.contains(&rule) {
+                rules.push(rule);
+            }
+        }
+    }
+
+    let base_dir = crate::config::find_project_root()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let mut current = base_dir;
+    loop {
+        let gitignore_path = current.join(".gitignore");
+        if gitignore_path.exists() && gitignore_path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&gitignore_path) {
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                        let rule = trimmed
+                            .trim_start_matches('/')
+                            .trim_end_matches('/')
+                            .to_owned();
+                        if !rules.contains(&rule) {
+                            rules.push(rule);
+                        }
+                    }
                 }
             }
+        }
+        if !current.pop() {
+            break;
         }
     }
     rules
 }
 
 fn should_ignore(path: &std::path::Path, rules: &[String]) -> bool {
-    for component in path.components() {
-        if let Some(comp_str) = component.as_os_str().to_str() {
+    let base_dir = crate::config::find_project_root()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let abs_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    };
+    let abs_base_dir = if base_dir.is_absolute() {
+        base_dir.clone()
+    } else {
+        cwd.join(&base_dir)
+    };
+    let abs_base_dir = std::fs::canonicalize(&abs_base_dir).unwrap_or(abs_base_dir);
+    
+    // Canonicalize the path or its closest existing parent directory
+    let abs_path = if abs_path.exists() {
+        std::fs::canonicalize(&abs_path).unwrap_or(abs_path)
+    } else if let Some(parent) = abs_path.parent() {
+        let canonical_parent = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+        if let Some(file_name) = abs_path.file_name() {
+            canonical_parent.join(file_name)
+        } else {
+            canonical_parent
+        }
+    } else {
+        abs_path
+    };
+
+    let mut current = abs_path;
+    while current.starts_with(&abs_base_dir) {
+        if let Ok(rel_path) = current.strip_prefix(&abs_base_dir) {
+            let rel_str = rel_path.to_string_lossy().to_string();
+            if rel_str.is_empty() || rel_str == "." {
+                break;
+            }
+            
+            let normalized_rel_str = rel_str.replace('\\', "/");
+            
             for rule in rules {
-                if comp_str == rule || (rule.starts_with('*') && comp_str.ends_with(&rule[1..])) {
-                    return true;
+                if rule.contains('/') {
+                    let clean_rule = rule.trim_start_matches('/').trim_end_matches('/');
+                    if matches_wildcard(&normalized_rel_str, clean_rule) {
+                        return true;
+                    }
+                } else {
+                    if let Some(file_name) = current.file_name().and_then(|s| s.to_str()) {
+                        if matches_wildcard(file_name, rule) {
+                            return true;
+                        }
+                    }
                 }
             }
+        }
+        if !current.pop() {
+            break;
         }
     }
     false
@@ -972,12 +1065,28 @@ pub(crate) fn handle_function_action(
         crate::app::FunctionAction::Execute { name, args, config } => {
             let sender = sender.clone();
             thread::spawn(move || {
+                if let Some(ref agent_id) = config.active_agent {
+                    let custom_agents = crate::app::load_custom_agents();
+                    if let Some(agent_config) = custom_agents.get(agent_id) {
+                        if let Some(ref allowed) = agent_config.allowed_tools {
+                            if !allowed.contains(&name) {
+                                let err_msg = format!("Permission denied: tool '{}' is not allowed for the active agent '{}'.", name, agent_id);
+                                let _ = sender.send(WorkerEvent::ToolResult(
+                                    name,
+                                    serde_json::json!({ "error": err_msg }),
+                                ));
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 let result = match name.as_str() {
                     "read" => {
                         let path = args.get("path").and_then(|v| v.as_str());
                         let paths = args.get("paths").and_then(|v| v.as_array());
 
-                        let rules = if config.respect_gitignore {
+                        let rules = if config.respect_ignore_rules {
                             load_gitignore_rules()
                         } else {
                             Vec::new()
@@ -987,7 +1096,7 @@ pub(crate) fn handle_function_action(
                             let mut results = serde_json::Map::new();
                             for path_val in paths {
                                 if let Some(p_str) = path_val.as_str() {
-                                    if config.respect_gitignore
+                                    if config.respect_ignore_rules
                                         && should_ignore(std::path::Path::new(p_str), &rules)
                                     {
                                         results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", p_str) }));
@@ -1013,7 +1122,7 @@ pub(crate) fn handle_function_action(
                         } else {
                             let target_path = path.unwrap_or(".");
                             let p = std::path::Path::new(target_path);
-                            if config.respect_gitignore && should_ignore(p, &rules) {
+                            if config.respect_ignore_rules && should_ignore(p, &rules) {
                                 serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", target_path) })
                             } else if p.is_dir() {
                                 match std::fs::read_dir(p) {
@@ -1021,7 +1130,7 @@ pub(crate) fn handle_function_action(
                                         let mut files = Vec::new();
                                         for entry in entries.filter_map(Result::ok) {
                                             let entry_path = entry.path();
-                                            if !config.respect_gitignore
+                                            if !config.respect_ignore_rules
                                                 || !should_ignore(&entry_path, &rules)
                                             {
                                                 files.push(entry_path.display().to_string());
@@ -1047,14 +1156,14 @@ pub(crate) fn handle_function_action(
 
                         let mut matches = Vec::new();
                         let search_path = std::path::Path::new(path);
-                        let rules = if config.respect_gitignore {
+                        let rules = if config.respect_ignore_rules {
                             load_gitignore_rules()
                         } else {
                             Vec::new()
                         };
 
                         let run_res = if search_path.is_file() {
-                            if (!config.respect_gitignore || !should_ignore(search_path, &rules))
+                            if (!config.respect_ignore_rules || !should_ignore(search_path, &rules))
                                 && let Ok(content) = std::fs::read_to_string(search_path)
                             {
                                 for (line_num, line) in content.lines().enumerate() {
@@ -1087,7 +1196,7 @@ pub(crate) fn handle_function_action(
 
                         let mut matches = Vec::new();
                         let search_path = std::path::Path::new(path);
-                        let rules = if config.respect_gitignore {
+                        let rules = if config.respect_ignore_rules {
                             load_gitignore_rules()
                         } else {
                             Vec::new()
@@ -1111,7 +1220,7 @@ pub(crate) fn handle_function_action(
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
                         let edits = args.get("edits").and_then(|v| v.as_array());
 
-                        let rules = if config.respect_gitignore {
+                        let rules = if config.respect_ignore_rules {
                             load_gitignore_rules()
                         } else {
                             Vec::new()
@@ -1137,7 +1246,7 @@ pub(crate) fn handle_function_action(
                                         .push(format!("Edit at index {} is missing 'path'", idx));
                                     continue;
                                 }
-                                if config.respect_gitignore
+                                if config.respect_ignore_rules
                                     && should_ignore(std::path::Path::new(edit_path), &rules)
                                 {
                                     validation_errors.push(format!(
@@ -1254,7 +1363,7 @@ pub(crate) fn handle_function_action(
                                 }
                             }
                         } else if args.get("start_line").is_some() {
-                            if config.respect_gitignore
+                            if config.respect_ignore_rules
                                 && should_ignore(std::path::Path::new(path), &rules)
                             {
                                 serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
@@ -1333,7 +1442,7 @@ pub(crate) fn handle_function_action(
                                 }
                             }
                         } else {
-                            if config.respect_gitignore
+                            if config.respect_ignore_rules
                                 && should_ignore(std::path::Path::new(path), &rules)
                             {
                                 serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
@@ -1390,12 +1499,12 @@ pub(crate) fn handle_function_action(
                     }
                     "write" => {
                         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                        let rules = if config.respect_gitignore {
+                        let rules = if config.respect_ignore_rules {
                             load_gitignore_rules()
                         } else {
                             Vec::new()
                         };
-                        if config.respect_gitignore
+                        if config.respect_ignore_rules
                             && should_ignore(std::path::Path::new(path), &rules)
                         {
                             serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
@@ -2068,5 +2177,70 @@ mod tests {
         assert_eq!(results[0]["title"], "Example Title");
         assert_eq!(results[0]["url"], "https://example.com/page");
         assert_eq!(results[0]["snippet"], "This is a snippet.");
+    }
+
+    #[test]
+    fn test_handle_function_action_blocked_tool() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut config = crate::config::StoredConfig::default();
+        config.active_agent = Some("reviewer".to_owned());
+
+        if let Some(proj_root) = crate::config::find_project_root() {
+            let agent_dir = proj_root.join(".darwincode").join("agents");
+            let _ = std::fs::create_dir_all(&agent_dir);
+            let reviewer_path = agent_dir.join("reviewer.toml");
+            let _ = std::fs::write(&reviewer_path, r#"
+name = "Reviewer"
+allowed_tools = ["read"]
+system_prompt = "Review only."
+"#);
+
+            handle_function_action(
+                crate::app::FunctionAction::Execute {
+                    name: "sh".to_owned(),
+                    args: serde_json::json!({ "command": "echo hello" }),
+                    config,
+                },
+                &sender,
+            );
+
+            if let Ok(WorkerEvent::ToolResult(name, result)) = receiver.recv_timeout(std::time::Duration::from_secs(5)) {
+                assert_eq!(name, "sh");
+                let err = result.get("error").and_then(|v| v.as_str()).unwrap_or("");
+                assert!(err.contains("Permission denied"));
+            } else {
+                panic!("Did not receive expected ToolResult");
+            }
+
+            let _ = std::fs::remove_file(&reviewer_path);
+        }
+    }
+
+    #[test]
+    fn test_should_ignore() {
+        let base_dir = crate::config::find_project_root()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        let rules = vec![
+            "target".to_owned(),
+            ".darwincode".to_owned(),
+            "secret_data.txt".to_owned(),
+            "src/*.txt".to_owned(),
+        ];
+
+        assert!(should_ignore(&base_dir.join("secret_data.txt"), &rules));
+        assert!(should_ignore(&base_dir.join("target"), &rules));
+        assert!(should_ignore(&base_dir.join("target").join("debug").join("main"), &rules));
+        assert!(should_ignore(&base_dir.join("src").join("notes.txt"), &rules));
+        assert!(!should_ignore(&base_dir.join("src").join("main.rs"), &rules));
+        assert!(should_ignore(&base_dir.join(".darwincode").join("config.json"), &rules));
+
+        // Relative path checks
+        assert!(should_ignore(std::path::Path::new("secret_data.txt"), &rules));
+        assert!(should_ignore(std::path::Path::new("target"), &rules));
+        assert!(should_ignore(std::path::Path::new("target/debug/main"), &rules));
+        assert!(should_ignore(std::path::Path::new("src/notes.txt"), &rules));
+        assert!(!should_ignore(std::path::Path::new("src/main.rs"), &rules));
+        assert!(should_ignore(std::path::Path::new(".darwincode/config.json"), &rules));
     }
 }
