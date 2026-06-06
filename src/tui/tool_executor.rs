@@ -1,15 +1,14 @@
-use std::sync::mpsc::Sender;
-use std::thread;
-use std::time::Duration;
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::fmt::Write;
+use std::sync::mpsc::Sender;
+use std::thread;
+use std::time::Duration;
 
 use crate::api::GeminiClient;
-use crate::config::StoredConfig;
 use crate::app::FunctionAction;
+use crate::config::StoredConfig;
 use crate::tui::WorkerEvent;
-
 
 pub(crate) enum PathSafety {
     Safe,
@@ -18,8 +17,14 @@ pub(crate) enum PathSafety {
 }
 
 fn get_home_dir() -> Option<std::path::PathBuf> {
-    std::env::var("HOME").ok().map(std::path::PathBuf::from)
-        .or_else(|| std::env::var("USERPROFILE").ok().map(std::path::PathBuf::from))
+    std::env::var("HOME")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var("USERPROFILE")
+                .ok()
+                .map(std::path::PathBuf::from)
+        })
 }
 
 fn canonicalize_safe(path: &std::path::Path) -> std::path::PathBuf {
@@ -71,7 +76,11 @@ pub(crate) fn check_path_safety(path: &std::path::Path) -> PathSafety {
 
 fn prompt_user_permission(question: &str, _sender: &Sender<WorkerEvent>) -> String {
     let (tx, rx) = std::sync::mpsc::channel();
-    *crate::tui::ASK_USER_CHANNEL.lock() = Some((tx, question.to_owned(), vec!["yes".to_owned(), "no".to_owned()]));
+    *crate::tui::ASK_USER_CHANNEL.lock() = Some((
+        tx,
+        question.to_owned(),
+        vec!["yes".to_owned(), "no".to_owned()],
+    ));
     let answer = rx.recv().unwrap_or_default();
     *crate::tui::ASK_USER_CHANNEL.lock() = None;
     answer
@@ -100,7 +109,9 @@ pub(crate) fn compile_rules(rules: &[String]) -> globset::GlobSet {
             }
         }
     }
-    builder.build().unwrap_or_else(|_| globset::GlobSet::empty())
+    builder
+        .build()
+        .unwrap_or_else(|_| globset::GlobSet::empty())
 }
 
 pub(crate) fn should_ignore(path: &std::path::Path, glob_set: &globset::GlobSet) -> bool {
@@ -315,10 +326,7 @@ fn recursive_search(
     Ok(())
 }
 
-pub(crate) fn handle_function_action(
-    action: FunctionAction,
-    sender: &Sender<WorkerEvent>,
-) {
+pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<WorkerEvent>) {
     match action {
         FunctionAction::Execute { name, args, config } => {
             let sender = sender.clone();
@@ -366,8 +374,11 @@ pub(crate) fn handle_function_action(
                                         }
                                         PathSafety::Prompt => {
                                             let answer = prompt_user_permission(
-                                                &format!("Allow access to path `{}` outside project and home directories?", p_str),
-                                                &sender
+                                                &format!(
+                                                    "Allow access to path `{}` outside project and home directories?",
+                                                    p_str
+                                                ),
+                                                &sender,
                                             );
                                             if answer != "yes" {
                                                 results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied by user: `{}`", p_str) }));
@@ -377,9 +388,7 @@ pub(crate) fn handle_function_action(
                                         PathSafety::Safe => {}
                                     }
 
-                                    if config.respect_ignore_rules
-                                        && should_ignore(p, &rules)
-                                    {
+                                    if config.respect_ignore_rules && should_ignore(p, &rules) {
                                         results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", p_str) }));
                                     } else {
                                         match std::fs::read_to_string(p_str) {
@@ -411,8 +420,11 @@ pub(crate) fn handle_function_action(
                                 }
                                 PathSafety::Prompt => {
                                     let answer = prompt_user_permission(
-                                        &format!("Allow access to path `{}` outside project and home directories?", target_path),
-                                        &sender
+                                        &format!(
+                                            "Allow access to path `{}` outside project and home directories?",
+                                            target_path
+                                        ),
+                                        &sender,
                                     );
                                     if answer != "yes" {
                                         allowed = false;
@@ -464,8 +476,11 @@ pub(crate) fn handle_function_action(
                             }
                             PathSafety::Prompt => {
                                 let answer = prompt_user_permission(
-                                    &format!("Allow access to path `{}` outside project and home directories?", path),
-                                    &sender
+                                    &format!(
+                                        "Allow access to path `{}` outside project and home directories?",
+                                        path
+                                    ),
+                                    &sender,
                                 );
                                 if answer != "yes" {
                                     allowed = false;
@@ -486,7 +501,8 @@ pub(crate) fn handle_function_action(
                             let rules = compile_rules(&rules_vec);
 
                             let run_res = if search_path.is_file() {
-                                if (!config.respect_ignore_rules || !should_ignore(search_path, &rules))
+                                if (!config.respect_ignore_rules
+                                    || !should_ignore(search_path, &rules))
                                     && let Ok(content) = std::fs::read_to_string(search_path)
                                 {
                                     for (line_num, line) in content.lines().enumerate() {
@@ -527,8 +543,11 @@ pub(crate) fn handle_function_action(
                             }
                             PathSafety::Prompt => {
                                 let answer = prompt_user_permission(
-                                    &format!("Allow access to path `{}` outside project and home directories?", path),
-                                    &sender
+                                    &format!(
+                                        "Allow access to path `{}` outside project and home directories?",
+                                        path
+                                    ),
+                                    &sender,
                                 );
                                 if answer != "yes" {
                                     allowed = false;
@@ -599,25 +618,32 @@ pub(crate) fn handle_function_action(
                                 let safety = check_path_safety(ep);
                                 match safety {
                                     PathSafety::Blocked => {
-                                        validation_errors.push(format!("Access denied: path `{}` is restricted", edit_path));
+                                        validation_errors.push(format!(
+                                            "Access denied: path `{}` is restricted",
+                                            edit_path
+                                        ));
                                         continue;
                                     }
                                     PathSafety::Prompt => {
                                         let answer = prompt_user_permission(
-                                            &format!("Allow access to path `{}` outside project and home directories?", edit_path),
-                                            &sender
+                                            &format!(
+                                                "Allow access to path `{}` outside project and home directories?",
+                                                edit_path
+                                            ),
+                                            &sender,
                                         );
                                         if answer != "yes" {
-                                            validation_errors.push(format!("Access denied by user: `{}`", edit_path));
+                                            validation_errors.push(format!(
+                                                "Access denied by user: `{}`",
+                                                edit_path
+                                            ));
                                             continue;
                                         }
                                     }
                                     PathSafety::Safe => {}
                                 }
 
-                                if config.respect_ignore_rules
-                                    && should_ignore(ep, &rules)
-                                {
+                                if config.respect_ignore_rules && should_ignore(ep, &rules) {
                                     validation_errors.push(format!(
                                         "Access denied: `{}` is ignored by .gitignore",
                                         edit_path
@@ -741,8 +767,11 @@ pub(crate) fn handle_function_action(
                                 }
                                 PathSafety::Prompt => {
                                     let answer = prompt_user_permission(
-                                        &format!("Allow access to path `{}` outside project and home directories?", path),
-                                        &sender
+                                        &format!(
+                                            "Allow access to path `{}` outside project and home directories?",
+                                            path
+                                        ),
+                                        &sender,
                                     );
                                     if answer != "yes" {
                                         allowed = false;
@@ -753,9 +782,7 @@ pub(crate) fn handle_function_action(
 
                             if !allowed {
                                 serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
-                            } else if config.respect_ignore_rules
-                                && should_ignore(ep, &rules)
-                            {
+                            } else if config.respect_ignore_rules && should_ignore(ep, &rules) {
                                 serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
                             } else {
                                 let start_line =
@@ -841,8 +868,11 @@ pub(crate) fn handle_function_action(
                                 }
                                 PathSafety::Prompt => {
                                     let answer = prompt_user_permission(
-                                        &format!("Allow access to path `{}` outside project and home directories?", path),
-                                        &sender
+                                        &format!(
+                                            "Allow access to path `{}` outside project and home directories?",
+                                            path
+                                        ),
+                                        &sender,
                                     );
                                     if answer != "yes" {
                                         allowed = false;
@@ -853,9 +883,7 @@ pub(crate) fn handle_function_action(
 
                             if !allowed {
                                 serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
-                            } else if config.respect_ignore_rules
-                                && should_ignore(ep, &rules)
-                            {
+                            } else if config.respect_ignore_rules && should_ignore(ep, &rules) {
                                 serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
                             } else {
                                 let old_string = args
@@ -919,8 +947,11 @@ pub(crate) fn handle_function_action(
                             }
                             PathSafety::Prompt => {
                                 let answer = prompt_user_permission(
-                                    &format!("Allow access to path `{}` outside project and home directories?", path),
-                                    &sender
+                                    &format!(
+                                        "Allow access to path `{}` outside project and home directories?",
+                                        path
+                                    ),
+                                    &sender,
                                 );
                                 if answer != "yes" {
                                     allowed = false;
@@ -939,9 +970,7 @@ pub(crate) fn handle_function_action(
                             };
                             let rules = compile_rules(&rules_vec);
 
-                            if config.respect_ignore_rules
-                                && should_ignore(ep, &rules)
-                            {
+                            if config.respect_ignore_rules && should_ignore(ep, &rules) {
                                 serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
                             } else {
                                 let content =
@@ -975,7 +1004,12 @@ pub(crate) fn handle_function_action(
                             args.get("persistent_session_id").and_then(|v| v.as_str());
 
                         if let Some(session_id) = persistent_session_id {
-                            match crate::tui::run_persistent_bash(session_id, cmd, input, sender.clone()) {
+                            match crate::tui::run_persistent_bash(
+                                session_id,
+                                cmd,
+                                input,
+                                sender.clone(),
+                            ) {
                                 Ok(val) => val,
                                 Err(e) => serde_json::json!({ "error": e.to_string() }),
                             }
@@ -1346,7 +1380,8 @@ pub(crate) fn handle_function_action(
                             .unwrap_or_default();
 
                         let (tx, rx) = std::sync::mpsc::channel();
-                        *crate::tui::ASK_USER_CHANNEL.lock() = Some((tx, question.to_owned(), options));
+                        *crate::tui::ASK_USER_CHANNEL.lock() =
+                            Some((tx, question.to_owned(), options));
 
                         let answer = rx.recv().unwrap_or_default();
 
@@ -1695,4 +1730,3 @@ system_prompt = "Review only."
         ));
     }
 }
-
