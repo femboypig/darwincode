@@ -7,10 +7,8 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
         .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
-        let tx = crate::tui::ASK_USER_CHANNEL
-            .lock()
-            .ok()
-            .and_then(|mut g| g.take().map(|(tx, _, _)| tx));
+        let mut g = crate::tui::ASK_USER_CHANNEL.lock();
+        let tx = g.take().map(|(tx, _, _)| tx);
         if let Some(tx) = tx {
             let _ = tx.send("Aborted by user".to_owned());
         }
@@ -30,10 +28,8 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
                 } else {
                     let answer = app.ui.ask_user.custom_input.trim().to_owned();
                     if !answer.is_empty() {
-                        let tx = crate::tui::ASK_USER_CHANNEL
-                            .lock()
-                            .ok()
-                            .and_then(|mut g| g.take().map(|(tx, _, _)| tx));
+                        let mut g = crate::tui::ASK_USER_CHANNEL.lock();
+                        let tx = g.take().map(|(tx, _, _)| tx);
                         if let Some(tx) = tx {
                             let _ = tx.send(answer);
                         }
@@ -71,10 +67,8 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
                     app.ui.ask_user.is_custom = true;
                 } else if let Some(opt) = app.ui.ask_user.options.get(app.ui.ask_user.selected_idx) {
                     let answer = opt.clone();
-                    let tx = crate::tui::ASK_USER_CHANNEL
-                        .lock()
-                        .ok()
-                        .and_then(|mut g| g.take().map(|(tx, _, _)| tx));
+                    let mut g = crate::tui::ASK_USER_CHANNEL.lock();
+                    let tx = g.take().map(|(tx, _, _)| tx);
                     if let Some(tx) = tx {
                         let _ = tx.send(answer);
                     }
