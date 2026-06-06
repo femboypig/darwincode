@@ -1,9 +1,9 @@
+use crate::app::App;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem};
-use crate::app::App;
 
 pub(crate) fn render_command_suggestions(frame: &mut Frame, app: &App, area: Rect) {
     let suggestions = app.command_suggestions();
