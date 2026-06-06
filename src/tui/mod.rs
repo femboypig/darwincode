@@ -451,15 +451,15 @@ fn run_loop(
             .lock()
             .ok()
             .and_then(|guard| guard.as_ref().map(|(_, q, opts)| (q.clone(), opts.clone())))
-            .filter(|_| app.screen != crate::app::Screen::AskUser);
+            .filter(|_| app.ui.screen != crate::app::Screen::AskUser);
 
         if let Some((question, options)) = ask_user_req {
-            app.screen = crate::app::Screen::AskUser;
-            app.ask_user.question = question;
-            app.ask_user.options = options;
-            app.ask_user.selected_idx = 0;
-            app.ask_user.custom_input.clear();
-            app.ask_user.is_custom = app.ask_user.options.is_empty();
+            app.ui.screen = crate::app::Screen::AskUser;
+            app.ui.ask_user.question = question;
+            app.ui.ask_user.options = options;
+            app.ui.ask_user.selected_idx = 0;
+            app.ui.ask_user.custom_input.clear();
+            app.ui.ask_user.is_custom = app.ui.ask_user.options.is_empty();
             app.status = "Answer the question. Enter to submit.".to_owned();
         }
 
@@ -468,7 +468,7 @@ fn run_loop(
             handle_worker_event(app, event, sender);
         }
 
-        if app.screen == crate::app::Screen::Chat
+        if app.ui.screen == crate::app::Screen::Chat
             && !app.is_busy()
             && !app.chat.message_queue.is_empty()
             && let Some(action) = app.pop_and_start_next_queue_item()
@@ -521,11 +521,11 @@ fn run_loop(
                 Event::Mouse(mouse_event) => match mouse_event.kind {
                     event::MouseEventKind::ScrollUp => {
                         if matches!(
-                            app.pending,
+                            app.proc.pending,
                             Some(crate::app::PendingTask::ConfirmFunction { .. })
                         ) {
-                            app.confirm_scroll
-                                .set(app.confirm_scroll.get().saturating_sub(1));
+                            app.ui.confirm_scroll
+                                .set(app.ui.confirm_scroll.get().saturating_sub(1));
                         } else {
                             app.chat.scroll = app.chat.scroll.saturating_add(1);
                         }
@@ -533,11 +533,11 @@ fn run_loop(
                     }
                     event::MouseEventKind::ScrollDown => {
                         if matches!(
-                            app.pending,
+                            app.proc.pending,
                             Some(crate::app::PendingTask::ConfirmFunction { .. })
                         ) {
-                            app.confirm_scroll
-                                .set(app.confirm_scroll.get().saturating_add(1));
+                            app.ui.confirm_scroll
+                                .set(app.ui.confirm_scroll.get().saturating_add(1));
                         } else {
                             app.chat.scroll = app.chat.scroll.saturating_sub(1);
                         }
@@ -565,7 +565,7 @@ fn run_loop(
                         {
                             app.chat.selection = None;
                             app.chat.last_mouse_drag_pos = None;
-                            if app.model_picker_open {
+                            if app.ui.model_picker_open {
                                 app.cancel_models();
                             } else if let Some(config) = app.begin_load_chat_models() {
                                 spawn_models_worker(config, sender.clone());
@@ -1005,18 +1005,18 @@ fn update_selection_on_scroll(app: &mut App, click_x: u16, click_y: u16) {
 fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<WorkerEvent>) {
     match event {
         WorkerEvent::StreamChunk(id, chunk) => {
-            if id == app.generation_id {
+            if id == app.proc.generation_id {
                 app.handle_stream_chunk(chunk);
             }
         }
-        WorkerEvent::StreamDone(id) if id == app.generation_id => {
+        WorkerEvent::StreamDone(id) if id == app.proc.generation_id => {
             if let Some(action) = app.complete_stream() {
                 handle_function_action(action, sender);
             }
         }
         WorkerEvent::StreamDone(_) => {}
         WorkerEvent::StreamError(id, err) => {
-            if id == app.generation_id {
+            if id == app.proc.generation_id {
                 app.handle_stream_error(err);
             }
         }
@@ -1036,7 +1036,7 @@ fn handle_worker_event(app: &mut App, event: WorkerEvent, sender: &Sender<Worker
             }
         }
         WorkerEvent::ResetStream(id) => {
-            if id == app.generation_id {
+            if id == app.proc.generation_id {
                 app.chat.streaming_parts.clear();
             }
         }
