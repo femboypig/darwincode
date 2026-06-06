@@ -628,12 +628,9 @@ build/
             if let Ok(content) = std::fs::read_to_string(&gitignore_path) {
                 let mut new_content = content.clone();
                 let mut modified = false;
-                
-                let rules_to_add = vec![
-                    ".darwincode/config.json",
-                    ".darwincode/.env",
-                ];
-                
+
+                let rules_to_add = vec![".darwincode/config.json", ".darwincode/.env"];
+
                 for rule in rules_to_add {
                     if !content.lines().any(|l| l.trim() == rule) {
                         if !new_content.ends_with('\n') && !new_content.is_empty() {
@@ -644,7 +641,7 @@ build/
                         modified = true;
                     }
                 }
-                
+
                 if modified {
                     let _ = std::fs::write(&gitignore_path, new_content);
                 }
@@ -743,7 +740,6 @@ You are forbidden from writing files or executing arbitrary bash commands.
     }
 }
 
-
 pub fn find_project_root() -> Option<PathBuf> {
     let mut cwd = std::env::current_dir().ok()?;
     loop {
@@ -758,7 +754,6 @@ pub fn find_project_root() -> Option<PathBuf> {
     }
     std::env::current_dir().ok()
 }
-
 
 pub fn custom_themes() -> &'static HashMap<String, ThemeConfig> {
     static CUSTOM_THEMES: std::sync::OnceLock<HashMap<String, ThemeConfig>> =
