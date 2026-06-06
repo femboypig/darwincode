@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CustomCommandConfig {
@@ -32,9 +32,7 @@ impl CustomCommandConfig {
                         .args(&["/C", cmd])
                         .output()
                 } else {
-                    std::process::Command::new("sh")
-                        .args(&["-c", cmd])
-                        .output()
+                    std::process::Command::new("sh").args(&["-c", cmd]).output()
                 };
 
                 let result_str = match output {
@@ -67,9 +65,13 @@ pub fn load_custom_commands() -> HashMap<String, CustomCommandConfig> {
                 let path = entry.path();
                 if path.is_file() && path.extension().map_or(false, |ext| ext == "toml") {
                     let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                    if !file_name.contains("schema") && !file_name.contains("template") && !file_name.contains("example") {
+                    if !file_name.contains("schema")
+                        && !file_name.contains("template")
+                        && !file_name.contains("example")
+                    {
                         if let Ok(toml_content) = std::fs::read_to_string(&path) {
-                            if let Ok(config) = toml::from_str::<CustomCommandConfig>(&toml_content) {
+                            if let Ok(config) = toml::from_str::<CustomCommandConfig>(&toml_content)
+                            {
                                 commands.insert(file_name.to_owned(), config);
                             }
                         }
@@ -90,7 +92,10 @@ pub fn load_custom_agents() -> HashMap<String, CustomAgentConfig> {
                 let path = entry.path();
                 if path.is_file() && path.extension().map_or(false, |ext| ext == "toml") {
                     let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                    if !file_name.contains("schema") && !file_name.contains("template") && !file_name.contains("example") {
+                    if !file_name.contains("schema")
+                        && !file_name.contains("template")
+                        && !file_name.contains("example")
+                    {
                         if let Ok(toml_content) = std::fs::read_to_string(&path) {
                             if let Ok(config) = toml::from_str::<CustomAgentConfig>(&toml_content) {
                                 agents.insert(file_name.to_owned(), config);
@@ -115,7 +120,7 @@ description = "Test command"
 prompt.template = "Hello, {{name}}! The status is {{status}}."
 "#;
         let mut config: CustomCommandConfig = toml::from_str(config_toml).unwrap();
-        
+
         let result = config.execute().unwrap();
         assert_eq!(result, "Hello, {{name}}! The status is {{status}}.");
 
@@ -140,7 +145,10 @@ system_prompt = "You are a code reviewer."
         let config: CustomAgentConfig = toml::from_str(agent_toml).unwrap();
         assert_eq!(config.name, "Reviewer Agent");
         assert_eq!(config.model, Some("gemini-2.5-pro".to_owned()));
-        assert_eq!(config.allowed_tools, Some(vec!["read".to_owned(), "grep".to_owned()]));
+        assert_eq!(
+            config.allowed_tools,
+            Some(vec!["read".to_owned(), "grep".to_owned()])
+        );
         assert_eq!(config.system_prompt, "You are a code reviewer.");
     }
 }
