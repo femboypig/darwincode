@@ -517,6 +517,69 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_theme_mode() {
+        assert_eq!(resolve_theme_mode(&Theme::Dark), crate::tui::theme::ThemeMode::Dark);
+        assert_eq!(resolve_theme_mode(&Theme::Light), crate::tui::theme::ThemeMode::Light);
+        let mode = resolve_theme_mode(&Theme::Auto);
+        assert!(matches!(mode, crate::tui::theme::ThemeMode::Dark | crate::tui::theme::ThemeMode::Light));
+    }
+
+    #[test]
+    fn test_merge_json_values() {
+        use serde_json::json;
+        let mut a = json!({
+            "key1": "value1",
+            "key2": {
+                "sub1": "subval1"
+            }
+        });
+        let b = json!({
+            "key2": {
+                "sub2": "subval2"
+            },
+            "key3": "value3"
+        });
+        merge_json_values(&mut a, b);
+        assert_eq!(a["key1"], "value1");
+        assert_eq!(a["key2"]["sub1"], "subval1");
+        assert_eq!(a["key2"]["sub2"], "subval2");
+        assert_eq!(a["key3"], "value3");
+    }
+
+    #[test]
+    fn test_config_save_load() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let root = find_project_root().unwrap_or_else(|| PathBuf::from("."));
+        let temp_dir = root.join("target").join(format!(
+            "darwincode_config_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        *TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
+
+        let config = StoredConfig {
+            api_key: "test_api_key_123".to_string(),
+            ..Default::default()
+        };
+        
+        assert!(config.save().is_ok());
+
+        let loaded = StoredConfig::load().unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.model, config.model);
+        assert_eq!(loaded.base_url, config.base_url);
+        assert!(!loaded.api_key.is_empty());
+
+        *TEST_CONFIG_DIR.lock().unwrap() = None;
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn test_stored_config_validation() {
         let mut config = StoredConfig::default();
         // default config with empty key should be invalid
