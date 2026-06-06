@@ -69,3 +69,39 @@ impl ModelPickerState {
         self.selected = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_model_picker_state_navigation() {
+        let models = vec![
+            "models/gemini-2.0-flash".to_owned(),
+            "models/claude-3-5-sonnet".to_owned(),
+            "models/gpt-4o".to_owned(),
+        ];
+        let mut picker = ModelPickerState::new(models, "claude-3-5-sonnet");
+        assert_eq!(picker.selected, 1);
+        assert_eq!(picker.selected_model().unwrap(), "models/claude-3-5-sonnet");
+
+        picker.select_next();
+        assert_eq!(picker.selected, 2);
+        assert_eq!(picker.selected_model().unwrap(), "models/gpt-4o");
+
+        picker.select_previous();
+        assert_eq!(picker.selected, 1);
+
+        picker.push_query('g');
+        let filtered = picker.filtered_indices();
+        assert_eq!(filtered.len(), 2); // gemini and gpt-4o
+
+        picker.pop_query();
+        assert_eq!(picker.query, "");
+
+        picker.push_query('c');
+        assert_eq!(picker.filtered_indices().len(), 1); // claude
+        picker.clear_query();
+        assert_eq!(picker.query, "");
+    }
+}
