@@ -8,7 +8,7 @@ use ratatui::widgets::{
 };
 
 use crate::app::App;
-use crate::app::chat::TodoItem;
+use crate::app::chat::{TodoItem, TodoPriority, TodoStatus};
 use crate::tui::render::icons::icons;
 use crate::tui::render::logo::{logo_fits, logo_lines, logo_lines_for_area, welcome_lines};
 use crate::tui::render::{get_theme, render_statusbar};
@@ -2139,7 +2139,24 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         let start_line = all_lines.len();
-        all_lines.extend(msg_lines);
+        let mut final_msg_lines = msg_lines;
+        if let Some(ref sel) = app.chat.selection {
+            if sel.msg_idx == msg_idx && message.author == "Darwin" && !message.is_shell && !message.is_tool {
+                let (min_line, min_col, max_line, max_col) = sel.normalized();
+                let highlight_style = Style::default()
+                    .bg(Color::Rgb(59, 130, 246))
+                    .fg(Color::White);
+                for (line_idx, line) in final_msg_lines.iter_mut().enumerate() {
+                    if line_idx >= min_line && line_idx <= max_line {
+                        let text_chars_count = get_line_text_excluding_margin(line).chars().count();
+                        let start_char = if line_idx == min_line { min_col } else { 0 };
+                        let end_char = if line_idx == max_line { max_col } else { text_chars_count };
+                        *line = highlight_msg_line(line.clone(), start_char, end_char, highlight_style);
+                    }
+                }
+            }
+        }
+        all_lines.extend(final_msg_lines);
         let end_line = all_lines.len();
         message_line_ranges.push((msg_idx, start_line, end_line));
         prev_is_tool = is_tool;
@@ -2394,12 +2411,11 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut lines = Vec::new();
 
-    let render_priority = |p: &str| -> Span<'static> {
+    let render_priority = |p: &TodoPriority| -> Span<'static> {
         match p {
-            "high" => Span::styled("!! ", Style::default().fg(Color::Rgb(239, 68, 68))),
-            "medium" => Span::styled("!  ", Style::default().fg(Color::Rgb(245, 158, 11))),
-            "low" => Span::styled("   ", Style::default()),
-            _ => Span::raw("   "),
+            TodoPriority::High => Span::styled("!! ", Style::default().fg(Color::Rgb(239, 68, 68))),
+            TodoPriority::Medium => Span::styled("!  ", Style::default().fg(Color::Rgb(245, 158, 11))),
+            TodoPriority::Low => Span::styled("   ", Style::default()),
         }
     };
 
@@ -2407,25 +2423,25 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
         .chat
         .todos
         .iter()
-        .filter(|t| t.status == "in_progress")
+        .filter(|t| t.status == TodoStatus::InProgress)
         .collect();
     let pending: Vec<&TodoItem> = app
         .chat
         .todos
         .iter()
-        .filter(|t| t.status == "pending")
+        .filter(|t| t.status == TodoStatus::Pending)
         .collect();
     let completed: Vec<&TodoItem> = app
         .chat
         .todos
         .iter()
-        .filter(|t| t.status == "completed")
+        .filter(|t| t.status == TodoStatus::Completed)
         .collect();
     let cancelled: Vec<&TodoItem> = app
         .chat
         .todos
         .iter()
-        .filter(|t| t.status == "cancelled")
+        .filter(|t| t.status == TodoStatus::Cancelled)
         .collect();
 
     let mut all_sorted_todos = Vec::new();
@@ -2437,22 +2453,22 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     let tasks_area = todo_chunks[2];
 
     for item in all_sorted_todos {
-        let (status_bullet, item_style) = match item.status.as_str() {
-            "in_progress" => (
+        let (status_bullet, item_style) = match item.status {
+            TodoStatus::InProgress => (
                 Span::styled("● ", Style::default().fg(Color::Rgb(234, 179, 8))),
                 Style::default().fg(Color::Rgb(220, 220, 220)),
             ),
-            "completed" => (
+            TodoStatus::Completed => (
                 Span::styled("● ", Style::default().fg(Color::Rgb(34, 197, 94))),
                 Style::default().fg(Color::DarkGray),
             ),
-            "cancelled" => (
+            TodoStatus::Cancelled => (
                 Span::styled("◌ ", Style::default().fg(Color::DarkGray)),
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
             ),
-            _ => (
+            TodoStatus::Pending => (
                 Span::styled("○ ", Style::default().fg(Color::DarkGray)),
                 Style::default().fg(Color::DarkGray),
             ),
@@ -2479,4 +2495,91 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     frame.render_widget(Paragraph::new(lines), tasks_area);
+}
+
+fn get_line_text_excluding_margin(line: &Line<'_>) -> String {
+    let mut s = String::new();
+    for span in &line.spans {
+        s.push_str(&span.content);
+    }
+    if s.starts_with("    ") {
+        s.chars().skip(4).collect()
+    } else {
+        s
+    }
+}
+
+fn highlight_msg_line(
+    line: Line<'static>,
+    start_char: usize,
+    end_char: usize,
+    highlight_style: Style,
+) -> Line<'static> {
+    let mut new_spans = Vec::new();
+    let mut current_offset = 0;
+
+    let mut spans_iter = line.spans.into_iter();
+    if let Some(first_span) = spans_iter.next() {
+        if first_span.content == "    " {
+            new_spans.push(first_span);
+        } else {
+            let content_chars: Vec<char> = first_span.content.chars().collect();
+            let span_len = content_chars.len();
+            let span_end = current_offset + span_len;
+            if current_offset >= end_char || span_end <= start_char {
+                new_spans.push(first_span);
+            } else {
+                let intersect_start = start_char.max(current_offset);
+                let intersect_end = end_char.min(span_end);
+                if intersect_start > current_offset {
+                    let prefix_len = intersect_start - current_offset;
+                    let prefix_text: String = content_chars[..prefix_len].iter().collect();
+                    new_spans.push(Span::styled(prefix_text, first_span.style));
+                }
+                let middle_start_idx = intersect_start - current_offset;
+                let middle_end_idx = intersect_end - current_offset;
+                let middle_text: String = content_chars[middle_start_idx..middle_end_idx].iter().collect();
+                new_spans.push(Span::styled(middle_text, first_span.style.patch(highlight_style)));
+                if span_end > intersect_end {
+                    let suffix_start_idx = intersect_end - current_offset;
+                    let suffix_text: String = content_chars[suffix_start_idx..].iter().collect();
+                    new_spans.push(Span::styled(suffix_text, first_span.style));
+                }
+            }
+            current_offset = span_end;
+        }
+    }
+
+    for span in spans_iter {
+        let content_chars: Vec<char> = span.content.chars().collect();
+        let span_len = content_chars.len();
+        let span_end = current_offset + span_len;
+
+        if current_offset >= end_char || span_end <= start_char {
+            new_spans.push(span);
+        } else {
+            let intersect_start = start_char.max(current_offset);
+            let intersect_end = end_char.min(span_end);
+
+            if intersect_start > current_offset {
+                let prefix_len = intersect_start - current_offset;
+                let prefix_text: String = content_chars[..prefix_len].iter().collect();
+                new_spans.push(Span::styled(prefix_text, span.style));
+            }
+
+            let middle_start_idx = intersect_start - current_offset;
+            let middle_end_idx = intersect_end - current_offset;
+            let middle_text: String = content_chars[middle_start_idx..middle_end_idx].iter().collect();
+            new_spans.push(Span::styled(middle_text, span.style.patch(highlight_style)));
+
+            if span_end > intersect_end {
+                let suffix_start_idx = intersect_end - current_offset;
+                let suffix_text: String = content_chars[suffix_start_idx..].iter().collect();
+                new_spans.push(Span::styled(suffix_text, span.style));
+            }
+        }
+        current_offset = span_end;
+    }
+
+    Line::from(new_spans)
 }
