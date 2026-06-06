@@ -548,8 +548,12 @@ pub fn init_project_dir() {
     if let Some(proj_root) = find_project_root() {
         let dc_dir = proj_root.join(".darwincode");
         let themes_dir = dc_dir.join("themes");
+        let commands_dir = dc_dir.join("commands");
+        let agents_dir = dc_dir.join("agents");
 
         let _ = std::fs::create_dir_all(&themes_dir);
+        let _ = std::fs::create_dir_all(&commands_dir);
+        let _ = std::fs::create_dir_all(&agents_dir);
 
         // Create README.md if it does not exist
         let readme_path = dc_dir.join("README.md");
@@ -558,16 +562,142 @@ pub fn init_project_dir() {
 
 This directory contains configuration files for `darwincode` that are specific to this project repository.
 
-## Custom Themes
-You can add custom theme JSON files under the `themes/` directory.
-For example, a theme file named `themes/my_cool_theme.json` will be discovered automatically and can be activated by running `/theme` or setting `"theme": "Custom(my_cool_theme)"` in your config.
+## Directory Structure
 
-To get started, check out the template theme at `themes/custom_template.json`.
+*   `config.json` (created from `config.json.template`) — Project-level overrides for global configuration.
+*   `ignore` — Specific files and directories to ignore during workspace scanning (combines with `.gitignore`).
+*   `instructions.md` — Custom project-specific guidelines, coding standards, and style rules appended automatically to the AI prompt.
+*   `.env` — Key-value secrets (API keys, tokens) loaded for custom tools/commands.
+*   `themes/` — Custom theme JSON configuration files.
+*   `commands/` — Custom slash-commands configured using TOML (copy `commands/schema.toml.template` to define new commands).
+*   `agents/` — Custom specialized agent definitions configured using TOML (copy `agents/schema.toml.template` to define new agents).
 
-All theme config structures must conform to the schema:
-https://raw.githubusercontent.com/femboypig/darwincode/main/theme.json
+To define new custom commands or agents, copy the respective `schema.toml.template` to a new `.toml` file in the same directory (e.g. `commands/build.toml` or `agents/reviewer.toml`) and edit its properties.
 "##;
             let _ = std::fs::write(&readme_path, readme_content);
+        }
+
+        // Create config.json.template if it does not exist
+        let config_template_path = dc_dir.join("config.json.template");
+        if !config_template_path.exists() {
+            let config_template = r##"{
+  "model": "gemini-2.0-flash",
+  "base_url": "https://generativelanguage.googleapis.com/v1beta",
+  "enable_codebase_tools": true,
+  "enable_bash_tools": true,
+  "show_thoughts": true,
+  "permission_level": "Guardian",
+  "theme": "Auto",
+  "respect_ignore_rules": true
+}
+"##;
+            let _ = std::fs::write(&config_template_path, config_template);
+        }
+
+        // Create ignore file if it does not exist
+        let ignore_path = dc_dir.join("ignore");
+        if !ignore_path.exists() {
+            let ignore_content = r##"# Darwincode workspace ignores
+# Add files or directories to exclude from the workspace scanner.
+target/
+node_modules/
+.git/
+.darwincode/
+dist/
+build/
+*.log
+"##;
+            let _ = std::fs::write(&ignore_path, ignore_content);
+        }
+
+        // Create empty instructions.md if it does not exist
+        let inst_path = dc_dir.join("instructions.md");
+        if !inst_path.exists() {
+            let _ = std::fs::write(&inst_path, "");
+        }
+
+        // Create empty .env if it does not exist
+        let env_path = dc_dir.join(".env");
+        if !env_path.exists() {
+            let _ = std::fs::write(&env_path, "");
+        }
+
+        // Automatically append .darwincode/config.json and .darwincode/.env to the project's .gitignore if it exists
+        let gitignore_path = proj_root.join(".gitignore");
+        if gitignore_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&gitignore_path) {
+                let mut new_content = content.clone();
+                let mut modified = false;
+                
+                let rules_to_add = vec![
+                    ".darwincode/config.json",
+                    ".darwincode/.env",
+                ];
+                
+                for rule in rules_to_add {
+                    if !content.lines().any(|l| l.trim() == rule) {
+                        if !new_content.ends_with('\n') && !new_content.is_empty() {
+                            new_content.push('\n');
+                        }
+                        new_content.push_str(rule);
+                        new_content.push('\n');
+                        modified = true;
+                    }
+                }
+                
+                if modified {
+                    let _ = std::fs::write(&gitignore_path, new_content);
+                }
+            }
+        }
+
+        // Create commands/schema.toml.template if it does not exist
+        let cmd_template_path = commands_dir.join("schema.toml.template");
+        if !cmd_template_path.exists() {
+            let cmd_template = r##"# Custom command configuration schema.
+# Copy and rename this file (removing .template) to activate it (e.g., commit.toml).
+
+description = "Generate a commit message based on git changes"
+model = "gemini-2.0-flash" # (Optional) Override model to use for this command
+
+# Local shell commands executed before calling the AI to gather context
+[context]
+git_status = "git status --short"
+git_diff = "git diff"
+
+# Prompt template. Variables are substituted using the {{variable_name}} syntax
+[prompt]
+template = """
+Write a clear, Conventional Commits-compliant commit message based on the changes.
+
+Git Status:
+{{git_status}}
+
+Changes:
+{{git_diff}}
+"""
+"##;
+            let _ = std::fs::write(&cmd_template_path, cmd_template);
+        }
+
+        // Create agents/schema.toml.template if it does not exist
+        let agent_template_path = agents_dir.join("schema.toml.template");
+        if !agent_template_path.exists() {
+            let agent_template = r##"# Custom agent configuration schema.
+# Copy and rename this file (removing .template) to activate it (e.g., reviewer.toml).
+
+name = "Code Reviewer"
+model = "claude-3-5-sonnet" # (Optional) Default model for this agent
+
+# List of allowed tools to limit access and enforce security boundaries
+allowed_tools = ["read_file", "grep_search", "list_dir"]
+
+system_prompt = """
+You are a strict code reviewer. Your only task is to analyze project files and find bugs/defects.
+You are forbidden from writing files or executing arbitrary bash commands.
+"""
+"##;
+            let _ = std::fs::write(&agent_template_path, agent_template);
         }
 
         // Create custom_template.json if it does not exist
@@ -613,11 +743,12 @@ https://raw.githubusercontent.com/femboypig/darwincode/main/theme.json
     }
 }
 
+
 pub fn find_project_root() -> Option<PathBuf> {
     let mut cwd = std::env::current_dir().ok()?;
     loop {
-        if cwd.join(".git").exists() {
-            return Some(cwd);
+        if cwd.join(".git").exists() || cwd.join(".darwincode").exists() {
+            return Some(cwd.clone());
         }
         if let Some(parent) = cwd.parent() {
             cwd = parent.to_path_buf();
@@ -625,8 +756,9 @@ pub fn find_project_root() -> Option<PathBuf> {
             break;
         }
     }
-    None
+    std::env::current_dir().ok()
 }
+
 
 pub fn custom_themes() -> &'static HashMap<String, ThemeConfig> {
     static CUSTOM_THEMES: std::sync::OnceLock<HashMap<String, ThemeConfig>> =
