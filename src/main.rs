@@ -19,6 +19,7 @@ fn main() -> Result<()> {
     let mut path_arg = None;
     let mut session_override = None;
     let mut model_override = None;
+    let mut trust_workspace = false;
 
     let mut i = 0;
     while i < args_vec.len() {
@@ -49,6 +50,10 @@ fn main() -> Result<()> {
                     std::process::exit(1);
                 }
             }
+            "--trust-workspace" => {
+                trust_workspace = true;
+                i += 1;
+            }
             "-h" | "--help" => {
                 println!(
                     "darwincode {} - The open source terminal AI coding agent",
@@ -62,6 +67,7 @@ fn main() -> Result<()> {
                 println!("  -c, --continue          Continue the last session");
                 println!("  -s, --session <ID>      Resume a specific session by ID");
                 println!("  -m, --model <MODEL>     Use a specific model for this run");
+                println!("  --trust-workspace       Trust workspace custom commands");
                 println!("  -h, --help              Print help");
                 return Ok(());
             }
@@ -99,9 +105,19 @@ fn main() -> Result<()> {
         if let Some(model) = model_override {
             cfg.model = model;
         }
+        if trust_workspace {
+            cfg.trust_workspace = true;
+        }
     } else if let Some(model) = model_override {
         let cfg = StoredConfig {
             model,
+            trust_workspace,
+            ..Default::default()
+        };
+        config = Some(cfg);
+    } else if trust_workspace {
+        let cfg = StoredConfig {
+            trust_workspace,
             ..Default::default()
         };
         config = Some(cfg);
