@@ -230,8 +230,8 @@ impl StoredConfig {
                 Some(cfg)
             } else {
                 let key = crate::crypto::derive_hardware_key()?;
-                let cipher_data =
-                    fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+                let cipher_data = fs::read(&path)
+                    .with_context(|| format!("failed to read {}", path.display()))?;
                 let plain_data = crate::crypto::decrypt_data(&cipher_data, &key)
                     .with_context(|| format!("failed to decrypt config {}", path.display()))?;
 
@@ -392,7 +392,9 @@ pub fn config_path() -> Result<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".config")));
+        .or_else(|| {
+            std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".config"))
+        });
 
     if let Some(base_path) = base {
         Ok(base_path.join("darwincode").join("config.json"))
@@ -518,10 +520,19 @@ mod tests {
 
     #[test]
     fn test_resolve_theme_mode() {
-        assert_eq!(resolve_theme_mode(&Theme::Dark), crate::tui::theme::ThemeMode::Dark);
-        assert_eq!(resolve_theme_mode(&Theme::Light), crate::tui::theme::ThemeMode::Light);
+        assert_eq!(
+            resolve_theme_mode(&Theme::Dark),
+            crate::tui::theme::ThemeMode::Dark
+        );
+        assert_eq!(
+            resolve_theme_mode(&Theme::Light),
+            crate::tui::theme::ThemeMode::Light
+        );
         let mode = resolve_theme_mode(&Theme::Auto);
-        assert!(matches!(mode, crate::tui::theme::ThemeMode::Dark | crate::tui::theme::ThemeMode::Light));
+        assert!(matches!(
+            mode,
+            crate::tui::theme::ThemeMode::Dark | crate::tui::theme::ThemeMode::Light
+        ));
     }
 
     #[test]
@@ -565,7 +576,7 @@ mod tests {
             api_key: "test_api_key_123".to_string(),
             ..Default::default()
         };
-        
+
         assert!(config.save().is_ok());
 
         let loaded = StoredConfig::load().unwrap();
