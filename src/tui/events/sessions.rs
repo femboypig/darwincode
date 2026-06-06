@@ -4,31 +4,36 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub(crate) fn handle_sessions_key(app: &mut App, key: KeyEvent) -> Result<()> {
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
         || app
-            .core.keybindings
+            .core
+            .keybindings
             .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         app.cancel_sessions();
         return Ok(());
     }
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
     {
         app.ui.sessions.select_previous();
         return Ok(());
     }
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
     {
         app.ui.sessions.select_next();
         return Ok(());
     }
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Submit, key)
     {
         app.apply_selected_session();
@@ -58,7 +63,7 @@ pub(crate) fn handle_sessions_key(app: &mut App, key: KeyEvent) -> Result<()> {
 mod tests {
     use super::*;
     use crate::config::StoredConfig;
-    use crossterm::event::{KeyEvent, KeyCode, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn test_handle_sessions_key_navigation() {
@@ -70,8 +75,14 @@ mod tests {
         crate::app::session::save_session(&app.chat).unwrap();
 
         app.ui.sessions.sessions = vec![
-            crate::app::session::SessionMeta { id: "a".to_owned(), snippet: "a".to_owned() },
-            crate::app::session::SessionMeta { id: "b".to_owned(), snippet: "b".to_owned() },
+            crate::app::session::SessionMeta {
+                id: "a".to_owned(),
+                snippet: "a".to_owned(),
+            },
+            crate::app::session::SessionMeta {
+                id: "b".to_owned(),
+                snippet: "b".to_owned(),
+            },
         ];
         app.ui.sessions.selected = 0;
 
@@ -86,11 +97,19 @@ mod tests {
         assert_eq!(app.ui.sessions.selected, 0);
 
         // Type 'x'
-        handle_sessions_key(&mut app, KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty())).unwrap();
+        handle_sessions_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty()),
+        )
+        .unwrap();
         assert_eq!(app.ui.sessions.query, "x");
 
         // Backspace
-        handle_sessions_key(&mut app, KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty())).unwrap();
+        handle_sessions_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty()),
+        )
+        .unwrap();
         assert_eq!(app.ui.sessions.query, "");
 
         // Cancel
@@ -100,7 +119,11 @@ mod tests {
         // Submit (we need to re-enter sessions screen first)
         app.ui.screen = crate::app::Screen::Sessions;
         app.ui.sessions.selected = 0; // Selects session "a"
-        handle_sessions_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::empty())).unwrap();
+        handle_sessions_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()),
+        )
+        .unwrap();
         assert_eq!(app.ui.screen, crate::app::Screen::Chat);
 
         // Clean up
