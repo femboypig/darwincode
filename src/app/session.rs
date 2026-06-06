@@ -791,10 +791,11 @@ mod tests {
             })],
         });
 
+        use crate::app::chat::{TodoStatus, TodoPriority};
         let todos = rebuild_todos_from_history(&history);
         assert_eq!(todos.len(), 1);
         assert_eq!(todos[0].content, "Task 1");
-        assert_eq!(todos[0].status, "pending");
-        assert_eq!(todos[0].priority, "high");
+        assert_eq!(todos[0].status, TodoStatus::Pending);
+        assert_eq!(todos[0].priority, TodoPriority::High);
     }
 }
