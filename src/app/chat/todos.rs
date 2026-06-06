@@ -61,8 +61,8 @@ pub struct TodoItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::StoredConfig;
     use crate::api::ChatMessage;
+    use crate::config::StoredConfig;
 
     #[test]
     fn test_todo_lifecycle_validation() {
