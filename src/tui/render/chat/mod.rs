@@ -1,7 +1,7 @@
-pub(crate) mod welcome;
-pub(crate) mod message_list;
 pub(crate) mod input;
+pub(crate) mod message_list;
 pub(crate) mod panels;
+pub(crate) mod welcome;
 
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -15,14 +15,14 @@ use crate::tui::render::logo::{logo_fits, logo_lines};
 use crate::tui::render::render_statusbar;
 use crate::tui::syntax::wrap_text_to_lines;
 
-use welcome::{render_welcome_logo, render_welcome_tips};
-use message_list::{render_messages, dim_buffer};
 pub(crate) use message_list::centered_rect;
+use message_list::{dim_buffer, render_messages};
+use welcome::{render_welcome_logo, render_welcome_tips};
 
 use input::render_command_suggestions;
 use panels::{
-    render_model_picker_modal, render_theme_picker_modal, render_agent_picker_modal,
-    render_confirm_modal, render_ask_user_in_input_box, render_permissions_in_input_box,
+    render_agent_picker_modal, render_ask_user_in_input_box, render_confirm_modal,
+    render_model_picker_modal, render_permissions_in_input_box, render_theme_picker_modal,
     render_todos,
 };
 
@@ -80,7 +80,8 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     let wrapped_lines = wrap_text_to_lines(app.chat.input.as_str(), input_inner_w as usize);
     let display_lines = u16::try_from(wrapped_lines.len()).unwrap_or(u16::MAX);
     let input_height = if app.ui.screen == Screen::AskUser {
-        let q_wrapped = wrap_text_to_lines(app.ui.ask_user.question.as_str(), input_inner_w as usize);
+        let q_wrapped =
+            wrap_text_to_lines(app.ui.ask_user.question.as_str(), input_inner_w as usize);
         let q_lines = u16::try_from(q_wrapped.len()).unwrap_or(u16::MAX);
         let opt_count = u16::try_from(app.ui.ask_user.options.len()).unwrap_or(u16::MAX);
         let custom_lines = if app.ui.ask_user.is_custom {
@@ -550,7 +551,8 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         || app.ui.screen == Screen::Sessions
         || app.ui.screen == Screen::Setup
         || app
-            .proc.pending
+            .proc
+            .pending
             .as_ref()
             .is_some_and(|p| matches!(p, crate::app::PendingTask::ConfirmFunction { .. }));
 
