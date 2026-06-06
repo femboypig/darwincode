@@ -13,35 +13,40 @@ pub(crate) fn handle_permissions_key(
     key: KeyEvent,
 ) -> Result<()> {
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
         app.cancel_permissions();
         return Ok(());
     }
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         app.cancel_permissions();
         return Ok(());
     }
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
     {
         app.ui.permissions.select_previous();
         return Ok(());
     }
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
     {
         app.ui.permissions.select_next();
         return Ok(());
     }
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Submit, key)
     {
         if let Some(action) = app.apply_permission_level() {
@@ -76,7 +81,7 @@ pub(crate) fn handle_permissions_key(
 mod tests {
     use super::*;
     use crate::config::StoredConfig;
-    use crossterm::event::{KeyEvent, KeyCode, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use std::sync::mpsc;
 
     #[test]
@@ -121,6 +126,9 @@ mod tests {
         let key_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
         handle_permissions_key(&mut app, &sender, key_enter).unwrap();
         assert_eq!(app.ui.screen, crate::app::Screen::Chat);
-        assert_eq!(app.chat.config.permission_level, crate::config::PermissionLevel::Chaos);
+        assert_eq!(
+            app.chat.config.permission_level,
+            crate::config::PermissionLevel::Chaos
+        );
     }
 }
