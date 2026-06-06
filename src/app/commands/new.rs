@@ -17,3 +17,18 @@ pub fn run(app: &mut App) {
     app.save_session();
     app.status = "New chat started".to_owned();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::StoredConfig;
+
+    #[test]
+    fn test_new_run() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.chat.input_draft = "some draft".to_owned();
+        run(&mut app);
+        assert!(app.chat.input_draft.is_empty());
+        assert_eq!(app.status, "New chat started");
+    }
+}
