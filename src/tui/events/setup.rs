@@ -11,7 +11,8 @@ pub(crate) fn handle_setup_key(
     key: KeyEvent,
 ) -> Result<()> {
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
         app.should_quit = true;
@@ -20,7 +21,8 @@ pub(crate) fn handle_setup_key(
 
     if app.ui.setup.is_editing {
         if app
-            .core.keybindings
+            .core
+            .keybindings
             .matches(crate::tui::keybindings::TuiAction::Cancel, key)
         {
             app.ui.setup.is_editing = false;
@@ -60,7 +62,8 @@ pub(crate) fn handle_setup_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         app.cancel_setup();
@@ -192,7 +195,7 @@ pub(crate) fn handle_setup_key(
 mod tests {
     use super::*;
     use crate::config::StoredConfig;
-    use crossterm::event::{KeyEvent, KeyCode, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use std::sync::mpsc;
 
     #[test]
@@ -222,7 +225,12 @@ mod tests {
         app.ui.setup.api_key.clear();
 
         // Type 'k'
-        handle_setup_key(&mut app, &sender, KeyEvent::new(KeyCode::Char('k'), KeyModifiers::empty())).unwrap();
+        handle_setup_key(
+            &mut app,
+            &sender,
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::empty()),
+        )
+        .unwrap();
         assert!(app.ui.setup.is_editing);
         assert_eq!(app.ui.setup.api_key, "k");
     }
@@ -274,12 +282,18 @@ mod tests {
         app.ui.setup.permission_level = crate::config::PermissionLevel::Safe;
         let key_right = KeyEvent::new(KeyCode::Right, KeyModifiers::empty());
         handle_setup_key(&mut app, &sender, key_right).unwrap();
-        assert_eq!(app.ui.setup.permission_level, crate::config::PermissionLevel::Guardian);
+        assert_eq!(
+            app.ui.setup.permission_level,
+            crate::config::PermissionLevel::Guardian
+        );
 
         // Left arrow for PermissionLevel
         let key_left = KeyEvent::new(KeyCode::Left, KeyModifiers::empty());
         handle_setup_key(&mut app, &sender, key_left).unwrap();
-        assert_eq!(app.ui.setup.permission_level, crate::config::PermissionLevel::Safe);
+        assert_eq!(
+            app.ui.setup.permission_level,
+            crate::config::PermissionLevel::Safe
+        );
 
         // 7. Enter/Space to toggle boolean fields
         app.ui.setup.active_field = SetupField::EnableCodebase;
