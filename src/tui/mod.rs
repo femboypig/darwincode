@@ -1,29 +1,31 @@
+pub(crate) mod event_loop;
 pub(crate) mod events;
 pub(crate) mod keybindings;
 pub(crate) mod render;
 pub(crate) mod syntax;
-pub(crate) mod theme;
 pub(crate) mod terminal;
+pub(crate) mod theme;
 pub(crate) mod tool_executor;
-pub(crate) mod event_loop;
 
 pub use event_loop::run;
 pub use terminal::Tui;
-pub(crate) use tool_executor::{handle_function_action, spawn_generation_worker, spawn_models_worker};
+pub(crate) use tool_executor::{
+    handle_function_action, spawn_generation_worker, spawn_models_worker,
+};
 
-
-use std::sync::mpsc::Sender;
+use anyhow::Result;
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, OnceLock};
-use anyhow::Result;
 
 pub static RUNNING_PROCESS_PID: parking_lot::Mutex<Option<u32>> = parking_lot::Mutex::new(None);
 pub static RUNNING_PROCESS_STDIN: parking_lot::Mutex<Option<std::process::ChildStdin>> =
     parking_lot::Mutex::new(None);
 type AskUserChannel = (std::sync::mpsc::Sender<String>, String, Vec<String>);
 
-pub static ASK_USER_CHANNEL: parking_lot::Mutex<Option<AskUserChannel>> = parking_lot::Mutex::new(None);
+pub static ASK_USER_CHANNEL: parking_lot::Mutex<Option<AskUserChannel>> =
+    parking_lot::Mutex::new(None);
 
 pub(crate) struct BackgroundProcess {
     pub(crate) _command: String,
