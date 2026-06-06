@@ -147,14 +147,14 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
             Color::Rgb(251, 146, 60),
         ),
         (
-            "Respect .gitignore",
-            (if app.setup.respect_gitignore {
+            "Respect Ignore Rules",
+            (if app.setup.respect_ignore_rules {
                 icons::CHECK_ENABLED
             } else {
                 icons::CROSS_DISABLED
             })
             .to_owned(),
-            SetupField::RespectGitignore,
+            SetupField::RespectIgnoreRules,
             Color::Rgb(168, 85, 247),
         ),
     ];
