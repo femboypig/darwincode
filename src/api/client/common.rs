@@ -1,0 +1,77 @@
+use anyhow::Result;
+use std::thread;
+use std::time::Duration;
+
+pub fn read_error(error: ureq::Error) -> anyhow::Error {
+    match error {
+        ureq::Error::Status(code, response) => {
+            let message = response
+                .into_string()
+                .unwrap_or_else(|_| "unknown error".to_owned());
+            anyhow::anyhow!("API request failed with HTTP {code}: {message}")
+        }
+        ureq::Error::Transport(error) => anyhow::anyhow!("API request failed: {error}"),
+    }
+}
+
+pub fn lowercase_types(value: &mut serde_json::Value) {
+    if let Some(obj) = value.as_object_mut() {
+        if let Some(s) = obj
+            .get("type")
+            .and_then(|t| t.as_str())
+            .map(|s| s.to_lowercase())
+        {
+            obj.insert("type".to_owned(), serde_json::json!(s));
+        }
+        for val in obj.values_mut() {
+            lowercase_types(val);
+        }
+    } else if let Some(arr) = value.as_array_mut() {
+        for val in arr {
+            lowercase_types(val);
+        }
+    }
+}
+
+pub fn model_supports_vision(model: &str, base_url: &str) -> bool {
+    let m = model.to_lowercase();
+    let b = base_url.to_lowercase();
+
+    if m.contains("deepseek")
+        || b.contains("deepseek")
+        || m.contains("coder")
+        || m.contains("reasoner")
+        || m.contains("r1")
+    {
+        return false;
+    }
+    true
+}
+
+pub fn execute_with_retry<F>(agent: &ureq::Agent, make_request: F) -> Result<ureq::Response, anyhow::Error>
+where
+    F: Fn(&ureq::Agent) -> Result<ureq::Response, ureq::Error>,
+{
+    let mut backoff = Duration::from_millis(500);
+    let max_backoff = Duration::from_secs(30);
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match make_request(agent) {
+            Ok(resp) => return Ok(resp),
+            Err(err) => {
+                let is_ret = match &err {
+                    ureq::Error::Transport(_) => true,
+                    ureq::Error::Status(429, _) => true,
+                    ureq::Error::Status(code, _) => *code >= 500 && *code < 600,
+                };
+                if is_ret && attempt < 5 {
+                    thread::sleep(backoff);
+                    backoff = (backoff * 2).min(max_backoff);
+                } else {
+                    return Err(read_error(err));
+                }
+            }
+        }
+    }
+}
