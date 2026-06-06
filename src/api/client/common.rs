@@ -75,3 +75,45 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_model_supports_vision() {
+        assert!(model_supports_vision("gpt-4o", "https://api.openai.com/v1"));
+        assert!(model_supports_vision(
+            "claude-3-5-sonnet",
+            "https://api.anthropic.com/v1"
+        ));
+        assert!(model_supports_vision(
+            "gemini-1.5-flash",
+            "https://generativelanguage.googleapis.com"
+        ));
+        assert!(model_supports_vision(
+            "big-pickle",
+            "https://opencode.ai/zen/v1"
+        ));
+        assert!(!model_supports_vision(
+            "deepseek-chat",
+            "https://api.deepseek.com/v1"
+        ));
+        assert!(!model_supports_vision(
+            "deepseek-coder",
+            "https://api.deepseek.com/v1"
+        ));
+        assert!(!model_supports_vision(
+            "deepseek-reasoner",
+            "https://api.deepseek.com/v1"
+        ));
+        assert!(!model_supports_vision(
+            "qwen2.5-coder",
+            "https://api.openai.com/v1"
+        ));
+        assert!(!model_supports_vision(
+            "big-pickle",
+            "https://api.deepseek.com/v1"
+        ));
+    }
+}
