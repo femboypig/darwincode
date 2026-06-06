@@ -1,7 +1,7 @@
-use crate::config::PermissionLevel;
-use crate::app::core::{App, Screen, SubmitAction, PendingTask};
 use crate::app::chat::MessageLine;
+use crate::app::core::{App, PendingTask, Screen, SubmitAction};
 use crate::app::permission::PermissionPickerState;
+use crate::config::PermissionLevel;
 
 pub fn run(app: &mut App, level: Option<PermissionLevel>) -> Option<SubmitAction> {
     if let Some(level) = level {
@@ -72,7 +72,10 @@ mod tests {
     #[test]
     fn test_permissions_run_some() {
         let _lock = crate::config::TEST_LOCK.lock().unwrap();
-        let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "darwin_test_{}",
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
 
@@ -95,4 +98,3 @@ mod tests {
         assert_eq!(app.ui.screen, Screen::Permissions);
     }
 }
-
