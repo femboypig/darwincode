@@ -33,3 +33,26 @@ impl PermissionPickerState {
             .unwrap_or(Self::options().len() - 1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_permission_picker_state() {
+        let mut picker = PermissionPickerState::default();
+        assert_eq!(picker.selected, 0);
+
+        picker.select_next();
+        assert_eq!(picker.selected, 1);
+
+        picker.select_next();
+        assert_eq!(picker.selected, 2);
+
+        picker.select_next();
+        assert_eq!(picker.selected, 0); // wrap around
+
+        picker.select_previous();
+        assert_eq!(picker.selected, 2); // wrap around backwards
+    }
+}
