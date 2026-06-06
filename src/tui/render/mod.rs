@@ -110,7 +110,11 @@ pub(crate) fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
         let warning_text = format!("⚠️  {}", warning);
         let warning_paragraph = Paragraph::new(warning_text)
             .alignment(Alignment::Center)
-            .style(base_style.fg(Color::Rgb(245, 158, 11)).add_modifier(Modifier::BOLD));
+            .style(
+                base_style
+                    .fg(Color::Rgb(245, 158, 11))
+                    .add_modifier(Modifier::BOLD),
+            );
         frame.render_widget(warning_paragraph, chunks[1]);
     }
 
