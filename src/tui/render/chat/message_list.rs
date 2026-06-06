@@ -1,13 +1,13 @@
+use crate::app::App;
+use crate::tui::render::get_theme;
+use crate::tui::render::icons::icons;
+use crate::tui::render::logo::welcome_lines;
+use crate::tui::syntax::{parse_markdown_lines, wrap_lines, wrap_text_to_lines};
 use ratatui::Frame;
-use ratatui::layout::{Rect, Layout, Direction, Constraint};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
-use crate::app::App;
-use crate::tui::render::get_theme;
-use crate::tui::syntax::{parse_markdown_lines, wrap_lines, wrap_text_to_lines};
-use crate::tui::render::icons::icons;
-use crate::tui::render::logo::welcome_lines;
 
 pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let shell_focused = app.chat.shell_focused;
@@ -375,7 +375,10 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         let start_line = all_lines.len();
         let mut final_msg_lines = msg_lines;
         if let Some(ref sel) = app.chat.selection
-            && sel.msg_idx == msg_idx && message.author == "Darwin" && !message.is_shell && !message.is_tool
+            && sel.msg_idx == msg_idx
+            && message.author == "Darwin"
+            && !message.is_shell
+            && !message.is_tool
         {
             let (min_line, min_col, max_line, max_col) = sel.normalized();
             let highlight_style = Style::default()
@@ -385,7 +388,11 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                 if line_idx >= min_line && line_idx <= max_line {
                     let text_chars_count = get_line_text_excluding_margin(line).chars().count();
                     let start_char = if line_idx == min_line { min_col } else { 0 };
-                    let end_char = if line_idx == max_line { max_col } else { text_chars_count };
+                    let end_char = if line_idx == max_line {
+                        max_col
+                    } else {
+                        text_chars_count
+                    };
                     *line = highlight_msg_line(line.clone(), start_char, end_char, highlight_style);
                 }
             }
@@ -557,8 +564,13 @@ fn highlight_msg_line(
                 }
                 let middle_start_idx = intersect_start - current_offset;
                 let middle_end_idx = intersect_end - current_offset;
-                let middle_text: String = content_chars[middle_start_idx..middle_end_idx].iter().collect();
-                new_spans.push(Span::styled(middle_text, first_span.style.patch(highlight_style)));
+                let middle_text: String = content_chars[middle_start_idx..middle_end_idx]
+                    .iter()
+                    .collect();
+                new_spans.push(Span::styled(
+                    middle_text,
+                    first_span.style.patch(highlight_style),
+                ));
                 if span_end > intersect_end {
                     let suffix_start_idx = intersect_end - current_offset;
                     let suffix_text: String = content_chars[suffix_start_idx..].iter().collect();
@@ -588,7 +600,9 @@ fn highlight_msg_line(
 
             let middle_start_idx = intersect_start - current_offset;
             let middle_end_idx = intersect_end - current_offset;
-            let middle_text: String = content_chars[middle_start_idx..middle_end_idx].iter().collect();
+            let middle_text: String = content_chars[middle_start_idx..middle_end_idx]
+                .iter()
+                .collect();
             new_spans.push(Span::styled(middle_text, span.style.patch(highlight_style)));
 
             if span_end > intersect_end {
