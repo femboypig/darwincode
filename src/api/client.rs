@@ -1,6 +1,6 @@
-use anyhow::Result;
 use crate::api::types::{ChatMessage, Content, FunctionDeclaration, GeminiResponse};
 use crate::config::StoredConfig;
+use anyhow::Result;
 
 pub mod common;
 pub mod gemini;
@@ -327,7 +327,9 @@ impl GeminiClient {
             });
             declarations.push(FunctionDeclaration {
                 name: "logs".to_owned(),
-                description: "Retrieve accumulated stdout and stderr logs for a background process.".to_owned(),
+                description:
+                    "Retrieve accumulated stdout and stderr logs for a background process."
+                        .to_owned(),
                 parameters: Some(serde_json::json!({
                     "type": "OBJECT",
                     "properties": {
