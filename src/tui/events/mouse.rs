@@ -59,7 +59,7 @@ pub(crate) fn handle_mouse_event(
 
                     if click_y >= body_y && click_y < body_y + body_height as u16 {
                         let offset = (click_y - body_y) as usize;
-                        let total_lines = 10;
+                        let total_lines = 11;
                         let viewport = body_height;
                         let active_idx = app.ui.setup.active_field.index();
                         let start = if total_lines <= viewport || active_idx < viewport / 2 {
@@ -92,6 +92,10 @@ pub(crate) fn handle_mouse_event(
                                 crate::app::SetupField::RespectIgnoreRules => {
                                     app.ui.setup.respect_ignore_rules =
                                         !app.ui.setup.respect_ignore_rules;
+                                }
+                                crate::app::SetupField::TrustWorkspace => {
+                                    app.ui.setup.trust_workspace =
+                                        !app.ui.setup.trust_workspace;
                                 }
                                 crate::app::SetupField::ShowThoughts => {
                                     app.ui.setup.show_thoughts = !app.ui.setup.show_thoughts;
@@ -445,16 +449,17 @@ pub(crate) fn handle_mouse_event(
         }
         MouseEventKind::Up(MouseButton::Left) => {
             app.chat.last_mouse_drag_pos = None;
-            if let Some(ref sel) = app.chat.selection
-                && (sel.start_line != sel.end_line || sel.start_col != sel.end_col)
-            {
-                let message = &app.chat.messages[sel.msg_idx];
-                let text_to_copy = extract_selected_text(message, sel);
-                if !text_to_copy.is_empty()
-                    && crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok()
-                {
-                    app.status = "Copied selection to clipboard".to_owned();
+            if let Some(ref sel) = app.chat.selection {
+                if sel.start_line != sel.end_line || sel.start_col != sel.end_col {
+                    let message = &app.chat.messages[sel.msg_idx];
+                    let text_to_copy = extract_selected_text(message, sel);
+                    if !text_to_copy.is_empty()
+                        && crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok()
+                    {
+                        app.status = "Copied selection to clipboard".to_owned();
+                    }
                 }
+                app.chat.selection = None;
             }
         }
         _ => {}
