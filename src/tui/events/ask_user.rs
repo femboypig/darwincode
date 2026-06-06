@@ -96,3 +96,44 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::StoredConfig;
+    use crossterm::event::{KeyEvent, KeyCode, KeyModifiers};
+
+    #[test]
+    fn test_handle_ask_user_key_navigation() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.ask_user.options = vec!["yes".to_owned(), "no".to_owned()];
+        app.ui.ask_user.selected_idx = 0;
+        app.ui.ask_user.is_custom = false;
+
+        // Press down arrow
+        let key_down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
+        handle_ask_user_key(&mut app, key_down).unwrap();
+        assert_eq!(app.ui.ask_user.selected_idx, 1);
+
+        // Press up arrow
+        let key_up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+        handle_ask_user_key(&mut app, key_up).unwrap();
+        assert_eq!(app.ui.ask_user.selected_idx, 0);
+    }
+
+    #[test]
+    fn test_handle_ask_user_key_custom_input() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.ask_user.is_custom = true;
+        app.ui.ask_user.custom_input = "y".to_owned();
+
+        // Type 'e' and 's'
+        handle_ask_user_key(&mut app, KeyEvent::new(KeyCode::Char('e'), KeyModifiers::empty())).unwrap();
+        handle_ask_user_key(&mut app, KeyEvent::new(KeyCode::Char('s'), KeyModifiers::empty())).unwrap();
+        assert_eq!(app.ui.ask_user.custom_input, "yes");
+
+        // Backspace
+        handle_ask_user_key(&mut app, KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty())).unwrap();
+        assert_eq!(app.ui.ask_user.custom_input, "ye");
+    }
+}
