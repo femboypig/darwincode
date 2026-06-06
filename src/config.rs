@@ -428,7 +428,8 @@ pub fn find_project_config() -> Option<PathBuf> {
 pub fn load_project_instructions() -> Option<String> {
     let root = find_project_root()?;
     let path = root.join(".darwincode").join("instructions.md");
-    if path.exists() && path.is_file()
+    if path.exists()
+        && path.is_file()
         && let Ok(content) = std::fs::read_to_string(&path)
     {
         let trimmed = content.trim();
