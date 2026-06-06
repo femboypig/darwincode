@@ -1,5 +1,5 @@
-use crate::app::core::App;
 use crate::app::chat::MessageLine;
+use crate::app::core::App;
 
 pub fn run(app: &mut App) {
     match crate::app::session::list_saved_sessions() {
