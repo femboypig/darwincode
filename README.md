@@ -75,4 +75,17 @@ The agent has access to native workspace tools to research, view, and modify cod
 ### Config & Local Encryption
 
 - **Secure Keyring**: API keys are securely saved in your OS native keychain. If the keychain service is missing, it falls back to storing them in the encrypted config file.
-- **Hardware-bound Encryption**: Settings (`config.json`) and session histories under `~/.config/darwincode/` are symmetrically encrypted with AES-256-GCM, keyed by your unique hardware machine ID and environment details.
+- **Local Encryption**: Settings (`config.json`) and session histories under `~/.config/darwincode/` are symmetrically encrypted with AES-256-GCM using a secure key retrieved from the system keychain (or generated randomly and stored locally with strict `0600` file permissions).
+
+### Custom Workspace Commands Security
+
+By default, global custom commands defined under `~/.config/darwincode/commands/` are trusted automatically. Workspace-specific custom commands located in `.darwincode/commands/*.toml` are treated as untrusted. 
+
+To run untrusted workspace commands, you must either:
+* Set `"trust_workspace": true` in your global configuration.
+* Explicitly trust the workspace for the current run by launching with the `--trust-workspace` CLI flag:
+  ```bash
+  darwincode --trust-workspace
+  ```
+* Approve the interactive confirmation prompt in the TUI when the command is triggered.
+
