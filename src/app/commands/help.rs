@@ -26,3 +26,18 @@ pub fn run(app: &mut App) {
         .messages
         .push(MessageLine::info(help_text.to_owned()));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::StoredConfig;
+
+    #[test]
+    fn test_help_run() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        run(&mut app);
+        assert!(!app.chat.messages.is_empty());
+        assert!(app.chat.messages[0].text.contains("Available commands:"));
+    }
+}
+
