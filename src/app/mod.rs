@@ -1,17 +1,17 @@
 #![allow(unused_imports)]
 pub mod agent_picker;
 pub mod chat;
+pub mod command_handler;
+pub mod commands;
+pub mod core;
 pub mod custom;
+pub mod file_ops;
 pub mod model;
 pub mod permission;
 pub mod session;
 pub mod setup;
-pub mod theme_picker;
-pub mod core;
 pub mod state;
-pub mod command_handler;
-pub mod commands;
-pub mod file_ops;
+pub mod theme_picker;
 
 pub use agent_picker::AgentPickerState;
 pub use chat::{ChatCommand, ChatState, CommandSuggestion, MessageLine};
@@ -23,6 +23,6 @@ pub use setup::{SetupField, SetupState};
 pub use theme_picker::ThemePickerState;
 
 pub use core::{
-    App, AppUiState, AppProcessManager, AppCore, Screen, AskUserState, DevelopMode,
-    FileBackup, PendingTask, GenerationRequest, SubmitAction, FunctionAction
+    App, AppCore, AppProcessManager, AppUiState, AskUserState, DevelopMode, FileBackup,
+    FunctionAction, GenerationRequest, PendingTask, Screen, SubmitAction,
 };
