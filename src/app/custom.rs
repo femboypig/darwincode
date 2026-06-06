@@ -55,7 +55,9 @@ impl CustomCommandConfig {
 }
 
 pub fn find_global_commands_dir() -> Option<std::path::PathBuf> {
-    crate::config::config_path().ok().and_then(|p| p.parent().map(|p| p.join("commands")))
+    crate::config::config_path()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("commands")))
 }
 
 pub fn load_custom_commands(trust_workspace: bool) -> HashMap<String, (CustomCommandConfig, bool)> {
