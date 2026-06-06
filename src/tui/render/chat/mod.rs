@@ -17,6 +17,8 @@ use crate::tui::syntax::wrap_text_to_lines;
 
 use welcome::{render_welcome_logo, render_welcome_tips};
 use message_list::{render_messages, dim_buffer};
+pub(crate) use message_list::centered_rect;
+
 use input::render_command_suggestions;
 use panels::{
     render_model_picker_modal, render_theme_picker_modal, render_agent_picker_modal,
