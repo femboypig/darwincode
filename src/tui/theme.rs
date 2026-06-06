@@ -624,27 +624,27 @@ build/
 
         // Automatically append .darwincode/config.json and .darwincode/.env to the project's .gitignore if it exists
         let gitignore_path = proj_root.join(".gitignore");
-        if gitignore_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&gitignore_path) {
-                let mut new_content = content.clone();
-                let mut modified = false;
+        if gitignore_path.exists()
+            && let Ok(content) = std::fs::read_to_string(&gitignore_path)
+        {
+            let mut new_content = content.clone();
+            let mut modified = false;
 
-                let rules_to_add = vec![".darwincode/config.json", ".darwincode/.env"];
+            let rules_to_add = vec![".darwincode/config.json", ".darwincode/.env"];
 
-                for rule in rules_to_add {
-                    if !content.lines().any(|l| l.trim() == rule) {
-                        if !new_content.ends_with('\n') && !new_content.is_empty() {
-                            new_content.push('\n');
-                        }
-                        new_content.push_str(rule);
+            for rule in rules_to_add {
+                if !content.lines().any(|l| l.trim() == rule) {
+                    if !new_content.ends_with('\n') && !new_content.is_empty() {
                         new_content.push('\n');
-                        modified = true;
                     }
+                    new_content.push_str(rule);
+                    new_content.push('\n');
+                    modified = true;
                 }
+            }
 
-                if modified {
-                    let _ = std::fs::write(&gitignore_path, new_content);
-                }
+            if modified {
+                let _ = std::fs::write(&gitignore_path, new_content);
             }
         }
 
