@@ -2,11 +2,14 @@
 
 This directory contains configuration files for `darwincode` that are specific to this project repository.
 
-## Custom Themes
-You can add custom theme JSON files under the `themes/` directory.
-For example, a theme file named `themes/my_cool_theme.json` will be discovered automatically and can be activated by running `/theme` or setting `"theme": "Custom(my_cool_theme)"` in your config.
+## Directory Structure
 
-To get started, check out the template theme at `themes/custom_template.json`.
+*   `config.json` (created from `config.json.template`) — Project-level overrides for global configuration.
+*   `ignore` — Specific files and directories to ignore during workspace scanning (combines with `.gitignore`).
+*   `instructions.md` — Custom project-specific guidelines, coding standards, and style rules appended automatically to the AI prompt.
+*   `.env` — Key-value secrets (API keys, tokens) loaded for custom tools/commands.
+*   `themes/` — Custom theme JSON configuration files.
+*   `commands/` — Custom slash-commands configured using TOML (copy `commands/schema.toml.template` to define new commands).
+*   `agents/` — Custom specialized agent definitions configured using TOML (copy `agents/schema.toml.template` to define new agents).
 
-All theme config structures must conform to the schema:
-https://raw.githubusercontent.com/femboypig/darwincode/main/theme.json
+To define new custom commands or agents, copy the respective `schema.toml.template` to a new `.toml` file in the same directory (e.g. `commands/build.toml` or `agents/reviewer.toml`) and edit its properties.
