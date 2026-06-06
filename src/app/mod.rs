@@ -1,22 +1,20 @@
+pub mod agent_picker;
 pub mod chat;
+pub mod custom;
 pub mod model;
 pub mod permission;
 pub mod session;
 pub mod setup;
 pub mod theme_picker;
-pub mod custom;
-pub mod agent_picker;
 
+pub use agent_picker::AgentPickerState;
 pub use chat::{ChatCommand, ChatState, CommandSuggestion, MessageLine};
+pub use custom::{load_custom_agents, load_custom_commands};
 pub use model::ModelPickerState;
 pub use permission::PermissionPickerState;
 pub use session::SessionPickerState;
 pub use setup::{SetupField, SetupState};
 pub use theme_picker::ThemePickerState;
-pub use custom::{load_custom_agents, load_custom_commands};
-pub use agent_picker::AgentPickerState;
-
-
 
 use crate::api::{ChatMessage, GeminiResponse};
 use crate::config::{PermissionLevel, StoredConfig};
@@ -1335,16 +1333,24 @@ impl App {
                     if agent_name.to_lowercase() == "none" {
                         self.active_agent = None;
                         self.chat.config.active_agent = None;
-                        self.chat.messages.push(MessageLine::info("Active agent cleared.".to_owned()));
+                        self.chat
+                            .messages
+                            .push(MessageLine::info("Active agent cleared.".to_owned()));
                         self.status = "Agent cleared".to_owned();
                     } else if custom_agents.contains_key(&agent_name) {
                         self.active_agent = Some(agent_name.clone());
                         self.chat.config.active_agent = Some(agent_name.clone());
                         let display_name = &custom_agents[&agent_name].name;
-                        self.chat.messages.push(MessageLine::info(format!("Active agent set to: **{}**", display_name)));
+                        self.chat.messages.push(MessageLine::info(format!(
+                            "Active agent set to: **{}**",
+                            display_name
+                        )));
                         self.status = format!("Agent set to {}", display_name);
                     } else {
-                        self.chat.messages.push(MessageLine::error(format!("Agent '{}' not found.", agent_name)));
+                        self.chat.messages.push(MessageLine::error(format!(
+                            "Agent '{}' not found.",
+                            agent_name
+                        )));
                         self.status = format!("Agent '{}' not found", agent_name);
                     }
                 } else {
@@ -1358,17 +1364,22 @@ impl App {
                 let custom_cmds = crate::app::load_custom_commands();
                 if let Some(config) = custom_cmds.get(&name) {
                     if let Some(ref model_override) = config.model {
-                        self.chat.config.model = model_override.trim_start_matches("models/").to_owned();
+                        self.chat.config.model =
+                            model_override.trim_start_matches("models/").to_owned();
                     }
                     match config.execute() {
                         Ok(prompt_content) => {
                             self.chat.input = prompt_content;
                             self.chat.cursor = self.chat.input.chars().count();
                             self.chat.suggestion_idx = 0;
-                            self.status = format!("Custom command /{} executed into input buffer", name);
+                            self.status =
+                                format!("Custom command /{} executed into input buffer", name);
                         }
                         Err(e) => {
-                            self.chat.messages.push(MessageLine::error(format!("Error executing custom command /{}: {}", name, e)));
+                            self.chat.messages.push(MessageLine::error(format!(
+                                "Error executing custom command /{}: {}",
+                                name, e
+                            )));
                             self.status = format!("Error executing custom command /{}", name);
                         }
                     }
