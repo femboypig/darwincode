@@ -170,7 +170,8 @@ pub fn keybindings_path() -> Result<PathBuf> {
     Ok(base.join("darwincode").join("keybindings.json"))
 }
 
-pub fn load_keybindings() -> KeyBindings {
+pub fn load_keybindings() -> (KeyBindings, Option<String>) {
+    let mut warning = None;
     let mut kb = match keybindings_path() {
         Ok(path) => {
             if path.exists() {
@@ -178,11 +179,8 @@ pub fn load_keybindings() -> KeyBindings {
                     Ok(data) => match serde_json::from_str::<KeyBindings>(&data) {
                         Ok(config) => config,
                         Err(e) => {
-                            eprintln!(
-                                "[keybindings] Failed to parse {}: {}. Using defaults.",
-                                path.display(),
-                                e
-                            );
+                            eprintln!("[darwincode] keybindings config invalid: {e}; using defaults");
+                            warning = Some("Keybindings config malformed".to_owned());
                             KeyBindings::default()
                         }
                     },
@@ -221,7 +219,7 @@ pub fn load_keybindings() -> KeyBindings {
         }
     }
 
-    kb
+    (kb, warning)
 }
 
 #[cfg(test)]
