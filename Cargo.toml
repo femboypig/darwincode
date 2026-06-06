@@ -23,4 +23,6 @@ unicode-width = "0.1.14"
 ureq = { version = "2.12.1", features = ["json"] }
 scraper = "0.22.0"
 toml = "0.8"
-
+libc = "^0.2.169"
+parking_lot = "^0.12.3"
+globset = "^0.4.15"
