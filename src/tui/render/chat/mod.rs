@@ -32,7 +32,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     let suggestion_height = if suggestions.is_empty() {
         0
     } else {
-        suggestions.len().min(10) as u16
+        u16::try_from(suggestions.len().min(10)).unwrap_or(u16::MAX)
     };
 
     let has_todos = !app.chat.todos.is_empty() && !app.chat.messages.is_empty();
@@ -78,16 +78,16 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         left_pane.width.saturating_sub(7).max(1)
     };
     let wrapped_lines = wrap_text_to_lines(app.chat.input.as_str(), input_inner_w as usize);
-    let display_lines = wrapped_lines.len() as u16;
+    let display_lines = u16::try_from(wrapped_lines.len()).unwrap_or(u16::MAX);
     let input_height = if app.ui.screen == Screen::AskUser {
         let q_wrapped = wrap_text_to_lines(app.ui.ask_user.question.as_str(), input_inner_w as usize);
-        let q_lines = q_wrapped.len() as u16;
-        let opt_count = app.ui.ask_user.options.len() as u16;
+        let q_lines = u16::try_from(q_wrapped.len()).unwrap_or(u16::MAX);
+        let opt_count = u16::try_from(app.ui.ask_user.options.len()).unwrap_or(u16::MAX);
         let custom_lines = if app.ui.ask_user.is_custom {
             if app.ui.ask_user.custom_input.is_empty() {
                 1
             } else {
-                app.ui.ask_user.custom_input.split('\n').count() as u16
+                u16::try_from(app.ui.ask_user.custom_input.split('\n').count()).unwrap_or(u16::MAX)
             }
         } else {
             0
@@ -96,7 +96,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         (q_lines + 1 + opt_count + custom_lines + 1 + 1 + 1 + 2).max(6)
     } else if app.ui.screen == Screen::Permissions {
         let opts = crate::app::PermissionPickerState::options();
-        let opt_count = opts.len() as u16;
+        let opt_count = u16::try_from(opts.len()).unwrap_or(u16::MAX);
         // title + blank + 2*opts + 1 blank + 1 footer + 2 padding
         (1 + 1 + opt_count * 2 + 1 + 1 + 2).max(6)
     } else {
@@ -208,7 +208,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             let queue_height = if app.chat.message_queue.is_empty() {
                 0
             } else {
-                (app.chat.message_queue.len().min(3) as u16) + 1
+                u16::try_from(app.chat.message_queue.len().min(3)).unwrap_or(u16::MAX) + 1
             };
 
             let spacer_height = if suggestion_height > 0 || queue_height > 0 {
@@ -488,8 +488,8 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
         let mode_str = app.dev_mode_label();
         let model_str = app.model_label();
-        let mode_len = mode_str.chars().count() as u16;
-        let model_len = model_str.chars().count() as u16;
+        let mode_len = u16::try_from(mode_str.chars().count()).unwrap_or(u16::MAX);
+        let model_len = u16::try_from(model_str.chars().count()).unwrap_or(u16::MAX);
 
         let mode_rect = Rect {
             x: mode_model_row_area.x,
