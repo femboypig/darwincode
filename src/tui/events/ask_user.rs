@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
         let tx = crate::tui::ASK_USER_CHANNEL
