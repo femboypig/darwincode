@@ -105,6 +105,7 @@ mod tests {
 
     #[test]
     fn test_handle_ask_user_key_navigation() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
         let mut app = App::new(Some(StoredConfig::default()));
         app.ui.ask_user.options = vec!["yes".to_owned(), "no".to_owned()];
         app.ui.ask_user.selected_idx = 0;
@@ -123,6 +124,7 @@ mod tests {
 
     #[test]
     fn test_handle_ask_user_key_custom_input() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
         let mut app = App::new(Some(StoredConfig::default()));
         app.ui.ask_user.is_custom = true;
         app.ui.ask_user.custom_input = "y".to_owned();
@@ -135,5 +137,59 @@ mod tests {
         // Backspace
         handle_ask_user_key(&mut app, KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty())).unwrap();
         assert_eq!(app.ui.ask_user.custom_input, "ye");
+    }
+
+    #[test]
+    fn test_handle_ask_user_key_actions() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
+        let mut app = App::new(Some(StoredConfig::default()));
+
+        // 1. Shift+Enter in custom input mode
+        app.ui.ask_user.is_custom = true;
+        app.ui.ask_user.custom_input = "a".to_owned();
+        let key_shift_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
+        handle_ask_user_key(&mut app, key_shift_enter).unwrap();
+        assert_eq!(app.ui.ask_user.custom_input, "a\n");
+
+        // 2. Esc when custom input is open with options
+        app.ui.ask_user.options = vec!["yes".to_owned()];
+        let key_esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
+        handle_ask_user_key(&mut app, key_esc).unwrap();
+        assert!(!app.ui.ask_user.is_custom);
+
+        // 3. Enter on the custom option when custom input is closed (index == options.len())
+        app.ui.ask_user.selected_idx = 1;
+        let key_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        handle_ask_user_key(&mut app, key_enter).unwrap();
+        assert!(app.ui.ask_user.is_custom);
+
+        // 4. Enter to submit custom input
+        let (tx, rx) = std::sync::mpsc::channel();
+        *crate::tui::ASK_USER_CHANNEL.lock() = Some((tx, "question".to_owned(), vec![]));
+        app.ui.ask_user.is_custom = true;
+        app.ui.ask_user.custom_input = "custom_answer".to_owned();
+        app.ui.screen = Screen::AskUser;
+        handle_ask_user_key(&mut app, key_enter).unwrap();
+        assert_eq!(app.ui.screen, Screen::Chat);
+        assert_eq!(rx.recv().unwrap(), "custom_answer");
+
+        // 5. Submit regular option
+        let (tx, rx) = std::sync::mpsc::channel();
+        *crate::tui::ASK_USER_CHANNEL.lock() = Some((tx, "question".to_owned(), vec!["yes".to_owned()]));
+        app.ui.ask_user.is_custom = false;
+        app.ui.ask_user.selected_idx = 0;
+        app.ui.screen = Screen::AskUser;
+        handle_ask_user_key(&mut app, key_enter).unwrap();
+        assert_eq!(app.ui.screen, Screen::Chat);
+        assert_eq!(rx.recv().unwrap(), "yes");
+
+        // 6. Quit / Esc aborts (using Ctrl+C key event)
+        let (tx, rx) = std::sync::mpsc::channel();
+        *crate::tui::ASK_USER_CHANNEL.lock() = Some((tx, "question".to_owned(), vec![]));
+        app.ui.screen = Screen::AskUser;
+        let key_abort = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        handle_ask_user_key(&mut app, key_abort).unwrap();
+        assert_eq!(app.ui.screen, Screen::Chat);
+        assert_eq!(rx.recv().unwrap(), "Aborted by user");
     }
 }
