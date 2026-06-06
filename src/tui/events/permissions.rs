@@ -97,4 +97,30 @@ mod tests {
         handle_permissions_key(&mut app, &sender, key_up).unwrap();
         assert_eq!(app.ui.permissions.selected, 0);
     }
+
+    #[test]
+    fn test_handle_permissions_key_submit_and_cancel() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
+        let mut app = App::new(Some(StoredConfig::default()));
+        let (sender, _receiver) = mpsc::channel();
+
+        // Cancel
+        app.ui.screen = crate::app::Screen::Permissions;
+        let key_cancel = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
+        handle_permissions_key(&mut app, &sender, key_cancel).unwrap();
+        assert_eq!(app.ui.screen, crate::app::Screen::Chat);
+
+        // Submit with Chaos and ExecuteFunction
+        app.ui.screen = crate::app::Screen::Permissions;
+        app.ui.permissions.selected = 2; // Chaos
+        app.proc.pending = Some(crate::app::PendingTask::ConfirmFunction {
+            name: "read".to_owned(),
+            args: serde_json::json!({}),
+        });
+
+        let key_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        handle_permissions_key(&mut app, &sender, key_enter).unwrap();
+        assert_eq!(app.ui.screen, crate::app::Screen::Chat);
+        assert_eq!(app.chat.config.permission_level, crate::config::PermissionLevel::Chaos);
+    }
 }
