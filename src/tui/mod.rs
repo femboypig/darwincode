@@ -9,6 +9,8 @@ pub(crate) mod event_loop;
 
 pub use event_loop::run;
 pub use terminal::Tui;
+pub(crate) use tool_executor::{handle_function_action, spawn_generation_worker, spawn_models_worker};
+
 
 use std::sync::mpsc::Sender;
 use parking_lot::Mutex;
