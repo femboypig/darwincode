@@ -62,6 +62,7 @@ pub struct SetupState {
     pub models: Vec<String>,
     pub selected_model: usize,
     pub is_editing: bool,
+    pub modal_area: std::cell::Cell<Option<ratatui::layout::Rect>>,
 }
 
 impl SetupState {
@@ -80,6 +81,7 @@ impl SetupState {
             models: Vec::new(),
             selected_model: 0,
             is_editing: false,
+            modal_area: std::cell::Cell::new(None),
         }
     }
 
@@ -172,6 +174,7 @@ impl Default for SetupState {
             models: Vec::new(),
             selected_model: 0,
             is_editing: false,
+            modal_area: std::cell::Cell::new(None),
         }
     }
 }
