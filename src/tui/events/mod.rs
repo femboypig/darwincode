@@ -13,7 +13,7 @@ use crate::app::{App, Screen};
 use crate::tui::WorkerEvent;
 
 pub(crate) fn handle_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEvent) -> Result<()> {
-    match app.screen {
+    match app.ui.screen {
         Screen::Setup => setup::handle_setup_key(app, sender, key),
         Screen::Chat => chat::handle_chat_key(app, sender, key),
         Screen::Permissions => permissions::handle_permissions_key(app, sender, key),
@@ -23,32 +23,32 @@ pub(crate) fn handle_key(app: &mut App, sender: &Sender<WorkerEvent>, key: KeyEv
 }
 
 pub(crate) fn handle_paste(app: &mut App, text: String) {
-    if app.screen == Screen::Chat {
+    if app.ui.screen == Screen::Chat {
         if matches!(
-            app.pending,
+            app.proc.pending,
             Some(crate::app::PendingTask::ConfirmFunction { .. })
         ) {
             return;
         }
-        if app.model_picker_open {
+        if app.ui.model_picker_open {
             for c in text.chars() {
-                app.models.push_query(c);
+                app.ui.models.push_query(c);
             }
             return;
         }
-        if app.theme_picker_open {
+        if app.ui.theme_picker_open {
             for c in text.chars() {
-                app.theme_picker.push_query(c);
+                app.ui.theme_picker.push_query(c);
             }
             return;
         }
         app.chat.insert_text(&text);
-    } else if app.screen == Screen::Setup {
-        let old_key = app.setup.api_key.clone();
+    } else if app.ui.screen == Screen::Setup {
+        let old_key = app.ui.setup.api_key.clone();
         for c in text.chars() {
-            app.setup.push_char(c);
+            app.ui.setup.push_char(c);
         }
-        if app.setup.api_key.starts_with("sk-") && !old_key.starts_with("sk-") {
+        if app.ui.setup.api_key.starts_with("sk-") && !old_key.starts_with("sk-") {
             app.status =
                 "OpenAI key detected. Press Ctrl+A to apply OmniRoute defaults.".to_owned();
         }
