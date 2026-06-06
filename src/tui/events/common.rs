@@ -351,3 +351,24 @@ pub(crate) fn read_image_from_clipboard() -> Result<Option<Vec<u8>>> {
         Ok(None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uuid_or_timestamp() {
+        let u1 = uuid_or_timestamp();
+        let u2 = uuid_or_timestamp();
+        assert_ne!(u1, u2);
+    }
+
+    #[test]
+    fn test_pasted_images_dir() {
+        // Temp home directory to avoid messing with real user config
+        std::env::set_var("HOME", std::env::temp_dir());
+        let dir = pasted_images_dir().unwrap();
+        assert!(dir.exists());
+        assert!(dir.ends_with("darwincode/pasted_images"));
+    }
+}
