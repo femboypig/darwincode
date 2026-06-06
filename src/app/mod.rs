@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 pub mod agent_picker;
 pub mod chat;
 pub mod custom;
