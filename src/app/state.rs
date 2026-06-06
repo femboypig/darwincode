@@ -1299,24 +1299,44 @@ mod tests {
 
     #[test]
     fn test_app_apply_theme() {
-        let mut app = App::new(Some(StoredConfig::default()));
+        let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
+
+        let mut config = StoredConfig::default();
+        config.api_key = "dummy_key".to_owned();
+        let mut app = App::new(Some(config));
+
         app.ui.theme_picker = ThemePickerState::new(&Theme::Auto);
         app.ui.theme_picker.selected = 1; // Dark
         app.ui.theme_picker_open = true;
         app.apply_selected_theme();
         assert_eq!(app.chat.config.theme, Theme::Dark);
         assert!(!app.ui.theme_picker_open);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = None;
     }
 
     #[test]
     fn test_app_apply_model() {
-        let mut app = App::new(Some(StoredConfig::default()));
+        let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
+
+        let mut config = StoredConfig::default();
+        config.api_key = "dummy_key".to_owned();
+        let mut app = App::new(Some(config));
+
         app.ui.models = ModelPickerState::new(vec!["models/gemini-2.0-flash".to_owned()], "models/gemini-2.0-flash");
         app.ui.models.selected = 0;
         app.ui.model_picker_open = true;
         app.apply_selected_model();
         assert_eq!(app.chat.config.model, "gemini-2.0-flash");
         assert!(!app.ui.model_picker_open);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = None;
     }
 
     #[test]
@@ -1331,9 +1351,19 @@ mod tests {
 
     #[test]
     fn test_app_apply_permission_level() {
-        let mut app = App::new(Some(StoredConfig::default()));
+        let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
+
+        let mut config = StoredConfig::default();
+        config.api_key = "dummy_key".to_owned();
+        let mut app = App::new(Some(config));
+
         app.ui.permissions.selected = 2; // Chaos
         app.apply_permission_level();
         assert_eq!(app.chat.config.permission_level, PermissionLevel::Chaos);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = None;
     }
 }
