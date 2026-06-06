@@ -1,5 +1,5 @@
-use crate::app::core::App;
 use crate::app::chat::MessageLine;
+use crate::app::core::App;
 
 pub fn run(app: &mut App, session_id: Option<String>) {
     if let Some(id) = session_id {
@@ -17,9 +17,9 @@ pub fn run(app: &mut App, session_id: Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::StoredConfig;
     use crate::api::ChatMessage;
     use crate::app::session::save_session;
+    use crate::config::StoredConfig;
 
     #[test]
     fn test_resume_run_none() {
@@ -75,10 +75,14 @@ mod tests {
         run(&mut app, Some("nonexistent_session".to_owned()));
         assert!(!app.chat.messages.is_empty());
         // Should have added an error message
-        assert!(app.chat.messages.iter().any(|m| m.text.contains("Failed to load session")));
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("Failed to load session"))
+        );
 
         *crate::config::TEST_CONFIG_DIR.lock().unwrap() = None;
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-
