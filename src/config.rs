@@ -25,7 +25,9 @@ pub struct StoredConfig {
     #[serde(default)]
     pub theme: Theme,
     #[serde(default = "default_true")]
-    pub respect_gitignore: bool,
+    pub respect_ignore_rules: bool,
+    #[serde(skip)]
+    pub active_agent: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -217,29 +219,46 @@ impl PermissionLevel {
 impl StoredConfig {
     pub fn load() -> Result<Option<Self>> {
         let path = config_path()?;
-        if !path.exists() {
-            return Ok(None);
+        let mut config = if path.exists() {
+            let key = crate::crypto::derive_hardware_key()?;
+            let cipher_data =
+                fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+            let plain_data = crate::crypto::decrypt_data(&cipher_data, &key)
+                .with_context(|| format!("failed to decrypt config {}", path.display()))?;
+
+            let mut cfg: StoredConfig = serde_json::from_slice(&plain_data)
+                .with_context(|| format!("failed to parse config {}", path.display()))?;
+
+            // Load secret from OS securely if available, otherwise use fallback from encrypted file
+            if let Ok(entry) = keyring::Entry::new("darwincode", "api_key")
+                && let Ok(secret) = entry.get_password()
+                && !secret.trim().is_empty()
+            {
+                cfg.api_key = secret;
+            }
+            Some(cfg)
+        } else {
+            None
+        };
+
+        // Merge with project-level config if it exists
+        if let Some(local_path) = find_project_config() {
+            if let Ok(local_data) = fs::read_to_string(&local_path) {
+                if let Ok(local_val) = serde_json::from_str::<serde_json::Value>(&local_data) {
+                    let base_config = config.clone().unwrap_or_default();
+                    if let Ok(mut config_val) = serde_json::to_value(&base_config) {
+                        merge_json_values(&mut config_val, local_val);
+                        if let Ok(merged_config) = serde_json::from_value::<StoredConfig>(config_val) {
+                            config = Some(merged_config);
+                        }
+                    }
+                }
+            }
         }
 
-        let key = crate::crypto::derive_hardware_key()?;
-        let cipher_data =
-            fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
-        let plain_data = crate::crypto::decrypt_data(&cipher_data, &key)
-            .with_context(|| format!("failed to decrypt config {}", path.display()))?;
-
-        let mut config: StoredConfig = serde_json::from_slice(&plain_data)
-            .with_context(|| format!("failed to parse config {}", path.display()))?;
-
-        // Load secret from OS securely if available, otherwise use fallback from encrypted file
-        if let Ok(entry) = keyring::Entry::new("darwincode", "api_key")
-            && let Ok(secret) = entry.get_password()
-            && !secret.trim().is_empty()
-        {
-            config.api_key = secret;
-        }
-
-        Ok(Some(config))
+        Ok(config)
     }
+
 
     pub fn save(&self) -> Result<()> {
         let mut normalized_config = self.clone();
@@ -331,12 +350,25 @@ impl Default for StoredConfig {
             show_thoughts: true,
             permission_level: PermissionLevel::Guardian,
             theme: Theme::Auto,
-            respect_gitignore: true,
+            respect_ignore_rules: true,
+            active_agent: None,
         }
     }
 }
 
+#[cfg(test)]
+pub static TEST_CONFIG_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
 pub fn config_path() -> Result<PathBuf> {
+    #[cfg(test)]
+    {
+        if let Ok(guard) = TEST_CONFIG_DIR.lock() {
+            if let Some(ref path) = *guard {
+                return Ok(path.join("config.json"));
+            }
+        }
+    }
+
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))
@@ -368,6 +400,59 @@ fn secure_config_file(path: &PathBuf) -> Result<fs::File> {
         .write(true)
         .open(path)
         .with_context(|| format!("failed to open {}", path.display()))
+}
+
+pub fn find_project_root() -> Option<PathBuf> {
+    let mut cwd = std::env::current_dir().ok()?;
+    loop {
+        if cwd.join(".git").exists() || cwd.join(".darwincode").exists() {
+            return Some(cwd.clone());
+        }
+        if let Some(parent) = cwd.parent() {
+            cwd = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+    std::env::current_dir().ok()
+}
+
+pub fn find_project_config() -> Option<PathBuf> {
+    let root = find_project_root()?;
+    let dc_path = root.join(".darwincode").join("config.json");
+    if dc_path.exists() && dc_path.is_file() {
+        Some(dc_path)
+    } else {
+        None
+    }
+}
+
+pub fn load_project_instructions() -> Option<String> {
+    let root = find_project_root()?;
+    let path = root.join(".darwincode").join("instructions.md");
+    if path.exists() && path.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_owned());
+            }
+        }
+    }
+    None
+}
+
+
+fn merge_json_values(a: &mut serde_json::Value, b: serde_json::Value) {
+    match (a, b) {
+        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+            for (k, v) in b {
+                merge_json_values(a.entry(k).or_insert(serde_json::Value::Null), v);
+            }
+        }
+        (a, b) => {
+            *a = b;
+        }
+    }
 }
 
 #[cfg(test)]
