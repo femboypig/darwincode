@@ -48,7 +48,10 @@ pub fn model_supports_vision(model: &str, base_url: &str) -> bool {
     true
 }
 
-pub fn execute_with_retry<F>(agent: &ureq::Agent, make_request: F) -> Result<ureq::Response, anyhow::Error>
+pub fn execute_with_retry<F>(
+    agent: &ureq::Agent,
+    make_request: F,
+) -> Result<ureq::Response, anyhow::Error>
 where
     F: Fn(&ureq::Agent) -> Result<ureq::Response, ureq::Error>,
 {
