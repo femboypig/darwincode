@@ -446,16 +446,16 @@ impl GeminiClient {
         );
 
         if let Some(instructions) = crate::config::load_project_instructions() {
-            system_instruction_text.push_str("\n\n---\n\n## 9. ADDITIONAL PROJECT SPECIFIC INSTRUCTIONS\n\n");
+            system_instruction_text
+                .push_str("\n\n---\n\n## 9. ADDITIONAL PROJECT SPECIFIC INSTRUCTIONS\n\n");
             system_instruction_text.push_str(&instructions);
         }
 
         if let Some(ref agent_prompt) = agent_prompt_addition {
-            system_instruction_text.push_str("\n\n---\n\n## 10. SPECIALIZED AGENT INSTRUCTIONS\n\n");
+            system_instruction_text
+                .push_str("\n\n---\n\n## 10. SPECIALIZED AGENT INSTRUCTIONS\n\n");
             system_instruction_text.push_str(agent_prompt);
         }
-
-
 
         let system_instruction = Some(Content {
             role: "system".to_owned(),
