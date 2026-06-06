@@ -1,6 +1,6 @@
 use std::sync::mpsc::Sender;
 use anyhow::Result;
-use crossterm::event::{self, MouseEvent, MouseButton, MouseEventKind};
+use crossterm::event::{MouseEvent, MouseButton, MouseEventKind};
 use crate::app::App;
 use crate::tui::WorkerEvent;
 use crate::tui::{
@@ -157,9 +157,9 @@ pub(crate) fn handle_mouse_event(
                         let fg_pid = *RUNNING_PROCESS_PID.lock();
                         let is_bg_alive = if let Some(pid) = clicked_pid {
                             let bg_registry = BACKGROUND_PROCESSES.get();
-                            if let Some(registry_mutex) = bg_registry
-                                && let registry_guard = { let g = registry_mutex.lock(); g }
-                                && let Some(proc) = registry_guard.get(&pid)
+                            let registry_guard = bg_registry.as_ref().map(|m| m.lock());
+                            if let Some(guard) = registry_guard
+                                && let Some(proc) = guard.get(&pid)
                             {
                                 proc.exit_status.lock().is_none()
                             } else {
@@ -371,15 +371,15 @@ pub(crate) fn handle_mouse_event(
         }
         MouseEventKind::Up(MouseButton::Left) => {
             app.chat.last_mouse_drag_pos = None;
-            if let Some(ref sel) = app.chat.selection {
-                if sel.start_line != sel.end_line || sel.start_col != sel.end_col {
-                    let message = &app.chat.messages[sel.msg_idx];
-                    let text_to_copy = extract_selected_text(message, sel);
-                    if !text_to_copy.is_empty() {
-                        if crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok() {
-                            app.status = "Copied selection to clipboard".to_owned();
-                        }
-                    }
+            if let Some(ref sel) = app.chat.selection
+                && (sel.start_line != sel.end_line || sel.start_col != sel.end_col)
+            {
+                let message = &app.chat.messages[sel.msg_idx];
+                let text_to_copy = extract_selected_text(message, sel);
+                if !text_to_copy.is_empty()
+                    && crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok()
+                {
+                    app.status = "Copied selection to clipboard".to_owned();
                 }
             }
         }
@@ -449,9 +449,10 @@ fn extract_selected_text(
 }
 
 pub(crate) fn update_selection_on_scroll(app: &mut App, click_x: u16, click_y: u16) {
-    if let Some(rect) = app.chat.messages_area.get() {
-        if let Some(ref mut sel) = app.chat.selection {
-            let clamped_y = click_y.clamp(rect.y, rect.y + rect.height - 1);
+    if let Some(rect) = app.chat.messages_area.get()
+        && let Some(ref mut sel) = app.chat.selection
+    {
+        let clamped_y = click_y.clamp(rect.y, rect.y + rect.height - 1);
             let total_lines = app
                 .chat
                 .message_line_ranges
@@ -487,4 +488,3 @@ pub(crate) fn update_selection_on_scroll(app: &mut App, click_x: u16, click_y: u
             }
         }
     }
-}
