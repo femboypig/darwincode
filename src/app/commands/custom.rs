@@ -1,5 +1,5 @@
-use crate::app::core::App;
 use crate::app::chat::MessageLine;
+use crate::app::core::App;
 
 pub fn run(app: &mut App, name: String) {
     let custom_cmds = crate::app::load_custom_commands(app.chat.config.trust_workspace);
@@ -20,18 +20,20 @@ pub fn run(app: &mut App, name: String) {
     }
 }
 
-pub fn execute_custom_command_internal(app: &mut App, name: &str, config: &crate::app::custom::CustomCommandConfig) {
+pub fn execute_custom_command_internal(
+    app: &mut App,
+    name: &str,
+    config: &crate::app::custom::CustomCommandConfig,
+) {
     if let Some(ref model_override) = config.model {
-        app.chat.config.model =
-            model_override.trim_start_matches("models/").to_owned();
+        app.chat.config.model = model_override.trim_start_matches("models/").to_owned();
     }
     match config.execute() {
         Ok(prompt_content) => {
             app.chat.input = prompt_content;
             app.chat.cursor = app.chat.input.chars().count();
             app.chat.suggestion_idx = 0;
-            app.status =
-                format!("Custom command /{} executed into input buffer", name);
+            app.status = format!("Custom command /{} executed into input buffer", name);
         }
         Err(e) => {
             app.chat.messages.push(MessageLine::error(format!(
@@ -46,8 +48,8 @@ pub fn execute_custom_command_internal(app: &mut App, name: &str, config: &crate
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::StoredConfig;
     use crate::app::custom::CustomCommandConfig;
+    use crate::config::StoredConfig;
 
     #[test]
     fn test_execute_custom_command_internal_success() {
@@ -84,4 +86,3 @@ mod tests {
         assert!(app.chat.input.contains("value is hi"));
     }
 }
-
