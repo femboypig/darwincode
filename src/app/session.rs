@@ -629,37 +629,16 @@ pub fn rebuild_messages_from_history(
                                 is_still_running_err = true;
                                 is_running = true;
                             }
-
-                            if !stdout.is_empty() {
-                                output.push_str(stdout);
-                            }
-                            if !stderr.is_empty() {
-                                if !output.is_empty() {
-                                    output.push('\n');
-                                }
-                                output.push_str(stderr);
-                            }
-                            if !error_field.is_empty()
-                                && error_field != "null"
-                                && !is_still_running_err
-                            {
-                                if !output.is_empty() {
-                                    output.push('\n');
-                                }
-                                output.push_str(error_field);
-                            }
-
-                            if is_aborted {
-                                if !output.is_empty() {
-                                    output.push('\n');
-                                }
-                                output.push_str("^C\n[Process terminated by user via Ctrl+C]");
-                            } else if is_running {
-                                if !output.is_empty() {
-                                    output.push('\n');
-                                }
-                                output.push_str("[Process is still running...]");
-                            } else if output.is_empty() {
+                            let mut output = crate::app::file_ops::format_shell_output(
+                                stdout,
+                                stderr,
+                                error_field,
+                                is_still_running_err,
+                                is_aborted,
+                                is_running,
+                                Some("[Process is still running...]"),
+                            );
+                            if output.is_empty() && !is_running {
                                 output = "(empty output)".to_owned();
                             }
 
