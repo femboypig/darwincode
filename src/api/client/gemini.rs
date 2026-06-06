@@ -1,38 +1,35 @@
 #![allow(clippy::result_large_err)]
 #![allow(clippy::too_many_arguments)]
 
-use anyhow::{Context, Result};
-use std::io::BufRead;
+use super::common::execute_with_retry;
 use crate::api::types::{
     ChatMessage, Content, FunctionDeclaration, GeminiResponse, GenerateContentRequest,
     GenerateContentResponse, ListModelsResponse, Tool,
 };
 use crate::config::StoredConfig;
-use super::common::execute_with_retry;
+use anyhow::{Context, Result};
+use std::io::BufRead;
 
 pub fn list_models_gemini(config: &StoredConfig, agent: &ureq::Agent) -> Result<Vec<String>> {
     let url = format!("{}/models", config.base_url);
     let response = execute_with_retry(agent, |a| {
-        a.get(&url)
-            .set("x-goog-api-key", &config.api_key)
-            .call()
+        a.get(&url).set("x-goog-api-key", &config.api_key).call()
     })?;
 
     let body_str = response
         .into_string()
         .context("failed to read API models response body")?;
-    let response_data: ListModelsResponse =
-        serde_json::from_str(&body_str).with_context(|| {
-            let truncated = if body_str.len() > 500 {
-                format!("{}...", &body_str[..500])
-            } else {
-                body_str.clone()
-            };
-            format!(
-                "failed to parse API models response. Raw body: {}",
-                truncated
-            )
-        })?;
+    let response_data: ListModelsResponse = serde_json::from_str(&body_str).with_context(|| {
+        let truncated = if body_str.len() > 500 {
+            format!("{}...", &body_str[..500])
+        } else {
+            body_str.clone()
+        };
+        format!(
+            "failed to parse API models response. Raw body: {}",
+            truncated
+        )
+    })?;
 
     let mut names = response_data
         .models
@@ -77,10 +74,7 @@ pub fn generate_stream_gemini(
         anyhow::bail!("Stream cancelled");
     }
 
-    let url = format!(
-        "{}/models/{model}:streamGenerateContent",
-        config.base_url
-    );
+    let url = format!("{}/models/{model}:streamGenerateContent", config.base_url);
     let response = execute_with_retry(agent, |a| {
         a.post(&url)
             .set("x-goog-api-key", &config.api_key)
@@ -95,8 +89,8 @@ pub fn generate_stream_gemini(
         }
         let line = line.context("failed to read stream line")?;
         if let Some(json_str) = line.strip_prefix("data: ") {
-            let chunk: GenerateContentResponse = serde_json::from_str(json_str)
-                .context("failed to parse stream chunk JSON")?;
+            let chunk: GenerateContentResponse =
+                serde_json::from_str(json_str).context("failed to parse stream chunk JSON")?;
             if let Some(err) = &chunk.error {
                 anyhow::bail!("API Error ({}): {}", err.code.unwrap_or(0), err.message);
             }
