@@ -242,18 +242,15 @@ impl StoredConfig {
         };
 
         // Merge with project-level config if it exists
-        if let Some(local_path) = find_project_config() {
-            if let Ok(local_data) = fs::read_to_string(&local_path) {
-                if let Ok(local_val) = serde_json::from_str::<serde_json::Value>(&local_data) {
-                    let base_config = config.clone().unwrap_or_default();
-                    if let Ok(mut config_val) = serde_json::to_value(&base_config) {
-                        merge_json_values(&mut config_val, local_val);
-                        if let Ok(merged_config) =
-                            serde_json::from_value::<StoredConfig>(config_val)
-                        {
-                            config = Some(merged_config);
-                        }
-                    }
+        if let Some(local_path) = find_project_config()
+            && let Ok(local_data) = fs::read_to_string(&local_path)
+            && let Ok(local_val) = serde_json::from_str::<serde_json::Value>(&local_data)
+        {
+            let base_config = config.clone().unwrap_or_default();
+            if let Ok(mut config_val) = serde_json::to_value(&base_config) {
+                merge_json_values(&mut config_val, local_val);
+                if let Ok(merged_config) = serde_json::from_value::<StoredConfig>(config_val) {
+                    config = Some(merged_config);
                 }
             }
         }
@@ -363,10 +360,10 @@ pub static TEST_CONFIG_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex
 pub fn config_path() -> Result<PathBuf> {
     #[cfg(test)]
     {
-        if let Ok(guard) = TEST_CONFIG_DIR.lock() {
-            if let Some(ref path) = *guard {
-                return Ok(path.join("config.json"));
-            }
+        if let Ok(guard) = TEST_CONFIG_DIR.lock()
+            && let Some(ref path) = *guard
+        {
+            return Ok(path.join("config.json"));
         }
     }
 
@@ -431,12 +428,12 @@ pub fn find_project_config() -> Option<PathBuf> {
 pub fn load_project_instructions() -> Option<String> {
     let root = find_project_root()?;
     let path = root.join(".darwincode").join("instructions.md");
-    if path.exists() && path.is_file() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            let trimmed = content.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_owned());
-            }
+    if path.exists() && path.is_file()
+        && let Ok(content) = std::fs::read_to_string(&path)
+    {
+        let trimmed = content.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_owned());
         }
     }
     None
