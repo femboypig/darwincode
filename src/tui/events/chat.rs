@@ -759,16 +759,14 @@ fn handle_agent_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
 fn handle_interrupt_signal(app: &mut App) {
     app.cancel_generation();
 
-    let mut target_pid = None;
-    let mut target_session_id = None;
-
-    {
+    let mut target_pid = {
         let mut guard = crate::tui::RUNNING_PROCESS_PID.lock();
-        target_pid = guard.take();
-    }
+        guard.take()
+    };
     if target_pid.is_none() {
         target_pid = app.chat.focused_shell_pid;
     }
+    let mut target_session_id = None;
 
     if let Some(ref session_id) = app.chat.focused_shell_session_id {
         target_session_id = Some(session_id.clone());
