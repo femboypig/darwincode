@@ -28,9 +28,7 @@ impl CustomCommandConfig {
         if let Some(ref context_map) = self.context {
             for (key, cmd) in context_map {
                 let output = if cfg!(target_os = "windows") {
-                    std::process::Command::new("cmd")
-                        .args(["/C", cmd])
-                        .output()
+                    std::process::Command::new("cmd").args(["/C", cmd]).output()
                 } else {
                     std::process::Command::new("sh").args(["-c", cmd]).output()
                 };
