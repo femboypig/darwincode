@@ -274,3 +274,127 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::StoredConfig;
+
+    #[test]
+    fn test_shell_run_list_empty() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        // Clear registries or make sure they are empty
+        if let Some(r) = crate::tui::PERSISTENT_SESSIONS.get() {
+            r.lock().clear();
+        }
+        if let Some(bg) = crate::tui::BACKGROUND_PROCESSES.get() {
+            bg.lock().clear();
+        }
+        *crate::tui::RUNNING_PROCESS_PID.lock() = None;
+
+        run(&mut app, None);
+        assert!(!app.chat.messages.is_empty());
+        assert!(app.chat.messages[0].text.contains("No active shell sessions"));
+    }
+
+    #[test]
+    fn test_shell_run_list_with_active_sessions() {
+        let mut app = App::new(Some(StoredConfig::default()));
+
+        // Clear registries first
+        let registry = crate::tui::PERSISTENT_SESSIONS
+            .get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+        registry.lock().clear();
+
+        let bg_registry = crate::tui::BACKGROUND_PROCESSES
+            .get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+        bg_registry.lock().clear();
+
+        // Spawn a dummy process for persistent session with piped stdin
+        let mut child_p = std::process::Command::new("sleep")
+            .arg("100")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        
+        let pid_p = child_p.id();
+        let stdin_p = child_p.stdin.take().unwrap();
+
+        let sess_p = crate::tui::PersistentSession {
+            pid: pid_p,
+            child: std::sync::Arc::new(parking_lot::Mutex::new(child_p)),
+            stdin: stdin_p,
+            stdout_accumulator: std::sync::Arc::new(parking_lot::Mutex::new(String::new())),
+            stderr_accumulator: std::sync::Arc::new(parking_lot::Mutex::new(String::new())),
+        };
+        registry.lock().insert("test_sess".to_owned(), sess_p);
+
+        // Spawn a dummy process for background process
+        let child_bg = std::process::Command::new("sleep")
+            .arg("100")
+            .spawn()
+            .unwrap();
+        let pid_bg = child_bg.id();
+        let proc_bg = crate::tui::BackgroundProcess {
+            _command: "sleep 100".to_owned(),
+            child: std::sync::Arc::new(parking_lot::Mutex::new(child_bg)),
+            stdin: None,
+            stdout_accumulator: std::sync::Arc::new(parking_lot::Mutex::new(String::new())),
+            stderr_accumulator: std::sync::Arc::new(parking_lot::Mutex::new(String::new())),
+            exit_status: std::sync::Arc::new(parking_lot::Mutex::new(None)),
+        };
+        bg_registry.lock().insert(pid_bg, proc_bg);
+
+        // Foreground process
+        *crate::tui::RUNNING_PROCESS_PID.lock() = Some(9999);
+
+        // Run list
+        run(&mut app, None);
+
+        assert!(!app.chat.messages.is_empty());
+        let msg = &app.chat.messages[0].text;
+        
+        // Print for debugging if it fails
+        println!("Active sessions message: {}", msg);
+        
+        // Verify child status
+        {
+            let reg = registry.lock();
+            if let Some(sess) = reg.get("test_sess") {
+                println!("test_sess try_wait: {:?}", sess.child.lock().try_wait());
+            }
+        }
+
+        assert!(msg.contains("Persistent Session: test_sess"));
+        assert!(msg.contains("Background Process: sleep 100"));
+        assert!(msg.contains("Foreground Process"));
+
+        // Focus persistent session
+        run(&mut app, Some("test_sess".to_owned()));
+        assert_eq!(app.chat.focused_shell_session_id, Some("test_sess".to_owned()));
+        assert!(app.chat.shell_focused);
+
+        // Focus background process
+        run(&mut app, Some(pid_bg.to_string()));
+        assert_eq!(app.chat.focused_shell_pid, Some(pid_bg));
+        assert!(app.chat.shell_focused);
+
+        // Focus foreground process
+        run(&mut app, Some("9999".to_owned()));
+        assert_eq!(app.chat.focused_shell_pid, Some(9999));
+
+        // Focus nonexistent session
+        run(&mut app, Some("nonexistent".to_owned()));
+        assert!(app.chat.messages.iter().any(|m| m.text.contains("not found")));
+
+        // Cleanup
+        if let Some(sess) = registry.lock().remove("test_sess") {
+            let _ = sess.child.lock().kill();
+        }
+        if let Some(proc) = bg_registry.lock().remove(&pid_bg) {
+            let _ = proc.child.lock().kill();
+        }
+        *crate::tui::RUNNING_PROCESS_PID.lock() = None;
+    }
+}
+
