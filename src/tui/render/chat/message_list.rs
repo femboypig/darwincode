@@ -1,5 +1,5 @@
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Rect, Layout, Direction, Constraint};
+use ratatui::layout::{Rect, Layout, Direction, Constraint};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
@@ -374,19 +374,19 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
         let start_line = all_lines.len();
         let mut final_msg_lines = msg_lines;
-        if let Some(ref sel) = app.chat.selection {
-            if sel.msg_idx == msg_idx && message.author == "Darwin" && !message.is_shell && !message.is_tool {
-                let (min_line, min_col, max_line, max_col) = sel.normalized();
-                let highlight_style = Style::default()
-                    .bg(Color::Rgb(59, 130, 246))
-                    .fg(Color::White);
-                for (line_idx, line) in final_msg_lines.iter_mut().enumerate() {
-                    if line_idx >= min_line && line_idx <= max_line {
-                        let text_chars_count = get_line_text_excluding_margin(line).chars().count();
-                        let start_char = if line_idx == min_line { min_col } else { 0 };
-                        let end_char = if line_idx == max_line { max_col } else { text_chars_count };
-                        *line = highlight_msg_line(line.clone(), start_char, end_char, highlight_style);
-                    }
+        if let Some(ref sel) = app.chat.selection
+            && sel.msg_idx == msg_idx && message.author == "Darwin" && !message.is_shell && !message.is_tool
+        {
+            let (min_line, min_col, max_line, max_col) = sel.normalized();
+            let highlight_style = Style::default()
+                .bg(Color::Rgb(59, 130, 246))
+                .fg(Color::White);
+            for (line_idx, line) in final_msg_lines.iter_mut().enumerate() {
+                if line_idx >= min_line && line_idx <= max_line {
+                    let text_chars_count = get_line_text_excluding_margin(line).chars().count();
+                    let start_char = if line_idx == min_line { min_col } else { 0 };
+                    let end_char = if line_idx == max_line { max_col } else { text_chars_count };
+                    *line = highlight_msg_line(line.clone(), start_char, end_char, highlight_style);
                 }
             }
         }
