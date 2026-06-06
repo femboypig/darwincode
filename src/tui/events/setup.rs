@@ -197,6 +197,7 @@ mod tests {
 
     #[test]
     fn test_handle_setup_key_navigation() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
         let mut app = App::new(Some(StoredConfig::default()));
         let (sender, _receiver) = mpsc::channel();
         app.ui.setup.active_field = SetupField::ApiKey;
@@ -214,6 +215,7 @@ mod tests {
 
     #[test]
     fn test_handle_setup_key_editing() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
         let mut app = App::new(Some(StoredConfig::default()));
         let (sender, _receiver) = mpsc::channel();
         app.ui.setup.active_field = SetupField::ApiKey;
@@ -223,5 +225,92 @@ mod tests {
         handle_setup_key(&mut app, &sender, KeyEvent::new(KeyCode::Char('k'), KeyModifiers::empty())).unwrap();
         assert!(app.ui.setup.is_editing);
         assert_eq!(app.ui.setup.api_key, "k");
+    }
+
+    #[test]
+    fn test_handle_setup_key_comprehensive() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
+        let mut app = App::new(Some(StoredConfig::default()));
+        let (sender, _receiver) = mpsc::channel();
+
+        // 1. TuiAction::Quit
+        app.should_quit = false;
+        let key_quit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        handle_setup_key(&mut app, &sender, key_quit).unwrap();
+        assert!(app.should_quit);
+
+        // Reset should_quit
+        app.should_quit = false;
+
+        // 2. Cancel editing
+        app.ui.setup.is_editing = true;
+        app.ui.setup.active_field = SetupField::ApiKey;
+        let key_esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
+        handle_setup_key(&mut app, &sender, key_esc).unwrap();
+        assert!(!app.ui.setup.is_editing);
+
+        // 3. Enter key in editing mode
+        app.ui.setup.is_editing = true;
+        let key_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        handle_setup_key(&mut app, &sender, key_enter).unwrap();
+        assert!(!app.ui.setup.is_editing);
+
+        // 4. Ctrl+U to clear input
+        app.ui.setup.is_editing = true;
+        app.ui.setup.api_key = "abc".to_owned();
+        let key_ctrl_u = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+        handle_setup_key(&mut app, &sender, key_ctrl_u).unwrap();
+        assert!(app.ui.setup.api_key.is_empty());
+
+        // 5. Backspace in editing mode
+        app.ui.setup.api_key = "abc".to_owned();
+        let key_bs = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
+        handle_setup_key(&mut app, &sender, key_bs).unwrap();
+        assert_eq!(app.ui.setup.api_key, "ab");
+
+        // 6. Right arrow for PermissionLevel
+        app.ui.setup.is_editing = false;
+        app.ui.setup.active_field = SetupField::PermissionLevel;
+        app.ui.setup.permission_level = crate::config::PermissionLevel::Safe;
+        let key_right = KeyEvent::new(KeyCode::Right, KeyModifiers::empty());
+        handle_setup_key(&mut app, &sender, key_right).unwrap();
+        assert_eq!(app.ui.setup.permission_level, crate::config::PermissionLevel::Guardian);
+
+        // Left arrow for PermissionLevel
+        let key_left = KeyEvent::new(KeyCode::Left, KeyModifiers::empty());
+        handle_setup_key(&mut app, &sender, key_left).unwrap();
+        assert_eq!(app.ui.setup.permission_level, crate::config::PermissionLevel::Safe);
+
+        // 7. Enter/Space to toggle boolean fields
+        app.ui.setup.active_field = SetupField::EnableCodebase;
+        app.ui.setup.enable_codebase_tools = false;
+        handle_setup_key(&mut app, &sender, key_enter).unwrap();
+        assert!(app.ui.setup.enable_codebase_tools);
+
+        // RespectIgnoreRules toggle
+        app.ui.setup.active_field = SetupField::RespectIgnoreRules;
+        app.ui.setup.respect_ignore_rules = false;
+        handle_setup_key(&mut app, &sender, key_enter).unwrap();
+        assert!(app.ui.setup.respect_ignore_rules);
+
+        // ShowThoughts toggle
+        app.ui.setup.active_field = SetupField::ShowThoughts;
+        app.ui.setup.show_thoughts = false;
+        handle_setup_key(&mut app, &sender, key_enter).unwrap();
+        assert!(app.ui.setup.show_thoughts);
+
+        // EnableBash toggle
+        app.ui.setup.active_field = SetupField::EnableBash;
+        app.ui.setup.enable_bash_tools = false;
+        handle_setup_key(&mut app, &sender, key_enter).unwrap();
+        assert!(app.ui.setup.enable_bash_tools);
+
+        // 8. Ctrl+A to apply OmniRoute defaults
+        app.ui.setup.api_key = "sk-test".to_owned();
+        app.ui.setup.base_url.clear();
+        let key_ctrl_a = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        handle_setup_key(&mut app, &sender, key_ctrl_a).unwrap();
+        assert_eq!(app.ui.setup.base_url, "http://localhost:20128/v1");
+        assert_eq!(app.ui.setup.model, "claude-sonnet-4.6");
     }
 }
