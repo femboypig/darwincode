@@ -4,31 +4,31 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub(crate) fn handle_sessions_key(app: &mut App, key: KeyEvent) -> Result<()> {
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
         || app
-            .keybindings
+            .core.keybindings
             .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         app.cancel_sessions();
         return Ok(());
     }
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
     {
-        app.sessions.select_previous();
+        app.ui.sessions.select_previous();
         return Ok(());
     }
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
     {
-        app.sessions.select_next();
+        app.ui.sessions.select_next();
         return Ok(());
     }
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Submit, key)
     {
         app.apply_selected_session();
@@ -37,17 +37,17 @@ pub(crate) fn handle_sessions_key(app: &mut App, key: KeyEvent) -> Result<()> {
 
     match (key.code, key.modifiers) {
         (KeyCode::Backspace, _) => {
-            let mut q = app.sessions.query.clone();
+            let mut q = app.ui.sessions.query.clone();
             q.pop();
-            app.sessions.update_query(q);
+            app.ui.sessions.update_query(q);
         }
         (KeyCode::Char(c), modifiers)
             if !modifiers.contains(KeyModifiers::CONTROL)
                 && !modifiers.contains(KeyModifiers::ALT) =>
         {
-            let mut q = app.sessions.query.clone();
+            let mut q = app.ui.sessions.query.clone();
             q.push(c);
-            app.sessions.update_query(q);
+            app.ui.sessions.update_query(q);
         }
         _ => {}
     }
