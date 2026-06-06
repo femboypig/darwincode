@@ -1203,3 +1203,137 @@ impl App {
         self.chat.scroll = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Theme;
+
+    #[test]
+    fn test_app_dev_mode_toggle() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        assert_eq!(app.dev_mode_label(), "Build");
+        app.toggle_dev_mode();
+        assert_eq!(app.dev_mode_label(), "Plan");
+        app.toggle_dev_mode();
+        assert_eq!(app.dev_mode_label(), "Build");
+    }
+
+    #[test]
+    fn test_app_theme_picker_state() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.theme_picker_open = true;
+        app.ui.theme_picker = ThemePickerState::new(&Theme::Auto);
+        
+        // select next theme
+        app.select_next_theme();
+        app.select_previous_theme();
+        app.cancel_themes();
+        assert!(!app.ui.theme_picker_open);
+        assert_eq!(app.status, "Ready");
+    }
+
+    #[test]
+    fn test_app_model_picker_state() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.model_picker_open = true;
+        app.ui.models = ModelPickerState::new(vec!["models/gemini-2.0-flash".to_owned()], "models/gemini-2.0-flash");
+        
+        app.select_next_model();
+        app.select_previous_model();
+        app.cancel_models();
+        assert!(!app.ui.model_picker_open);
+        assert_eq!(app.status, "Ready");
+    }
+
+    #[test]
+    fn test_app_agent_picker_state() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.agent_picker_open = true;
+        app.ui.agent_picker = AgentPickerState::new(&None);
+        
+        app.select_next_agent();
+        app.select_previous_agent();
+        app.cancel_agents();
+        assert!(!app.ui.agent_picker_open);
+        assert_eq!(app.status, "Ready");
+    }
+
+    #[test]
+    fn test_app_cancel_permissions() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.screen = Screen::Permissions;
+        app.cancel_permissions();
+        assert_eq!(app.ui.screen, Screen::Chat);
+        assert_eq!(app.status, "Ready");
+    }
+
+    #[test]
+    fn test_app_submit_empty_input() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.chat.input = "   ".to_owned();
+        let action = app.submit_chat_input();
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn test_app_submit_command_help() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.chat.input = "/help".to_owned();
+        let _action = app.submit_chat_input();
+        // /help command clears the input buffer
+        assert!(app.chat.input.is_empty());
+    }
+
+    #[test]
+    fn test_app_queue_message_when_busy() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.proc.pending = Some(PendingTask::Generating);
+        app.chat.input = "busy prompt".to_owned();
+        let action = app.submit_chat_input();
+        assert!(action.is_none());
+        assert_eq!(app.chat.message_queue.len(), 1);
+        assert_eq!(app.chat.message_queue[0], "busy prompt");
+        assert!(app.chat.input.is_empty());
+    }
+
+    #[test]
+    fn test_app_apply_theme() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.theme_picker = ThemePickerState::new(&Theme::Auto);
+        app.ui.theme_picker.selected = 1; // Dark
+        app.ui.theme_picker_open = true;
+        app.apply_selected_theme();
+        assert_eq!(app.chat.config.theme, Theme::Dark);
+        assert!(!app.ui.theme_picker_open);
+    }
+
+    #[test]
+    fn test_app_apply_model() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.models = ModelPickerState::new(vec!["models/gemini-2.0-flash".to_owned()], "models/gemini-2.0-flash");
+        app.ui.models.selected = 0;
+        app.ui.model_picker_open = true;
+        app.apply_selected_model();
+        assert_eq!(app.chat.config.model, "gemini-2.0-flash");
+        assert!(!app.ui.model_picker_open);
+    }
+
+    #[test]
+    fn test_app_apply_agent() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.agent_picker = AgentPickerState::new(&None);
+        app.ui.agent_picker_open = true;
+        app.apply_selected_agent();
+        assert_eq!(app.chat.config.active_agent, None);
+        assert!(!app.ui.agent_picker_open);
+    }
+
+    #[test]
+    fn test_app_apply_permission_level() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.permissions.selected = 2; // Chaos
+        app.apply_permission_level();
+        assert_eq!(app.chat.config.permission_level, PermissionLevel::Chaos);
+    }
+}
