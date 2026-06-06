@@ -110,6 +110,7 @@ pub struct AppCore {
     pub sessions_cache: std::sync::Arc<std::sync::Mutex<Option<Vec<crate::app::session::SessionMeta>>>>,
     pub dev_mode: DevelopMode,
     pub active_agent: Option<String>,
+    pub pending_custom_command: Option<String>,
 }
 
 #[derive(Debug)]
@@ -179,6 +180,7 @@ impl App {
                     sessions_cache,
                     dev_mode: DevelopMode::Build,
                     active_agent,
+                    pending_custom_command: None,
                 };
                 Self {
                     ui,
@@ -224,6 +226,7 @@ impl App {
                     sessions_cache,
                     dev_mode: DevelopMode::Build,
                     active_agent: None,
+                    pending_custom_command: None,
                 };
                 Self {
                     ui,
