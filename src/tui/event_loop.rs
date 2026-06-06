@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::Result;
 use crossterm::event::{self, Event};
 
-use crate::app::{App, SubmitAction, PendingTask, Screen};
+use crate::app::{App, SubmitAction, Screen};
 use crate::tui::{Tui, WorkerEvent};
 use crate::tui::terminal::{start_terminal, stop_terminal};
 use crate::tui::events::mouse::handle_mouse_event;
@@ -82,15 +82,15 @@ fn run_loop(
         }
 
         // Handle scrolling if dragging outside the viewport vertical boundaries
-        if let Some((click_x, click_y)) = app.chat.last_mouse_drag_pos {
-            if let Some(rect) = app.chat.messages_area.get() {
-                if click_y < rect.y {
-                    app.chat.scroll = app.chat.scroll.saturating_add(1);
-                    update_selection_on_scroll(app, click_x, click_y);
-                } else if click_y >= rect.y + rect.height {
-                    app.chat.scroll = app.chat.scroll.saturating_sub(1);
-                    update_selection_on_scroll(app, click_x, click_y);
-                }
+        if let Some((click_x, click_y)) = app.chat.last_mouse_drag_pos
+            && let Some(rect) = app.chat.messages_area.get()
+        {
+            if click_y < rect.y {
+                app.chat.scroll = app.chat.scroll.saturating_add(1);
+                update_selection_on_scroll(app, click_x, click_y);
+            } else if click_y >= rect.y + rect.height {
+                app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                update_selection_on_scroll(app, click_x, click_y);
             }
         }
 
