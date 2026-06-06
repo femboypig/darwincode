@@ -190,10 +190,12 @@ mod tests {
 
     #[test]
     fn test_setup_state_to_from_config() {
-        let mut config = StoredConfig::default();
-        config.api_key = "test_key".to_owned();
-        config.model = "models/gemini-2.0-flash".to_owned();
-        config.base_url = "https://example.com".to_owned();
+        let config = StoredConfig {
+            api_key: "test_key".to_owned(),
+            model: "models/gemini-2.0-flash".to_owned(),
+            base_url: "https://example.com".to_owned(),
+            ..Default::default()
+        };
 
         let state = SetupState::from_config(&config);
         assert_eq!(state.api_key, "test_key");
@@ -208,8 +210,10 @@ mod tests {
 
     #[test]
     fn test_setup_state_char_editing() {
-        let mut state = SetupState::default();
-        state.active_field = SetupField::ApiKey;
+        let mut state = SetupState {
+            active_field: SetupField::ApiKey,
+            ..Default::default()
+        };
         state.push_char('a');
         state.push_char('b');
         assert_eq!(state.api_key, "ab");
@@ -230,10 +234,12 @@ mod tests {
 
     #[test]
     fn test_setup_state_model_selection() {
-        let mut state = SetupState::default();
-        state.models = vec!["models/model-a".to_owned(), "models/model-b".to_owned()];
-        state.selected_model = 0;
-        state.model = "model-a".to_owned();
+        let mut state = SetupState {
+            models: vec!["models/model-a".to_owned(), "models/model-b".to_owned()],
+            selected_model: 0,
+            model: "model-a".to_owned(),
+            ..Default::default()
+        };
 
         state.select_next_model();
         assert_eq!(state.selected_model, 1);
