@@ -24,15 +24,16 @@ use crate::config::StoredConfig;
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
-pub static RUNNING_PROCESS_PID: std::sync::Mutex<Option<u32>> = std::sync::Mutex::new(None);
-pub static RUNNING_PROCESS_STDIN: std::sync::Mutex<Option<std::process::ChildStdin>> =
-    std::sync::Mutex::new(None);
+pub static RUNNING_PROCESS_PID: parking_lot::Mutex<Option<u32>> = parking_lot::Mutex::new(None);
+pub static RUNNING_PROCESS_STDIN: parking_lot::Mutex<Option<std::process::ChildStdin>> =
+    parking_lot::Mutex::new(None);
 type AskUserChannel = (std::sync::mpsc::Sender<String>, String, Vec<String>);
 
-pub static ASK_USER_CHANNEL: std::sync::Mutex<Option<AskUserChannel>> = std::sync::Mutex::new(None);
+pub static ASK_USER_CHANNEL: parking_lot::Mutex<Option<AskUserChannel>> = parking_lot::Mutex::new(None);
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
+use parking_lot::Mutex;
 
 pub(crate) struct BackgroundProcess {
     pub(crate) _command: String,
@@ -77,27 +78,27 @@ fn register_background_process(
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(100));
-            if let Ok(mut child_guard) = child_clone.lock() {
+            {
+                let mut child_guard = child_clone.lock();
                 match child_guard.try_wait() {
                     Ok(Some(status)) => {
-                        let mut status_guard = exit_status_clone.lock().unwrap();
+                        let mut status_guard = exit_status_clone.lock();
                         *status_guard = Some(status.code().unwrap_or(-1));
                         break;
                     }
                     Ok(None) => {}
                     Err(_) => {
-                        let mut status_guard = exit_status_clone.lock().unwrap();
+                        let mut status_guard = exit_status_clone.lock();
                         *status_guard = Some(-1);
                         break;
                     }
                 }
-            } else {
-                break;
             }
         }
     });
 
-    if let Ok(mut map) = registry.lock() {
+    {
+        let mut map = registry.lock();
         map.insert(
             pid,
             BackgroundProcess {
@@ -114,93 +115,84 @@ fn register_background_process(
 
 fn run_check_process(pid: u32) -> serde_json::Value {
     let registry = BACKGROUND_PROCESSES.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(mut map) = registry.lock() {
-        if let Some(proc) = map.get_mut(&pid) {
-            let mut exit_code_guard = proc.exit_status.lock().unwrap();
-            if exit_code_guard.is_none()
-                && let Ok(mut child_guard) = proc.child.try_lock()
-                && let Ok(Some(status)) = child_guard.try_wait()
-            {
-                *exit_code_guard = Some(status.code().unwrap_or(-1));
-            }
-            let is_alive = exit_code_guard.is_none();
-            serde_json::json!({
-                "alive": is_alive,
-                "exit_code": *exit_code_guard
-            })
-        } else {
-            serde_json::json!({ "error": format!("No background process found with PID {}", pid) })
+    let mut map = registry.lock();
+    if let Some(proc) = map.get_mut(&pid) {
+        let mut exit_code_guard = proc.exit_status.lock();
+        if exit_code_guard.is_none()
+            && let Some(mut child_guard) = proc.child.try_lock()
+            && let Some(status) = child_guard.try_wait().ok().flatten()
+        {
+            *exit_code_guard = Some(status.code().unwrap_or(-1));
         }
+        let is_alive = exit_code_guard.is_none();
+        serde_json::json!({
+            "alive": is_alive,
+            "exit_code": *exit_code_guard
+        })
     } else {
-        serde_json::json!({ "error": "Failed to lock background process registry" })
+        serde_json::json!({ "error": format!("No background process found with PID {}", pid) })
     }
 }
 
 fn run_kill_process(pid: u32) -> serde_json::Value {
     let registry = BACKGROUND_PROCESSES.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(mut map) = registry.lock() {
-        if let Some(proc) = map.remove(&pid) {
-            if let Ok(mut c) = proc.child.try_lock() {
-                let _ = c.kill();
-            }
-            #[cfg(unix)]
-            {
-                let _ = std::process::Command::new("kill")
-                    .args(["-9", &format!("-{}", pid)])
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-            }
-            serde_json::json!({ "success": true })
-        } else {
-            serde_json::json!({ "error": format!("No background process found with PID {}", pid) })
+    let mut map = registry.lock();
+    if let Some(proc) = map.remove(&pid) {
+        if let Some(mut c) = proc.child.try_lock() {
+            let _ = c.kill();
         }
+        #[cfg(unix)]
+        {
+            let _ = std::process::Command::new("kill")
+                .args(["-9", &format!("-{}", pid)])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        serde_json::json!({ "success": true })
     } else {
-        serde_json::json!({ "error": "Failed to lock background process registry" })
+        serde_json::json!({ "error": format!("No background process found with PID {}", pid) })
     }
 }
 
 fn run_get_logs(pid: u32, limit: Option<usize>) -> serde_json::Value {
     let registry = BACKGROUND_PROCESSES.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(map) = registry.lock() {
-        if let Some(proc) = map.get(&pid) {
-            let stdout = proc.stdout_accumulator.lock().unwrap().clone();
-            let stderr = proc.stderr_accumulator.lock().unwrap().clone();
+    let map = registry.lock();
+    if let Some(proc) = map.get(&pid) {
+        let stdout = proc.stdout_accumulator.lock().clone();
+        let stderr = proc.stderr_accumulator.lock().clone();
 
-            let stdout_lines = if let Some(lim) = limit {
-                let lines: Vec<&str> = stdout.lines().collect();
-                let start = lines.len().saturating_sub(lim);
-                lines[start..].join("\n")
-            } else {
-                stdout
-            };
-
-            let stderr_lines = if let Some(lim) = limit {
-                let lines: Vec<&str> = stderr.lines().collect();
-                let start = lines.len().saturating_sub(lim);
-                lines[start..].join("\n")
-            } else {
-                stderr
-            };
-
-            let mut exit_code_guard = proc.exit_status.lock().unwrap();
-            if exit_code_guard.is_none()
-                && let Ok(mut child_guard) = proc.child.try_lock()
-                && let Ok(Some(status)) = child_guard.try_wait()
-            {
-                *exit_code_guard = Some(status.code().unwrap_or(-1));
-            }
-
-            serde_json::json!({
-                "stdout": stdout_lines,
-                "stderr": stderr_lines,
-                "exit_code": *exit_code_guard
-            })
+        let stdout_lines = if let Some(lim) = limit {
+            let lines: Vec<&str> = stdout.lines().collect();
+            let start = lines.len().saturating_sub(lim);
+            lines[start..].join("\n")
         } else {
-            serde_json::json!({ "error": format!("No background process found with PID {}", pid) })
+            stdout
+        };
+
+        let stderr_lines = if let Some(lim) = limit {
+            let lines: Vec<&str> = stderr.lines().collect();
+            let start = lines.len().saturating_sub(lim);
+            lines[start..].join("\n")
+        } else {
+            stderr
+        };
+
+        let mut exit_code_guard = proc.exit_status.lock();
+        if exit_code_guard.is_none()
+            && let Some(mut child_guard) = proc.child.try_lock()
+            && let Some(status) = child_guard.try_wait().ok().flatten()
+        {
+            *exit_code_guard = Some(status.code().unwrap_or(-1));
         }
+
+        serde_json::json!({
+            "stdout": stdout_lines,
+            "stderr": stderr_lines,
+            "exit_code": *exit_code_guard
+        })
     } else {
-        serde_json::json!({ "error": "Failed to lock background process registry" })
+        serde_json::json!({ "error": format!("No background process found with PID {}", pid) })
     }
 }
 
@@ -212,7 +204,7 @@ fn run_persistent_bash(
     sender: Sender<WorkerEvent>,
 ) -> Result<serde_json::Value, std::io::Error> {
     let registry = PERSISTENT_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut map = registry.lock().unwrap();
+    let mut map = registry.lock();
 
     let entry = map.entry(session_id.to_owned()).or_insert_with(|| {
         let mut command = std::process::Command::new("bash");
@@ -256,7 +248,7 @@ fn run_persistent_bash(
                     break;
                 }
                 let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
-                if let Ok(mut guard) = stdout_acc_clone.lock() {
+                { let mut guard = stdout_acc_clone.lock();
                     guard.push_str(&chunk);
                 }
                 let _ = sender_stdout.send(WorkerEvent::BashStdout(Some(pid), chunk));
@@ -275,7 +267,7 @@ fn run_persistent_bash(
                     break;
                 }
                 let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
-                if let Ok(mut guard) = stderr_acc_clone.lock() {
+                { let mut guard = stderr_acc_clone.lock();
                     guard.push_str(&chunk);
                 }
                 let _ = sender_stderr.send(WorkerEvent::BashStderr(Some(pid), chunk));
@@ -292,14 +284,14 @@ fn run_persistent_bash(
     });
 
     // Set the active persistent session ID for keystroke forwarding
-    if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
+    { let mut guard = ACTIVE_PERSISTENT_SESSION_ID.lock();
         *guard = Some(session_id.to_owned());
     }
 
     use std::io::Write;
 
-    let start_stdout_len = entry.stdout_accumulator.lock().unwrap().len();
-    let start_stderr_len = entry.stderr_accumulator.lock().unwrap().len();
+    let start_stdout_len = entry.stdout_accumulator.lock().len();
+    let start_stderr_len = entry.stderr_accumulator.lock().len();
 
     let nonce = format!(
         "CMD_DONE_{}",
@@ -327,15 +319,13 @@ fn run_persistent_bash(
         std::thread::sleep(std::time::Duration::from_millis(50));
 
         // Check if bash process has exited early
-        if let Ok(mut child_guard) = entry.child.lock()
-            && let Ok(Some(status)) = child_guard.try_wait()
-        {
+        if let Some(status) = entry.child.lock().try_wait().ok().flatten() {
             has_exited = true;
             exit_status = Some(status.code().unwrap_or(-1));
             break;
         }
 
-        let stdout_guard = entry.stdout_accumulator.lock().unwrap();
+        let stdout_guard = entry.stdout_accumulator.lock();
         if stdout_guard[start_stdout_len..].contains(&sentinel) {
             found = true;
             break;
@@ -344,20 +334,19 @@ fn run_persistent_bash(
     }
 
     // Clear active persistent session ID
-    if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
-        *guard = None;
-    }
+    *ACTIVE_PERSISTENT_SESSION_ID.lock() = None;
 
     // Clean up registry entry if process has exited
     if has_exited {
         let registry = PERSISTENT_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
-        if let Ok(mut map) = registry.lock() {
+        {
+        let mut map = registry.lock();
             map.remove(session_id);
         }
     }
 
-    let raw_stdout = entry.stdout_accumulator.lock().unwrap();
-    let raw_stderr = entry.stderr_accumulator.lock().unwrap();
+    let raw_stdout = entry.stdout_accumulator.lock();
+    let raw_stderr = entry.stderr_accumulator.lock();
 
     let mut stdout_diff = raw_stdout[start_stdout_len..].to_owned();
     let stderr_diff = raw_stderr[start_stderr_len..].to_owned();
@@ -449,8 +438,8 @@ fn run_loop(
     while !app.should_quit {
         let ask_user_req = crate::tui::ASK_USER_CHANNEL
             .lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|(_, q, opts)| (q.clone(), opts.clone())))
+            .as_ref()
+            .map(|(_, q, opts)| (q.clone(), opts.clone()))
             .filter(|_| app.ui.screen != crate::app::Screen::AskUser);
 
         if let Some((question, options)) = ask_user_req {
@@ -611,7 +600,7 @@ fn run_loop(
                                 if let Some(session_id) =
                                     app.chat.messages[msg_idx].shell_session_id.clone()
                                 {
-                                    if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
+                                    { let mut guard = ACTIVE_PERSISTENT_SESSION_ID.lock();
                                         let opt: &mut Option<String> = &mut guard;
                                         *opt = Some(session_id.clone());
                                     }
@@ -659,14 +648,14 @@ fn run_loop(
                                     app.status = "Ready".to_owned();
                                 } else {
                                     let clicked_pid = app.chat.messages[msg_idx].shell_pid;
-                                    let fg_pid = RUNNING_PROCESS_PID.lock().ok().and_then(|g| *g);
+                                    let fg_pid = *RUNNING_PROCESS_PID.lock();
                                     let is_bg_alive = if let Some(pid) = clicked_pid {
                                         let bg_registry = BACKGROUND_PROCESSES.get();
                                         if let Some(registry_mutex) = bg_registry
-                                            && let Ok(registry_guard) = registry_mutex.lock()
+                                            && let registry_guard = { let g = registry_mutex.lock(); g }
                                             && let Some(proc) = registry_guard.get(&pid)
                                         {
-                                            proc.exit_status.lock().unwrap().is_none()
+                                            proc.exit_status.lock().is_none()
                                         } else {
                                             false
                                         }
@@ -677,7 +666,7 @@ fn run_loop(
                                     if let Some(pid) = fg_pid
                                         && Some(pid) == clicked_pid
                                     {
-                                        if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
+                                        { let mut guard = ACTIVE_PERSISTENT_SESSION_ID.lock();
                                             *guard = None;
                                         }
                                         app.chat.focused_shell_session_id = None;
@@ -724,7 +713,7 @@ fn run_loop(
                                         *app.chat.message_line_ranges.borrow_mut() = Vec::new();
                                         app.status = "Ready".to_owned();
                                     } else if is_bg_alive && let Some(pid) = clicked_pid {
-                                        if let Ok(mut guard) = ACTIVE_PERSISTENT_SESSION_ID.lock() {
+                                        { let mut guard = ACTIVE_PERSISTENT_SESSION_ID.lock();
                                             *guard = None;
                                         }
                                         app.chat.focused_shell_session_id = None;
@@ -1811,19 +1800,17 @@ pub(crate) fn handle_function_action(
                                     let _ = stdin.write_all(inp.as_bytes());
                                     let _ = stdin.flush();
                                 }
-                                if !background
-                                    && let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock()
-                                {
-                                    *guard = child_stdin.take();
+                                if !background {
+                                    *crate::tui::RUNNING_PROCESS_STDIN.lock() = child_stdin.take();
                                 }
 
                                 let stdout = child.stdout.take().unwrap();
                                 let stderr = child.stderr.take().unwrap();
 
                                 let stdout_accumulator =
-                                    std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+                                    std::sync::Arc::new(Mutex::new(String::new()));
                                 let stderr_accumulator =
-                                    std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+                                    std::sync::Arc::new(Mutex::new(String::new()));
 
                                 let sender_stdout = sender.clone();
                                 let stdout_acc_clone = stdout_accumulator.clone();
@@ -1837,7 +1824,7 @@ pub(crate) fn handle_function_action(
                                         }
                                         let chunk =
                                             String::from_utf8_lossy(&buffer[..n]).into_owned();
-                                        if let Ok(mut guard) = stdout_acc_clone.lock() {
+                                        { let mut guard = stdout_acc_clone.lock();
                                             guard.push_str(&chunk);
                                         }
                                         let _ = sender_stdout
@@ -1857,7 +1844,7 @@ pub(crate) fn handle_function_action(
                                         }
                                         let chunk =
                                             String::from_utf8_lossy(&buffer[..n]).into_owned();
-                                        if let Ok(mut guard) = stderr_acc_clone.lock() {
+                                        { let mut guard = stderr_acc_clone.lock();
                                             guard.push_str(&chunk);
                                         }
                                         let _ = sender_stderr
@@ -1883,29 +1870,20 @@ pub(crate) fn handle_function_action(
                                         "pid": pid
                                     }))
                                 } else {
-                                    if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+                                    { let mut guard = crate::tui::RUNNING_PROCESS_PID.lock();
                                         *guard = Some(pid);
                                     }
                                     let status = child.wait()?;
-                                    if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+                                    { let mut guard = crate::tui::RUNNING_PROCESS_PID.lock();
                                         *guard = None;
                                     }
-                                    if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_STDIN.lock()
-                                    {
-                                        *guard = None;
-                                    }
+                                    *crate::tui::RUNNING_PROCESS_STDIN.lock() = None;
 
                                     let _ = stdout_handle.join();
                                     let _ = stderr_handle.join();
 
-                                    let stdout_content = stdout_accumulator
-                                        .lock()
-                                        .map(|g| g.clone())
-                                        .unwrap_or_default();
-                                    let stderr_content = stderr_accumulator
-                                        .lock()
-                                        .map(|g| g.clone())
-                                        .unwrap_or_default();
+                                    let stdout_content = stdout_accumulator.lock().clone();
+                                    let stderr_content = stderr_accumulator.lock().clone();
                                     let status_code = status.code();
                                     let mut err_val = serde_json::Value::Null;
 
@@ -2152,15 +2130,11 @@ pub(crate) fn handle_function_action(
                             .unwrap_or_default();
 
                         let (tx, rx) = std::sync::mpsc::channel();
-                        if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
-                            *guard = Some((tx, question.to_owned(), options));
-                        }
+                        *crate::tui::ASK_USER_CHANNEL.lock() = Some((tx, question.to_owned(), options));
 
                         let answer = rx.recv().unwrap_or_default();
 
-                        if let Ok(mut guard) = crate::tui::ASK_USER_CHANNEL.lock() {
-                            *guard = None;
-                        }
+                        *crate::tui::ASK_USER_CHANNEL.lock() = None;
 
                         serde_json::json!({ "answer": answer })
                     }
