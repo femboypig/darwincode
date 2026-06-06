@@ -187,3 +187,41 @@ pub(crate) fn handle_setup_key(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::StoredConfig;
+    use crossterm::event::{KeyEvent, KeyCode, KeyModifiers};
+    use std::sync::mpsc;
+
+    #[test]
+    fn test_handle_setup_key_navigation() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        let (sender, _receiver) = mpsc::channel();
+        app.ui.setup.active_field = SetupField::ApiKey;
+
+        // Press Down arrow
+        let key_down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
+        handle_setup_key(&mut app, &sender, key_down).unwrap();
+        assert_eq!(app.ui.setup.active_field, SetupField::Model);
+
+        // Press Up arrow
+        let key_up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+        handle_setup_key(&mut app, &sender, key_up).unwrap();
+        assert_eq!(app.ui.setup.active_field, SetupField::ApiKey);
+    }
+
+    #[test]
+    fn test_handle_setup_key_editing() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        let (sender, _receiver) = mpsc::channel();
+        app.ui.setup.active_field = SetupField::ApiKey;
+        app.ui.setup.api_key.clear();
+
+        // Type 'k'
+        handle_setup_key(&mut app, &sender, KeyEvent::new(KeyCode::Char('k'), KeyModifiers::empty())).unwrap();
+        assert!(app.ui.setup.is_editing);
+        assert_eq!(app.ui.setup.api_key, "k");
+    }
+}
