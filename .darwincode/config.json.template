@@ -1,0 +1,10 @@
+{
+  "model": "gemini-2.0-flash",
+  "base_url": "https://generativelanguage.googleapis.com/v1beta",
+  "enable_codebase_tools": true,
+  "enable_bash_tools": true,
+  "show_thoughts": true,
+  "permission_level": "Guardian",
+  "theme": "Auto",
+  "respect_gitignore": true
+}
