@@ -830,7 +830,7 @@ mod tests {
             })],
         });
 
-        use crate::app::chat::{TodoStatus, TodoPriority};
+        use crate::app::chat::{TodoPriority, TodoStatus};
         let todos = rebuild_todos_from_history(&history);
         assert_eq!(todos.len(), 1);
         assert_eq!(todos[0].content, "Task 1");
