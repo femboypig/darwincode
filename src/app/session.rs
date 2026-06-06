@@ -678,6 +678,7 @@ mod tests {
 
     #[test]
     fn test_save_load_list_sessions() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "darwincode_test_{}",
             std::time::SystemTime::now()
