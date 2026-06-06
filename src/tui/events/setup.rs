@@ -154,8 +154,8 @@ pub(crate) fn handle_setup_key(
             SetupField::Theme => {
                 app.setup.theme = app.setup.theme.next();
             }
-            SetupField::RespectGitignore => {
-                app.setup.respect_gitignore = !app.setup.respect_gitignore;
+            SetupField::RespectIgnoreRules => {
+                app.setup.respect_ignore_rules = !app.setup.respect_ignore_rules;
             }
             SetupField::ApiKey | SetupField::Model | SetupField::BaseUrl => {
                 app.setup.is_editing = true;
