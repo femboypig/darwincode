@@ -13,35 +13,35 @@ pub(crate) fn handle_permissions_key(
     key: KeyEvent,
 ) -> Result<()> {
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
         app.cancel_permissions();
         return Ok(());
     }
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         app.cancel_permissions();
         return Ok(());
     }
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
     {
-        app.permissions.select_previous();
+        app.ui.permissions.select_previous();
         return Ok(());
     }
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
     {
-        app.permissions.select_next();
+        app.ui.permissions.select_next();
         return Ok(());
     }
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Submit, key)
     {
         if let Some(action) = app.apply_permission_level() {
