@@ -1,11 +1,11 @@
-use std::sync::mpsc::Sender;
-use anyhow::Result;
-use crossterm::event::{MouseEvent, MouseButton, MouseEventKind};
 use crate::app::App;
 use crate::tui::WorkerEvent;
 use crate::tui::{
-    ACTIVE_PERSISTENT_SESSION_ID, RUNNING_PROCESS_PID, BACKGROUND_PROCESSES, spawn_models_worker,
+    ACTIVE_PERSISTENT_SESSION_ID, BACKGROUND_PROCESSES, RUNNING_PROCESS_PID, spawn_models_worker,
 };
+use anyhow::Result;
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use std::sync::mpsc::Sender;
 
 pub(crate) fn handle_mouse_event(
     app: &mut App,
@@ -18,7 +18,8 @@ pub(crate) fn handle_mouse_event(
                 app.proc.pending,
                 Some(crate::app::PendingTask::ConfirmFunction { .. })
             ) {
-                app.ui.confirm_scroll
+                app.ui
+                    .confirm_scroll
                     .set(app.ui.confirm_scroll.get().saturating_sub(1));
             } else {
                 app.chat.scroll = app.chat.scroll.saturating_add(1);
@@ -30,7 +31,8 @@ pub(crate) fn handle_mouse_event(
                 app.proc.pending,
                 Some(crate::app::PendingTask::ConfirmFunction { .. })
             ) {
-                app.ui.confirm_scroll
+                app.ui
+                    .confirm_scroll
                     .set(app.ui.confirm_scroll.get().saturating_add(1));
             } else {
                 app.chat.scroll = app.chat.scroll.saturating_sub(1);
@@ -98,21 +100,18 @@ pub(crate) fn handle_mouse_event(
                                     app.ui.setup.theme = app.ui.setup.theme.next();
                                 }
                                 crate::app::SetupField::PermissionLevel => {
-                                    app.ui.setup.permission_level = match app
-                                        .ui
-                                        .setup
-                                        .permission_level
-                                    {
-                                        crate::config::PermissionLevel::Safe => {
-                                            crate::config::PermissionLevel::Guardian
-                                        }
-                                        crate::config::PermissionLevel::Guardian => {
-                                            crate::config::PermissionLevel::Chaos
-                                        }
-                                        crate::config::PermissionLevel::Chaos => {
-                                            crate::config::PermissionLevel::Safe
-                                        }
-                                    };
+                                    app.ui.setup.permission_level =
+                                        match app.ui.setup.permission_level {
+                                            crate::config::PermissionLevel::Safe => {
+                                                crate::config::PermissionLevel::Guardian
+                                            }
+                                            crate::config::PermissionLevel::Guardian => {
+                                                crate::config::PermissionLevel::Chaos
+                                            }
+                                            crate::config::PermissionLevel::Chaos => {
+                                                crate::config::PermissionLevel::Safe
+                                            }
+                                        };
                                 }
                                 crate::app::SetupField::ApiKey
                                 | crate::app::SetupField::Model
@@ -173,8 +172,7 @@ pub(crate) fn handle_mouse_event(
                 let clicked_line = scroll_y + usize::from(click_y - rect.y);
 
                 let mut clicked_msg_idx = None;
-                for &(msg_idx, start_line, end_line) in
-                    app.chat.message_line_ranges.borrow().iter()
+                for &(msg_idx, start_line, end_line) in app.chat.message_line_ranges.borrow().iter()
                 {
                     if clicked_line >= start_line && clicked_line < end_line {
                         clicked_msg_idx = Some(msg_idx);
@@ -187,9 +185,7 @@ pub(crate) fn handle_mouse_event(
                 {
                     app.chat.selection = None;
                     app.chat.last_mouse_drag_pos = None;
-                    if let Some(session_id) =
-                        app.chat.messages[msg_idx].shell_session_id.clone()
-                    {
+                    if let Some(session_id) = app.chat.messages[msg_idx].shell_session_id.clone() {
                         {
                             let mut guard = ACTIVE_PERSISTENT_SESSION_ID.lock();
                             let opt: &mut Option<String> = &mut guard;
@@ -221,12 +217,10 @@ pub(crate) fn handle_mouse_event(
                                 .map(|(_, _, end)| *end)
                                 .unwrap_or(0);
                             let viewport_height = rect.height as usize;
-                            let max_scroll =
-                                total_lines.saturating_sub(viewport_height);
+                            let max_scroll = total_lines.saturating_sub(viewport_height);
                             let msg_height = end_line.saturating_sub(start_line);
                             let mid_line = start_line + msg_height / 2;
-                            let target_scroll_y =
-                                mid_line.saturating_sub(viewport_height / 2);
+                            let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
                             let scroll_val = max_scroll.saturating_sub(target_scroll_y);
                             app.chat.scroll = u16::try_from(scroll_val).unwrap_or(u16::MAX);
                             scrolled = true;
@@ -287,14 +281,11 @@ pub(crate) fn handle_mouse_event(
                                     .map(|(_, _, end)| *end)
                                     .unwrap_or(0);
                                 let viewport_height = rect.height as usize;
-                                let max_scroll =
-                                    total_lines.saturating_sub(viewport_height);
+                                let max_scroll = total_lines.saturating_sub(viewport_height);
                                 let msg_height = end_line.saturating_sub(start_line);
                                 let mid_line = start_line + msg_height / 2;
-                                let target_scroll_y =
-                                    mid_line.saturating_sub(viewport_height / 2);
-                                let scroll_val =
-                                    max_scroll.saturating_sub(target_scroll_y);
+                                let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
+                                let scroll_val = max_scroll.saturating_sub(target_scroll_y);
                                 app.chat.scroll = u16::try_from(scroll_val).unwrap_or(u16::MAX);
                                 scrolled = true;
                             }
@@ -335,14 +326,11 @@ pub(crate) fn handle_mouse_event(
                                     .map(|(_, _, end)| *end)
                                     .unwrap_or(0);
                                 let viewport_height = rect.height as usize;
-                                let max_scroll =
-                                    total_lines.saturating_sub(viewport_height);
+                                let max_scroll = total_lines.saturating_sub(viewport_height);
                                 let msg_height = end_line.saturating_sub(start_line);
                                 let mid_line = start_line + msg_height / 2;
-                                let target_scroll_y =
-                                    mid_line.saturating_sub(viewport_height / 2);
-                                let scroll_val =
-                                    max_scroll.saturating_sub(target_scroll_y);
+                                let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
+                                let scroll_val = max_scroll.saturating_sub(target_scroll_y);
                                 app.chat.scroll = u16::try_from(scroll_val).unwrap_or(u16::MAX);
                                 scrolled = true;
                             }
@@ -438,7 +426,8 @@ pub(crate) fn handle_mouse_event(
                         .iter()
                         .find(|&&(idx, _, _)| idx == sel.msg_idx)
                     {
-                        let clamped_line = clicked_line.clamp(start_line, end_line.saturating_sub(1));
+                        let clamped_line =
+                            clicked_line.clamp(start_line, end_line.saturating_sub(1));
                         let rel_line = clamped_line.saturating_sub(start_line);
 
                         let text_start_x = rect.x + 6;
@@ -538,38 +527,38 @@ pub(crate) fn update_selection_on_scroll(app: &mut App, click_x: u16, click_y: u
         && let Some(ref mut sel) = app.chat.selection
     {
         let clamped_y = click_y.clamp(rect.y, rect.y + rect.height - 1);
-            let total_lines = app
-                .chat
-                .message_line_ranges
-                .borrow()
-                .last()
-                .map(|(_, _, end)| *end)
-                .unwrap_or(0);
-            let viewport_height = rect.height as usize;
-            let max_scroll = total_lines.saturating_sub(viewport_height);
-            let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
-            let scroll_y = max_scroll.saturating_sub(scroll_offset);
+        let total_lines = app
+            .chat
+            .message_line_ranges
+            .borrow()
+            .last()
+            .map(|(_, _, end)| *end)
+            .unwrap_or(0);
+        let viewport_height = rect.height as usize;
+        let max_scroll = total_lines.saturating_sub(viewport_height);
+        let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
+        let scroll_y = max_scroll.saturating_sub(scroll_offset);
 
-            let clicked_line = scroll_y + usize::from(clamped_y - rect.y);
-            if let Some(&(_, start_line, end_line)) = app
-                .chat
-                .message_line_ranges
-                .borrow()
-                .iter()
-                .find(|&&(idx, _, _)| idx == sel.msg_idx)
-            {
-                let clamped_line = clicked_line.clamp(start_line, end_line.saturating_sub(1));
-                let rel_line = clamped_line.saturating_sub(start_line);
+        let clicked_line = scroll_y + usize::from(clamped_y - rect.y);
+        if let Some(&(_, start_line, end_line)) = app
+            .chat
+            .message_line_ranges
+            .borrow()
+            .iter()
+            .find(|&&(idx, _, _)| idx == sel.msg_idx)
+        {
+            let clamped_line = clicked_line.clamp(start_line, end_line.saturating_sub(1));
+            let rel_line = clamped_line.saturating_sub(start_line);
 
-                let text_start_x = rect.x + 6;
-                let rel_col = if click_x >= text_start_x {
-                    usize::from(click_x - text_start_x)
-                } else {
-                    0
-                };
+            let text_start_x = rect.x + 6;
+            let rel_col = if click_x >= text_start_x {
+                usize::from(click_x - text_start_x)
+            } else {
+                0
+            };
 
-                sel.end_line = rel_line;
-                sel.end_col = rel_col;
-            }
+            sel.end_line = rel_line;
+            sel.end_col = rel_col;
         }
     }
+}
