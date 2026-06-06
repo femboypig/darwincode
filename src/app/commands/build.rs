@@ -1,5 +1,5 @@
-use crate::app::core::{App, DevelopMode};
 use crate::app::chat::MessageLine;
+use crate::app::core::{App, DevelopMode};
 
 pub fn run(app: &mut App) {
     app.core.dev_mode = DevelopMode::Build;
