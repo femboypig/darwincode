@@ -1,5 +1,5 @@
-use crate::app::core::App;
 use crate::app::chat::MessageLine;
+use crate::app::core::App;
 
 pub fn run(app: &mut App) {
     if app.proc.last_file_backups.is_empty() {
@@ -30,8 +30,8 @@ pub fn run(app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::StoredConfig;
     use crate::app::core::FileBackup;
+    use crate::config::StoredConfig;
 
     #[test]
     fn test_undo_empty() {
@@ -82,9 +82,12 @@ mod tests {
         assert!(!file2.exists());
 
         assert!(!app.chat.messages.is_empty());
-        assert!(app.chat.messages[0].text.contains("Undo completed successfully"));
+        assert!(
+            app.chat.messages[0]
+                .text
+                .contains("Undo completed successfully")
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-
