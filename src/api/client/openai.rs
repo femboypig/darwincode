@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::too_many_arguments)]
+
 use anyhow::{Context, Result};
 use std::io::BufRead;
 use crate::api::types::{ChatMessage, Content, GeminiResponse, FunctionDeclaration};
