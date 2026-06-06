@@ -1,1 +1,3 @@
 target/
+.darwincode/config.json
+.darwincode/.env
