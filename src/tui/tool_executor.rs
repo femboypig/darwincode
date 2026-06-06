@@ -8,7 +8,9 @@ use std::fmt::Write;
 
 use crate::api::{GeminiClient, GeminiResponse};
 use crate::config::StoredConfig;
-use crate::app::{FunctionAction, WorkerEvent};
+use crate::app::FunctionAction;
+use crate::tui::WorkerEvent;
+
 
 pub(crate) enum PathSafety {
     Safe,
