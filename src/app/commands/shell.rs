@@ -82,15 +82,10 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
             *app.chat.message_line_ranges.borrow_mut() = Vec::new();
             app.status = "Ready".to_owned();
             found = true;
-        } else if let Ok(guard) = crate::tui::RUNNING_PROCESS_PID.lock()
-            && let Some(pid) = *guard
+        } else if let Some(pid) = *crate::tui::RUNNING_PROCESS_PID.lock()
             && pid.to_string() == session_id
         {
-            if let Ok(mut active_guard) =
-                crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock()
-            {
-                *active_guard = None;
-            }
+            *crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock() = None;
             app.chat.focused_shell_session_id = None;
             app.chat.focused_shell_pid = Some(pid);
             app.chat.shell_focused = true;
@@ -148,11 +143,7 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
             found = true;
         } else if is_bg_process {
             let pid = session_id.parse::<u32>().unwrap();
-            if let Ok(mut active_guard) =
-                crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock()
-            {
-                *active_guard = None;
-            }
+            *crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock() = None;
             app.chat.focused_shell_session_id = None;
             app.chat.focused_shell_pid = Some(pid);
             app.chat.shell_focused = true;
@@ -218,16 +209,16 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
     } else {
         // List all active sessions
         let registry = crate::tui::PERSISTENT_SESSIONS
-            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+            .get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
 
         let mut session_infos = Vec::new();
 
         // 1. Persistent Sessions
         {
-            let map = registry.lock().unwrap();
+            let map = registry.lock();
             for (id, session) in map.iter() {
                 let is_running =
-                    matches!(session.child.lock().unwrap().try_wait(), Ok(None));
+                    matches!(session.child.lock().try_wait(), Ok(None));
                 if is_running {
                     let active_str = if app.chat.shell_focused
                         && app.chat.focused_shell_session_id.as_ref() == Some(id)
@@ -246,11 +237,11 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
 
         // 2. Non-persistent Background Processes
         let bg_registry = crate::tui::BACKGROUND_PROCESSES
-            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+            .get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
         {
-            let map = bg_registry.lock().unwrap();
+            let map = bg_registry.lock();
             for (pid, proc) in map.iter() {
-                let is_running = proc.exit_status.lock().unwrap().is_none();
+                let is_running = proc.exit_status.lock().is_none();
                 if is_running {
                     session_infos.push(format!(
                         "- **Background Process: {}** (PID: {}) [active]",
@@ -261,8 +252,7 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
         }
 
         // 3. Foreground Process
-        if let Ok(guard) = crate::tui::RUNNING_PROCESS_PID.lock()
-            && let Some(pid) = *guard
+        if let Some(pid) = *crate::tui::RUNNING_PROCESS_PID.lock()
         {
             let is_focused =
                 app.chat.shell_focused && app.chat.focused_shell_pid == Some(pid);
