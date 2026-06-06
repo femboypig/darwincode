@@ -21,6 +21,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
         Block::default().style(Style::default().bg(modal_bg)),
         popup_area,
     );
+    app.ui.setup.modal_area.set(Some(popup_area));
 
     let margin = 1u16;
     let content = Rect {
@@ -205,7 +206,7 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
             .constraints([
                 Constraint::Length(2),
                 Constraint::Length(1),
-                Constraint::Length(18),
+                Constraint::Length(22),
                 Constraint::Length(1),
                 Constraint::Min(1),
             ])
