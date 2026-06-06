@@ -491,7 +491,7 @@ pub fn rebuild_messages_from_history(
     show_thoughts: bool,
 ) -> Vec<MessageLine> {
     let mut messages = Vec::new();
-    let mut last_function_call = None;
+    let mut last_function_call: Option<(String, serde_json::Value)> = None;
 
     for msg in history {
         match msg.role.as_str() {
@@ -579,7 +579,6 @@ pub fn rebuild_messages_from_history(
                         };
                         if name == "sh" {
                             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
-                            let mut output = String::new();
                             let mut success = true;
 
                             let mut is_aborted = false;
