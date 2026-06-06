@@ -1573,3 +1573,127 @@ fn parse_ddg_html(html: &str) -> Vec<Value> {
     }
     results
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_html_to_plain_text() {
+        let html = "<html><head><title>Test</title><style>body { color: red; }</style></head>\
+                    <body><h1>Hello World</h1><script>console.log('test');</script>\
+                    <p>This is a <b>test</b> of the scraper.</p></body></html>";
+        let text = html_to_plain_text(html);
+        assert_eq!(text, "Test Hello World This is a test of the scraper.");
+    }
+
+    #[test]
+    fn test_parse_ddg_html() {
+        let html = r#"
+            <div class="result">
+                <a class="result__a" href="https://example.com/uddg=https%3A%2F%2Fexample.com%2Fpage%26amp%3Bfoo">Example Title</a>
+                <span class="result__snippet">This is a snippet.</span>
+            </div>
+        "#;
+        let results = parse_ddg_html(html);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["title"], "Example Title");
+        assert_eq!(results[0]["url"], "https://example.com/page");
+        assert_eq!(results[0]["snippet"], "This is a snippet.");
+    }
+
+    #[test]
+    fn test_handle_function_action_blocked_tool() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let config = crate::config::StoredConfig {
+            active_agent: Some("reviewer".to_owned()),
+            ..Default::default()
+        };
+
+        if let Some(proj_root) = crate::config::find_project_root() {
+            let agent_dir = proj_root.join(".darwincode").join("agents");
+            let _ = std::fs::create_dir_all(&agent_dir);
+            let reviewer_path = agent_dir.join("reviewer.toml");
+            let _ = std::fs::write(
+                &reviewer_path,
+                r#"
+name = "Reviewer"
+allowed_tools = ["read"]
+system_prompt = "Review only."
+"#,
+            );
+
+            handle_function_action(
+                FunctionAction::Execute {
+                    name: "sh".to_owned(),
+                    args: serde_json::json!({ "command": "echo hello" }),
+                    config,
+                },
+                &sender,
+            );
+
+            if let Ok(WorkerEvent::ToolResult(name, result)) =
+                receiver.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                assert_eq!(name, "sh");
+                let err = result.get("error").and_then(|v| v.as_str()).unwrap_or("");
+                assert!(err.contains("Permission denied"));
+            } else {
+                panic!("Did not receive expected ToolResult");
+            }
+
+            let _ = std::fs::remove_file(&reviewer_path);
+        }
+    }
+
+    #[test]
+    fn test_should_ignore() {
+        let base_dir = crate::config::find_project_root()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        let rules_vec = vec![
+            "target".to_owned(),
+            ".darwincode".to_owned(),
+            "secret_data.txt".to_owned(),
+            "src/*.txt".to_owned(),
+        ];
+        let rules = compile_rules(&rules_vec);
+
+        assert!(should_ignore(&base_dir.join("secret_data.txt"), &rules));
+        assert!(should_ignore(&base_dir.join("target"), &rules));
+        assert!(should_ignore(
+            &base_dir.join("target").join("debug").join("main"),
+            &rules
+        ));
+        assert!(should_ignore(
+            &base_dir.join("src").join("notes.txt"),
+            &rules
+        ));
+        assert!(!should_ignore(
+            &base_dir.join("src").join("main.rs"),
+            &rules
+        ));
+        assert!(should_ignore(
+            &base_dir.join(".darwincode").join("config.json"),
+            &rules
+        ));
+
+        // Relative path checks
+        assert!(should_ignore(
+            std::path::Path::new("secret_data.txt"),
+            &rules
+        ));
+        assert!(should_ignore(std::path::Path::new("target"), &rules));
+        assert!(should_ignore(
+            std::path::Path::new("target/debug/main"),
+            &rules
+        ));
+        assert!(should_ignore(std::path::Path::new("src/notes.txt"), &rules));
+        assert!(!should_ignore(std::path::Path::new("src/main.rs"), &rules));
+        assert!(should_ignore(
+            std::path::Path::new(".darwincode/config.json"),
+            &rules
+        ));
+    }
+}
+
