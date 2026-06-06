@@ -5,134 +5,121 @@ use aes_gcm::{
 use anyhow::{Result, bail};
 use sha2::{Digest, Sha256};
 
-/// Derive a secure, hardware-bound 256-bit symmetric key by hashing machine-id and user details.
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn from_hex(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    let mut res = Vec::with_capacity(s.len() / 2);
+    let chars: Vec<char> = s.chars().collect();
+    for i in (0..s.len()).step_by(2) {
+        let high = chars[i].to_digit(16)?;
+        let low = chars[i + 1].to_digit(16)?;
+        res.push((high * 16 + low) as u8);
+    }
+    Some(res)
+}
+
+pub fn is_home_appdata_missing() -> bool {
+    std::env::var_os("XDG_CONFIG_HOME").is_none()
+        && std::env::var_os("APPDATA").is_none()
+        && std::env::var_os("HOME").is_none()
+        && std::env::var_os("USERPROFILE").is_none()
+}
+
+/// Derive a secure, hardware-bound 256-bit symmetric key.
 pub fn derive_hardware_key() -> Result<[u8; 32]> {
     static KEY_CACHE: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
     if let Some(key) = KEY_CACHE.get() {
         return Ok(*key);
     }
 
-    let mut hasher = Sha256::new();
-
-    // Read local machine-id in a robust cross-platform manner
-    let mut machine_id = String::new();
-
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(id) = std::fs::read_to_string("/etc/machine-id") {
-            machine_id = id.trim().to_owned();
-        } else if let Ok(id) = std::fs::read_to_string("/var/lib/dbus/machine-id") {
-            machine_id = id.trim().to_owned();
-        }
+    if is_home_appdata_missing() {
+        bail!("Encryption disabled because HOME/APPDATA is missing");
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(output) = std::process::Command::new("reg")
-            .args(&[
-                "query",
-                "HKLM\\SOFTWARE\\Microsoft\\Cryptography",
-                "/v",
-                "MachineGuid",
-            ])
-            .output()
-        {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(guid_line) = stdout.lines().find(|l| l.contains("MachineGuid")) {
-                if let Some(guid) = guid_line.split_whitespace().last() {
-                    machine_id = guid.trim().to_owned();
+    // Try to retrieve key from secure keyring first
+    if let Ok(entry) = keyring::Entry::new("darwincode", "encryption_key") {
+        if let Ok(password) = entry.get_password() {
+            if let Some(key_bytes) = from_hex(&password) {
+                if key_bytes.len() == 32 {
+                    let mut key = [0u8; 32];
+                    key.copy_from_slice(&key_bytes);
+                    let _ = KEY_CACHE.set(key);
+                    return Ok(key);
                 }
             }
         }
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(output) = std::process::Command::new("ioreg")
-            .args(&["-rd1", "-c", "IOPlatformExpertDevice"])
-            .output()
-        {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(uuid_line) = stdout.lines().find(|l| l.contains("IOPlatformUUID")) {
-                if let Some(uuid) = uuid_line.split('=').last() {
-                    machine_id = uuid.replace('"', "").trim().to_owned();
-                }
-            }
-        }
-    }
+    // Fallback: machine-id file
+    let base_dir = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
+        })
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(|home| std::path::PathBuf::from(home).join(".config"))
+        });
 
-    if machine_id.is_empty() {
-        // Retrieve config directory to store/load a persistent unique machine-id
-        let base_dir = std::env::var_os("XDG_CONFIG_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
-            .or_else(|| {
-                std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
-            })
-            .or_else(|| {
-                std::env::var_os("USERPROFILE")
-                    .map(|home| std::path::PathBuf::from(home).join(".config"))
-            });
+    if let Some(base) = base_dir {
+        let darwincode_dir = base.join("darwincode");
+        let _ = std::fs::create_dir_all(&darwincode_dir);
+        let machine_id_path = darwincode_dir.join("machine-id");
+        let mut key_hex = String::new();
 
-        if let Some(base) = base_dir {
-            let darwincode_dir = base.join("darwincode");
-            let _ = std::fs::create_dir_all(&darwincode_dir);
-            let machine_id_path = darwincode_dir.join("machine-id");
-            if let Ok(id) = std::fs::read_to_string(&machine_id_path) {
-                machine_id = id.trim().to_owned();
-            } else {
-                // Generate a random stable key
-                let mut bytes = [0u8; 32];
-                rand::fill(&mut bytes);
-                let hex_id = bytes
-                    .iter()
-                    .map(|b| format!("{:02x}", b))
-                    .collect::<String>();
-
-                // Write with secure permissions on unix
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::OpenOptionsExt;
-                    if let Ok(mut file) = std::fs::OpenOptions::new()
-                        .create(true)
-                        .write(true)
-                        .truncate(true)
-                        .mode(0o600)
-                        .open(&machine_id_path)
-                    {
-                        use std::io::Write;
-                        let _ = write!(file, "{}", hex_id);
-                    }
-                }
-                #[cfg(not(unix))]
-                {
-                    let _ = std::fs::write(&machine_id_path, &hex_id);
-                }
-                machine_id = hex_id;
-            }
+        if let Ok(id) = std::fs::read_to_string(&machine_id_path) {
+            key_hex = id.trim().to_owned();
         } else {
-            // Extreme fallback if home path cannot be determined at all
-            machine_id = "ultimate-emergency-fallback-key-998".to_owned();
+            let mut bytes = [0u8; 32];
+            rand::fill(&mut bytes);
+            let hex_id = to_hex(&bytes);
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .mode(0o600)
+                    .open(&machine_id_path)
+                {
+                    use std::io::Write;
+                    let _ = write!(file, "{}", hex_id);
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = std::fs::write(&machine_id_path, &hex_id);
+            }
+            key_hex = hex_id;
+        }
+
+        if let Some(key_bytes) = from_hex(&key_hex) {
+            if key_bytes.len() == 32 {
+                let mut key = [0u8; 32];
+                key.copy_from_slice(&key_bytes);
+
+                // Store in keyring for future fast/secure lookup
+                if let Ok(entry) = keyring::Entry::new("darwincode", "encryption_key") {
+                    let _ = entry.set_password(&to_hex(&key));
+                }
+
+                let _ = KEY_CACHE.set(key);
+                return Ok(key);
+            }
         }
     }
 
-    let username = std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "default_user".to_owned());
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| "/".to_owned());
-
-    hasher.update(machine_id.as_bytes());
-    hasher.update(username.as_bytes());
-    hasher.update(home.as_bytes());
-
-    let hash = hasher.finalize();
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&hash);
-    let _ = KEY_CACHE.set(key);
-    Ok(key)
+    bail!("Failed to retrieve or generate encryption key")
 }
+
 
 /// Encrypt data using AES-256-GCM
 pub fn encrypt_data(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
