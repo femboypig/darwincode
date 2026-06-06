@@ -17,7 +17,7 @@ pub(crate) fn handle_chat_key(
     key: KeyEvent,
 ) -> Result<()> {
     if matches!(
-        app.pending,
+        app.proc.pending,
         Some(crate::app::PendingTask::ConfirmFunction { .. })
     ) {
         if app
@@ -39,20 +39,20 @@ pub(crate) fn handle_chat_key(
                 }
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                app.confirm_scroll
-                    .set(app.confirm_scroll.get().saturating_add(1));
+                app.ui.confirm_scroll
+                    .set(app.ui.confirm_scroll.get().saturating_add(1));
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                app.confirm_scroll
-                    .set(app.confirm_scroll.get().saturating_sub(1));
+                app.ui.confirm_scroll
+                    .set(app.ui.confirm_scroll.get().saturating_sub(1));
             }
             KeyCode::PageDown => {
-                app.confirm_scroll
-                    .set(app.confirm_scroll.get().saturating_add(10));
+                app.ui.confirm_scroll
+                    .set(app.ui.confirm_scroll.get().saturating_add(10));
             }
             KeyCode::PageUp => {
-                app.confirm_scroll
-                    .set(app.confirm_scroll.get().saturating_sub(10));
+                app.ui.confirm_scroll
+                    .set(app.ui.confirm_scroll.get().saturating_sub(10));
             }
             _ => {
                 if app
@@ -67,15 +67,15 @@ pub(crate) fn handle_chat_key(
         return Ok(());
     }
 
-    if app.model_picker_open {
+    if app.ui.model_picker_open {
         return handle_model_picker_key(app, key);
     }
 
-    if app.theme_picker_open {
+    if app.ui.theme_picker_open {
         return handle_theme_picker_key(app, key);
     }
 
-    if app.agent_picker_open {
+    if app.ui.agent_picker_open {
         return handle_agent_picker_key(app, key);
     }
 
@@ -309,11 +309,11 @@ pub(crate) fn handle_chat_key(
             }
         }
 
-        if app.pending.is_some()
+        if app.proc.pending.is_some()
             || app.chat.focused_shell_pid.is_some()
             || is_running_process
             || is_active_persistent
-            || app.cancel_token.is_some()
+            || app.proc.cancel_token.is_some()
             || has_running_command_in_history
         {
             handle_interrupt_signal(app);
@@ -633,29 +633,29 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
             app.select_next_model();
         }
         KeyCode::PageUp => {
-            let len = app.models.filtered_indices().len();
+            let len = app.ui.models.filtered_indices().len();
             for _ in 0..5 {
                 if len > 0 {
-                    app.models.selected = app.models.selected.checked_sub(1).unwrap_or(len - 1);
+                    app.ui.models.selected = app.ui.models.selected.checked_sub(1).unwrap_or(len - 1);
                 }
             }
         }
         KeyCode::PageDown => {
-            let len = app.models.filtered_indices().len();
+            let len = app.ui.models.filtered_indices().len();
             for _ in 0..5 {
                 if len > 0 {
-                    app.models.selected = (app.models.selected + 1) % len;
+                    app.ui.models.selected = (app.ui.models.selected + 1) % len;
                 }
             }
         }
         KeyCode::Backspace => {
-            app.models.pop_query();
+            app.ui.models.pop_query();
         }
         KeyCode::Char(c)
             if !key.modifiers.contains(KeyModifiers::CONTROL)
                 && !key.modifiers.contains(KeyModifiers::ALT) =>
         {
-            app.models.push_query(c);
+            app.ui.models.push_query(c);
         }
         _ => {}
     }
@@ -685,30 +685,30 @@ fn handle_theme_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
             app.select_next_theme();
         }
         KeyCode::PageUp => {
-            let len = app.theme_picker.filtered_indices().len();
+            let len = app.ui.theme_picker.filtered_indices().len();
             for _ in 0..5 {
                 if len > 0 {
-                    app.theme_picker.selected =
-                        app.theme_picker.selected.checked_sub(1).unwrap_or(len - 1);
+                    app.ui.theme_picker.selected =
+                        app.ui.theme_picker.selected.checked_sub(1).unwrap_or(len - 1);
                 }
             }
         }
         KeyCode::PageDown => {
-            let len = app.theme_picker.filtered_indices().len();
+            let len = app.ui.theme_picker.filtered_indices().len();
             for _ in 0..5 {
                 if len > 0 {
-                    app.theme_picker.selected = (app.theme_picker.selected + 1) % len;
+                    app.ui.theme_picker.selected = (app.ui.theme_picker.selected + 1) % len;
                 }
             }
         }
         KeyCode::Backspace => {
-            app.theme_picker.pop_query();
+            app.ui.theme_picker.pop_query();
         }
         KeyCode::Char(c)
             if !key.modifiers.contains(KeyModifiers::CONTROL)
                 && !key.modifiers.contains(KeyModifiers::ALT) =>
         {
-            app.theme_picker.push_query(c);
+            app.ui.theme_picker.push_query(c);
         }
         _ => {}
     }
@@ -738,30 +738,30 @@ fn handle_agent_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
             app.select_next_agent();
         }
         KeyCode::PageUp => {
-            let len = app.agent_picker.filtered_indices().len();
+            let len = app.ui.agent_picker.filtered_indices().len();
             for _ in 0..5 {
                 if len > 0 {
-                    app.agent_picker.selected =
-                        app.agent_picker.selected.checked_sub(1).unwrap_or(len - 1);
+                    app.ui.agent_picker.selected =
+                        app.ui.agent_picker.selected.checked_sub(1).unwrap_or(len - 1);
                 }
             }
         }
         KeyCode::PageDown => {
-            let len = app.agent_picker.filtered_indices().len();
+            let len = app.ui.agent_picker.filtered_indices().len();
             for _ in 0..5 {
                 if len > 0 {
-                    app.agent_picker.selected = (app.agent_picker.selected + 1) % len;
+                    app.ui.agent_picker.selected = (app.ui.agent_picker.selected + 1) % len;
                 }
             }
         }
         KeyCode::Backspace => {
-            app.agent_picker.pop_query();
+            app.ui.agent_picker.pop_query();
         }
         KeyCode::Char(c)
             if !key.modifiers.contains(KeyModifiers::CONTROL)
                 && !key.modifiers.contains(KeyModifiers::ALT) =>
         {
-            app.agent_picker.push_query(c);
+            app.ui.agent_picker.push_query(c);
         }
         _ => {}
     }
