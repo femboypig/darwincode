@@ -1,12 +1,11 @@
 use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
-use std::sync::Arc;
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::fmt::Write;
 
-use crate::api::{GeminiClient, GeminiResponse};
+use crate::api::GeminiClient;
 use crate::config::StoredConfig;
 use crate::app::FunctionAction;
 use crate::tui::WorkerEvent;
@@ -70,7 +69,7 @@ pub(crate) fn check_path_safety(path: &std::path::Path) -> PathSafety {
     PathSafety::Prompt
 }
 
-fn prompt_user_permission(question: &str, sender: &Sender<WorkerEvent>) -> String {
+fn prompt_user_permission(question: &str, _sender: &Sender<WorkerEvent>) -> String {
     let (tx, rx) = std::sync::mpsc::channel();
     *crate::tui::ASK_USER_CHANNEL.lock() = Some((tx, question.to_owned(), vec!["yes".to_owned(), "no".to_owned()]));
     let answer = rx.recv().unwrap_or_default();
