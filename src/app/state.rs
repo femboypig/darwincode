@@ -192,66 +192,64 @@ impl App {
                 .unwrap_or(false)
                 || part.get("thought_signature").is_some();
 
-            if is_thought {
-                if let Some(text) = part.get("text").and_then(|v| v.as_str())
-                    && !text.is_empty()
-                {
-                    if show_thoughts {
-                        let last_is_thinking = self.chat.messages.last().is_some_and(|m| {
-                            m.author == "Darwin"
-                                && !m.pending
-                                && !m.is_shell
-                                && !m.is_tool
-                                && m.text.starts_with("Thinking:")
-                        });
-                        if last_is_thinking {
-                            self.append_to_chat_messages("Darwin", text.to_owned());
-                        } else {
-                            self.append_to_chat_messages("Darwin", format!("Thinking: {}", text));
-                        }
-                    } else {
-                        if self
-                            .chat
-                            .messages
-                            .last()
-                            .is_none_or(|m| m.text != "Thinking...")
-                        {
-                            self.chat
-                                .messages
-                                .push(MessageLine::assistant("Thinking...".to_owned()));
-                        }
+            let text = match part.get("text").and_then(|v| v.as_str()) {
+                Some(t) if !t.is_empty() => t,
+                _ => {
+                    if is_thought {
+                        self.chat.last_chunk_was_thought = true;
                     }
+                    continue;
+                }
+            };
+
+            if is_thought {
+                if show_thoughts {
+                    let last_is_thinking = self.chat.messages.last().is_some_and(|m| {
+                        m.author == "Darwin"
+                            && !m.pending
+                            && !m.is_shell
+                            && !m.is_tool
+                            && m.text.starts_with("Thinking:")
+                    });
+                    if last_is_thinking {
+                        self.append_to_chat_messages("Darwin", text.to_owned());
+                    } else {
+                        self.append_to_chat_messages("Darwin", format!("Thinking: {}", text));
+                    }
+                } else if self
+                    .chat
+                    .messages
+                    .last()
+                    .is_none_or(|m| m.text != "Thinking...")
+                {
+                    self.chat
+                        .messages
+                        .push(MessageLine::assistant("Thinking...".to_owned()));
                 }
                 self.chat.last_chunk_was_thought = true;
                 continue;
             }
 
-            if let Some(text) = part.get("text").and_then(|v| v.as_str())
-                && !text.is_empty()
-            {
-                if self.chat.last_chunk_was_thought {
-                    if show_thoughts {
-                        let clean_text = text.trim_start_matches('\n').trim_start_matches('\r');
-                        self.append_to_chat_messages("Darwin", format!("\n\n{}", clean_text));
-                    } else {
-                        if let Some(msg) = self.chat.messages.last_mut()
-                            && msg.author == "Darwin"
-                            && msg.text == "Thinking..."
-                        {
-                            msg.text = text
-                                .trim_start_matches('\n')
-                                .trim_start_matches('\r')
-                                .to_owned();
-                            *msg.cached_wrapped.borrow_mut() = None;
-                        } else {
-                            self.append_to_chat_messages("Darwin", text.to_owned());
-                        }
-                    }
+            if self.chat.last_chunk_was_thought {
+                if show_thoughts {
+                    let clean_text = text.trim_start_matches('\n').trim_start_matches('\r');
+                    self.append_to_chat_messages("Darwin", format!("\n\n{}", clean_text));
+                } else if let Some(msg) = self.chat.messages.last_mut()
+                    && msg.author == "Darwin"
+                    && msg.text == "Thinking..."
+                {
+                    msg.text = text
+                        .trim_start_matches('\n')
+                        .trim_start_matches('\r')
+                        .to_owned();
+                    *msg.cached_wrapped.borrow_mut() = None;
                 } else {
                     self.append_to_chat_messages("Darwin", text.to_owned());
                 }
-                self.chat.last_chunk_was_thought = false;
+            } else {
+                self.append_to_chat_messages("Darwin", text.to_owned());
             }
+            self.chat.last_chunk_was_thought = false;
         }
 
         self.chat.scroll = 0;
