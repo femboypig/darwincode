@@ -121,11 +121,12 @@ pub struct App {
     pub status: String,
     pub tick: usize,
     pub should_quit: bool,
+    pub last_warning: Option<String>,
 }
 
 impl App {
     pub fn new(config: Option<StoredConfig>) -> Self {
-        let keybindings = crate::tui::keybindings::load_keybindings();
+        let (keybindings, kb_warning) = crate::tui::keybindings::load_keybindings();
         let sessions_cache = std::sync::Arc::new(std::sync::Mutex::new(None));
         let cache_clone = sessions_cache.clone();
         std::thread::spawn(move || {
@@ -135,6 +136,12 @@ impl App {
                 *guard = Some(sessions);
             }
         });
+
+        let last_warning = if crate::crypto::is_home_appdata_missing() {
+            Some("PLAIN-TEXT CONFIG: HOME NOT DEFINED".to_owned())
+        } else {
+            kb_warning
+        };
 
         match config {
             Some(config) => {
@@ -181,6 +188,7 @@ impl App {
                     status: "Ready".to_owned(),
                     tick: 0,
                     should_quit: false,
+                    last_warning,
                 }
             }
             None => {
@@ -225,6 +233,7 @@ impl App {
                     status: "Enter a Gemini API key. Use Tab to move, Enter to run an action.".to_owned(),
                     tick: 0,
                     should_quit: false,
+                    last_warning,
                 }
             }
         }
