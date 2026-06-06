@@ -199,4 +199,39 @@ mod tests {
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_apply_transactional_edits_rollback_on_write_failure() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "darwin_tx_test_{}",
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let file1 = temp_dir.join("a.txt");
+        fs::write(&file1, "original").unwrap();
+
+        // The second edit points to a directory that cannot be created (e.g. under root /)
+        // because we don't run as root, so create_dir_all will fail with PermissionDenied.
+        let edits = vec![
+            Edit {
+                path: file1.to_str().unwrap().to_owned(),
+                old: "original".to_owned(),
+                new: "modified".to_owned(),
+            },
+            Edit {
+                path: "/invalid-path-xyz/file.txt".to_owned(),
+                old: "".to_owned(),
+                new: "some content".to_owned(),
+            },
+        ];
+
+        let res = apply_transactional_edits(&edits);
+        assert!(res.is_err());
+
+        // The first file should have been rolled back to "original"
+        assert_eq!(fs::read_to_string(&file1).unwrap(), "original");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
 }
