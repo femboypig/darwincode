@@ -138,11 +138,31 @@ impl App {
             }
         });
 
-        let last_warning = if crate::crypto::is_home_appdata_missing() {
+        let mut last_warning = if crate::crypto::is_home_appdata_missing() {
             Some("PLAIN-TEXT CONFIG: HOME NOT DEFINED".to_owned())
         } else {
             kb_warning
         };
+
+        let mut config = config;
+        let mut theme_warning = None;
+        if let Some(ref mut cfg) = config {
+            if let crate::config::Theme::Custom(ref name) = cfg.theme {
+                if !crate::tui::theme::custom_themes().contains_key(name) {
+                    eprintln!("[darwincode] Custom theme '{}' not found in registry. Falling back to default theme.", name);
+                    theme_warning = Some(format!("Theme '{}' not found, falling back to default", name));
+                    cfg.theme = crate::config::Theme::default();
+                }
+            }
+        }
+
+        if let Some(ref tw) = theme_warning {
+            if let Some(ref mut w) = last_warning {
+                *w = format!("{} | {}", w, tw);
+            } else {
+                last_warning = Some(tw.clone());
+            }
+        }
 
         match config {
             Some(config) => {
@@ -182,12 +202,17 @@ impl App {
                     active_agent,
                     pending_custom_command: None,
                 };
+                let status = if let Some(ref tw) = theme_warning {
+                    format!("Warning: {}", tw)
+                } else {
+                    "Ready".to_owned()
+                };
                 Self {
                     ui,
                     proc,
                     core,
                     chat: ChatState::new(config),
-                    status: "Ready".to_owned(),
+                    status,
                     tick: 0,
                     should_quit: false,
                     last_warning,
@@ -315,5 +340,27 @@ impl App {
         }
 
         self.status = format!("Loaded {} models", self.ui.setup.models.len());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Theme;
+
+    #[test]
+    fn test_invalid_theme_fallback() {
+        let mut config = StoredConfig::default();
+        config.theme = Theme::Custom("nonexistent_theme_9999".to_owned());
+        let app = App::new(Some(config));
+        
+        // It should fall back to Theme::Auto (default)
+        assert_eq!(app.chat.config.theme, Theme::Auto);
+        
+        // It should log a warning in app.last_warning
+        assert!(app.last_warning.is_some());
+        let warning = app.last_warning.unwrap();
+        assert!(warning.contains("Theme 'nonexistent_theme_9999' not found"));
+        assert!(app.status.contains("Theme 'nonexistent_theme_9999' not found"));
     }
 }
