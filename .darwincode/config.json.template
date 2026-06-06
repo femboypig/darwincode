@@ -6,5 +6,5 @@
   "show_thoughts": true,
   "permission_level": "Guardian",
   "theme": "Auto",
-  "respect_gitignore": true
+  "respect_ignore_rules": true
 }
