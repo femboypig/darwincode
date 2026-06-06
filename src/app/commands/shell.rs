@@ -6,25 +6,22 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
         // Switch/focus to a specific session or active process
         let mut found = false;
         let registry = crate::tui::PERSISTENT_SESSIONS
-            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+            .get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
         let has_session = {
-            let map = registry.lock().unwrap();
+            let map = registry.lock();
             map.contains_key(session_id.as_str())
         };
 
         let is_bg_process = {
             let bg_registry = crate::tui::BACKGROUND_PROCESSES.get_or_init(|| {
-                std::sync::Mutex::new(std::collections::HashMap::new())
+                parking_lot::Mutex::new(std::collections::HashMap::new())
             });
-            let map = bg_registry.lock().unwrap();
+            let map = bg_registry.lock();
             map.keys().any(|k| k.to_string() == session_id)
         };
 
         if has_session {
-            if let Ok(mut guard) = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock() {
-                let opt: &mut Option<String> = &mut guard;
-                *opt = Some(session_id.clone());
-            }
+            *crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock() = Some(session_id.clone());
             app.chat.focused_shell_session_id = Some(session_id.clone());
             app.chat.focused_shell_pid = None;
             app.chat.shell_focused = true;
