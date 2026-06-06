@@ -73,7 +73,7 @@ impl ChatCommand {
             "/build" => Self::Build,
             value => {
                 let name = value.trim_start_matches('/');
-                let custom_cmds = crate::app::load_custom_commands();
+                let custom_cmds = crate::app::load_custom_commands(self.config.trust_workspace);
                 if custom_cmds.contains_key(name) {
                     Self::Custom(name.to_owned())
                 } else {
@@ -143,10 +143,10 @@ impl ChatCommand {
             },
         ];
 
-        let custom_cmds = crate::app::load_custom_commands();
+        let custom_cmds = crate::app::load_custom_commands(self.config.trust_workspace);
         let mut sorted_cmds: Vec<_> = custom_cmds.into_iter().collect();
         sorted_cmds.sort_by(|a, b| a.0.cmp(&b.0));
-        for (name, config) in sorted_cmds {
+        for (name, (config, _is_workspace)) in sorted_cmds {
             suggs.push(CommandSuggestion {
                 name: format!("/{}", name),
                 description: config.description.clone(),
