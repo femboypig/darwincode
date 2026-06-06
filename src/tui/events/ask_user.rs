@@ -13,8 +13,12 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
             let _ = tx.send("Aborted by user".to_owned());
         }
         app.cancel_generation();
+        if let Some(name) = app.core.pending_custom_command.take() {
+            app.status = format!("Cancelled execution of /{}", name);
+        } else {
+            app.status = "Aborted by user".to_owned();
+        }
         app.ui.screen = Screen::Chat;
-        app.status = "Aborted by user".to_owned();
         return Ok(());
     }
 
@@ -74,6 +78,17 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
                     }
                     app.ui.screen = Screen::Chat;
                     app.status = "Ready".to_owned();
+
+                    if let Some(name) = app.core.pending_custom_command.take() {
+                        if answer == "yes" {
+                            let custom_cmds = crate::app::load_custom_commands(app.chat.config.trust_workspace);
+                            if let Some((config, _)) = custom_cmds.get(&name) {
+                                crate::app::commands::custom::execute_custom_command_internal(app, &name, config);
+                            }
+                        } else {
+                            app.status = format!("Cancelled execution of /{}", name);
+                        }
+                    }
                 }
             }
             _ => {}
