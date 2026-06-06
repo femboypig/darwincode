@@ -81,3 +81,32 @@ impl AgentPickerState {
         self.selected = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_agent_picker_state() {
+        let mut picker = AgentPickerState::new(&None);
+        assert_eq!(picker.selected, 0);
+        assert_eq!(picker.selected_agent().unwrap().0, None);
+
+        picker.agents.push((Some("test-agent".to_owned()), "Test Agent".to_owned()));
+
+        picker.select_next();
+        assert_eq!(picker.selected, 1);
+        assert_eq!(picker.selected_agent().unwrap().0, Some("test-agent".to_owned()));
+
+        picker.push_query('e');
+        let filtered = picker.filtered_indices();
+        // Standard Agent (None) and Test Agent both contain 'e' (case-insensitive)
+        assert_eq!(filtered.len(), 2);
+
+        picker.pop_query();
+        assert_eq!(picker.query, "");
+
+        picker.clear_query();
+        picker.select_previous();
+    }
+}
