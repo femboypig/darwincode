@@ -41,6 +41,91 @@ pub(crate) fn handle_mouse_event(
             let click_x = mouse_event.column;
             let click_y = mouse_event.row;
 
+            if app.ui.screen == crate::app::Screen::Setup {
+                if let Some(rect) = app.ui.setup.modal_area.get()
+                    && click_x >= rect.x
+                    && click_x < rect.x + rect.width
+                    && click_y >= rect.y
+                    && click_y < rect.y + rect.height
+                {
+                    let margin = 1u16;
+                    let content_y = rect.y + margin;
+                    let content_height = rect.height.saturating_sub(margin * 2);
+
+                    let body_y = content_y + 2;
+                    let body_height = content_height.saturating_sub(5) as usize;
+
+                    if click_y >= body_y && click_y < body_y + body_height as u16 {
+                        let offset = (click_y - body_y) as usize;
+                        let total_lines = 10;
+                        let viewport = body_height;
+                        let active_idx = app.ui.setup.active_field.index();
+                        let start = if total_lines <= viewport || active_idx < viewport / 2 {
+                            0
+                        } else if active_idx >= total_lines - viewport / 2 {
+                            total_lines - viewport
+                        } else {
+                            active_idx - viewport / 2
+                        };
+
+                        let idx = start + offset;
+                        if idx < total_lines {
+                            let field = crate::app::SetupField::from_index(idx);
+                            app.ui.setup.active_field = field;
+
+                            match field {
+                                crate::app::SetupField::Save => {
+                                    if let Err(error) = app.save_setup() {
+                                        app.status = error.to_string();
+                                    }
+                                }
+                                crate::app::SetupField::EnableCodebase => {
+                                    app.ui.setup.enable_codebase_tools =
+                                        !app.ui.setup.enable_codebase_tools;
+                                }
+                                crate::app::SetupField::EnableBash => {
+                                    app.ui.setup.enable_bash_tools =
+                                        !app.ui.setup.enable_bash_tools;
+                                }
+                                crate::app::SetupField::RespectIgnoreRules => {
+                                    app.ui.setup.respect_ignore_rules =
+                                        !app.ui.setup.respect_ignore_rules;
+                                }
+                                crate::app::SetupField::ShowThoughts => {
+                                    app.ui.setup.show_thoughts = !app.ui.setup.show_thoughts;
+                                }
+                                crate::app::SetupField::Theme => {
+                                    app.ui.setup.theme = app.ui.setup.theme.next();
+                                }
+                                crate::app::SetupField::PermissionLevel => {
+                                    app.ui.setup.permission_level = match app
+                                        .ui
+                                        .setup
+                                        .permission_level
+                                    {
+                                        crate::config::PermissionLevel::Safe => {
+                                            crate::config::PermissionLevel::Guardian
+                                        }
+                                        crate::config::PermissionLevel::Guardian => {
+                                            crate::config::PermissionLevel::Chaos
+                                        }
+                                        crate::config::PermissionLevel::Chaos => {
+                                            crate::config::PermissionLevel::Safe
+                                        }
+                                    };
+                                }
+                                crate::app::SetupField::ApiKey
+                                | crate::app::SetupField::Model
+                                | crate::app::SetupField::BaseUrl => {
+                                    app.ui.setup.is_editing = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                return Ok(());
+            }
+
             if let Some(rect) = app.chat.mode_area.get()
                 && click_x >= rect.x
                 && click_x < rect.x + rect.width
