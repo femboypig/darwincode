@@ -1,0 +1,9 @@
+# Darwincode workspace ignores
+# Add files or directories to exclude from the workspace scanner.
+target/
+node_modules/
+.git/
+.darwincode/
+dist/
+build/
+*.log
