@@ -366,7 +366,9 @@ mod tests {
     #[test]
     fn test_pasted_images_dir() {
         // Temp home directory to avoid messing with real user config
-        std::env::set_var("HOME", std::env::temp_dir());
+        unsafe {
+            std::env::set_var("HOME", std::env::temp_dir());
+        }
         let dir = pasted_images_dir().unwrap();
         assert!(dir.exists());
         assert!(dir.ends_with("darwincode/pasted_images"));
