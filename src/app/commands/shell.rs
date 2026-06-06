@@ -1,5 +1,5 @@
-use crate::app::core::App;
 use crate::app::chat::MessageLine;
+use crate::app::core::App;
 
 pub fn run(app: &mut App, session_arg: Option<String>) {
     if let Some(session_id) = session_arg {
@@ -13,9 +13,8 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
         };
 
         let is_bg_process = {
-            let bg_registry = crate::tui::BACKGROUND_PROCESSES.get_or_init(|| {
-                parking_lot::Mutex::new(std::collections::HashMap::new())
-            });
+            let bg_registry = crate::tui::BACKGROUND_PROCESSES
+                .get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
             let map = bg_registry.lock();
             map.keys().any(|k| k.to_string() == session_id)
         };
@@ -39,9 +38,7 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
                 .iter()
                 .enumerate()
                 .rev()
-                .find(|(_, m)| {
-                    m.is_shell && m.shell_session_id.as_ref() == Some(&session_id)
-                })
+                .find(|(_, m)| m.is_shell && m.shell_session_id.as_ref() == Some(&session_id))
                 .map(|(idx, _)| idx);
             if let Some(msg_idx) = target_msg_idx
                 && let Some(&(_, start_line, end_line)) = app
@@ -214,8 +211,7 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
         {
             let map = registry.lock();
             for (id, session) in map.iter() {
-                let is_running =
-                    matches!(session.child.lock().try_wait(), Ok(None));
+                let is_running = matches!(session.child.lock().try_wait(), Ok(None));
                 if is_running {
                     let active_str = if app.chat.shell_focused
                         && app.chat.focused_shell_session_id.as_ref() == Some(id)
@@ -249,10 +245,8 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
         }
 
         // 3. Foreground Process
-        if let Some(pid) = *crate::tui::RUNNING_PROCESS_PID.lock()
-        {
-            let is_focused =
-                app.chat.shell_focused && app.chat.focused_shell_pid == Some(pid);
+        if let Some(pid) = *crate::tui::RUNNING_PROCESS_PID.lock() {
+            let is_focused = app.chat.shell_focused && app.chat.focused_shell_pid == Some(pid);
             let active_str = if is_focused { " (focused)" } else { "" };
             session_infos.push(format!(
                 "- **Foreground Process** (PID: {}) [active]{}",
@@ -294,7 +288,11 @@ mod tests {
 
         run(&mut app, None);
         assert!(!app.chat.messages.is_empty());
-        assert!(app.chat.messages[0].text.contains("No active shell sessions"));
+        assert!(
+            app.chat.messages[0]
+                .text
+                .contains("No active shell sessions")
+        );
     }
 
     #[test]
@@ -316,7 +314,7 @@ mod tests {
             .stdin(std::process::Stdio::piped())
             .spawn()
             .unwrap();
-        
+
         let pid_p = child_p.id();
         let stdin_p = child_p.stdin.take().unwrap();
 
@@ -353,10 +351,10 @@ mod tests {
 
         assert!(!app.chat.messages.is_empty());
         let msg = &app.chat.messages[0].text;
-        
+
         // Print for debugging if it fails
         println!("Active sessions message: {}", msg);
-        
+
         // Verify child status
         {
             let reg = registry.lock();
@@ -371,7 +369,10 @@ mod tests {
 
         // Focus persistent session
         run(&mut app, Some("test_sess".to_owned()));
-        assert_eq!(app.chat.focused_shell_session_id, Some("test_sess".to_owned()));
+        assert_eq!(
+            app.chat.focused_shell_session_id,
+            Some("test_sess".to_owned())
+        );
         assert!(app.chat.shell_focused);
 
         // Focus background process
@@ -385,7 +386,12 @@ mod tests {
 
         // Focus nonexistent session
         run(&mut app, Some("nonexistent".to_owned()));
-        assert!(app.chat.messages.iter().any(|m| m.text.contains("not found")));
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("not found"))
+        );
 
         // Cleanup
         if let Some(sess) = registry.lock().remove("test_sess") {
@@ -397,4 +403,3 @@ mod tests {
         *crate::tui::RUNNING_PROCESS_PID.lock() = None;
     }
 }
-
