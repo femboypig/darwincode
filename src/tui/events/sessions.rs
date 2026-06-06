@@ -64,8 +64,8 @@ mod tests {
     fn test_handle_sessions_key_navigation() {
         let mut app = App::new(Some(StoredConfig::default()));
         app.ui.sessions.sessions = vec![
-            crate::app::session::SessionMeta { id: "a".to_owned(), snippet: "a".to_owned(), timestamp: 0 },
-            crate::app::session::SessionMeta { id: "b".to_owned(), snippet: "b".to_owned(), timestamp: 0 },
+            crate::app::session::SessionMeta { id: "a".to_owned(), snippet: "a".to_owned() },
+            crate::app::session::SessionMeta { id: "b".to_owned(), snippet: "b".to_owned() },
         ];
         app.ui.sessions.selected = 0;
 
