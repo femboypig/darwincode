@@ -3,14 +3,13 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
 };
 use anyhow::{Result, bail};
-use sha2::{Digest, Sha256};
 
 fn to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 fn from_hex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     let mut res = Vec::with_capacity(s.len() / 2);
@@ -42,17 +41,15 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
     }
 
     // Try to retrieve key from secure keyring first
-    if let Ok(entry) = keyring::Entry::new("darwincode", "encryption_key") {
-        if let Ok(password) = entry.get_password() {
-            if let Some(key_bytes) = from_hex(&password) {
-                if key_bytes.len() == 32 {
-                    let mut key = [0u8; 32];
-                    key.copy_from_slice(&key_bytes);
-                    let _ = KEY_CACHE.set(key);
-                    return Ok(key);
-                }
-            }
-        }
+    if let Ok(entry) = keyring::Entry::new("darwincode", "encryption_key")
+        && let Ok(password) = entry.get_password()
+        && let Some(key_bytes) = from_hex(&password)
+        && key_bytes.len() == 32
+    {
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&key_bytes);
+        let _ = KEY_CACHE.set(key);
+        return Ok(key);
     }
 
     // Fallback: machine-id file
@@ -71,10 +68,8 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
         let darwincode_dir = base.join("darwincode");
         let _ = std::fs::create_dir_all(&darwincode_dir);
         let machine_id_path = darwincode_dir.join("machine-id");
-        let mut key_hex = String::new();
-
-        if let Ok(id) = std::fs::read_to_string(&machine_id_path) {
-            key_hex = id.trim().to_owned();
+        let key_hex = if let Ok(id) = std::fs::read_to_string(&machine_id_path) {
+            id.trim().to_owned()
         } else {
             let mut bytes = [0u8; 32];
             rand::fill(&mut bytes);
@@ -98,22 +93,22 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
             {
                 let _ = std::fs::write(&machine_id_path, &hex_id);
             }
-            key_hex = hex_id;
-        }
+            hex_id
+        };
 
-        if let Some(key_bytes) = from_hex(&key_hex) {
-            if key_bytes.len() == 32 {
-                let mut key = [0u8; 32];
-                key.copy_from_slice(&key_bytes);
+        if let Some(key_bytes) = from_hex(&key_hex)
+            && key_bytes.len() == 32
+        {
+            let mut key = [0u8; 32];
+            key.copy_from_slice(&key_bytes);
 
-                // Store in keyring for future fast/secure lookup
-                if let Ok(entry) = keyring::Entry::new("darwincode", "encryption_key") {
-                    let _ = entry.set_password(&to_hex(&key));
-                }
-
-                let _ = KEY_CACHE.set(key);
-                return Ok(key);
+            // Store in keyring for future fast/secure lookup
+            if let Ok(entry) = keyring::Entry::new("darwincode", "encryption_key") {
+                let _ = entry.set_password(&to_hex(&key));
             }
+
+            let _ = KEY_CACHE.set(key);
+            return Ok(key);
         }
     }
 
