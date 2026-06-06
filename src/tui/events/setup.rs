@@ -11,7 +11,7 @@ pub(crate) fn handle_setup_key(
     key: KeyEvent,
 ) -> Result<()> {
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
         app.should_quit = true;
@@ -20,7 +20,7 @@ pub(crate) fn handle_setup_key(
 
     if app.ui.setup.is_editing {
         if app
-            .keybindings
+            .core.keybindings
             .matches(crate::tui::keybindings::TuiAction::Cancel, key)
         {
             app.ui.setup.is_editing = false;
@@ -60,7 +60,7 @@ pub(crate) fn handle_setup_key(
     }
 
     if app
-        .keybindings
+        .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         app.cancel_setup();
