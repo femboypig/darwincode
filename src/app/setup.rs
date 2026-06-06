@@ -175,3 +175,77 @@ impl Default for SetupState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_setup_field_index_transitions() {
+        for idx in 0..10 {
+            let field = SetupField::from_index(idx);
+            assert_eq!(field.index(), idx.min(9));
+        }
+    }
+
+    #[test]
+    fn test_setup_state_to_from_config() {
+        let mut config = StoredConfig::default();
+        config.api_key = "test_key".to_owned();
+        config.model = "models/gemini-2.0-flash".to_owned();
+        config.base_url = "https://example.com".to_owned();
+
+        let state = SetupState::from_config(&config);
+        assert_eq!(state.api_key, "test_key");
+        assert_eq!(state.model, "models/gemini-2.0-flash");
+        assert_eq!(state.base_url, "https://example.com");
+
+        let config2 = state.to_config().unwrap();
+        assert_eq!(config2.api_key, "test_key");
+        assert_eq!(config2.model, "gemini-2.0-flash");
+        assert_eq!(config2.base_url, "https://example.com");
+    }
+
+    #[test]
+    fn test_setup_state_char_editing() {
+        let mut state = SetupState::default();
+        state.active_field = SetupField::ApiKey;
+        state.push_char('a');
+        state.push_char('b');
+        assert_eq!(state.api_key, "ab");
+
+        state.pop_char();
+        assert_eq!(state.api_key, "a");
+
+        state.active_field = SetupField::Model;
+        state.model.clear();
+        state.push_char('m');
+        assert_eq!(state.model, "m");
+
+        state.active_field = SetupField::BaseUrl;
+        state.base_url.clear();
+        state.push_char('h');
+        assert_eq!(state.base_url, "h");
+    }
+
+    #[test]
+    fn test_setup_state_model_selection() {
+        let mut state = SetupState::default();
+        state.models = vec!["models/model-a".to_owned(), "models/model-b".to_owned()];
+        state.selected_model = 0;
+        state.model = "model-a".to_owned();
+
+        state.select_next_model();
+        assert_eq!(state.selected_model, 1);
+        assert_eq!(state.model, "model-b");
+
+        state.select_previous_model();
+        assert_eq!(state.selected_model, 0);
+        assert_eq!(state.model, "model-a");
+
+        // previous from index 0 should wrap to 1
+        state.select_previous_model();
+        assert_eq!(state.selected_model, 1);
+        assert_eq!(state.model, "model-b");
+    }
+}
