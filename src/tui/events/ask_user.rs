@@ -74,7 +74,7 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
                     let mut g = crate::tui::ASK_USER_CHANNEL.lock();
                     let tx = g.take().map(|(tx, _, _)| tx);
                     if let Some(tx) = tx {
-                        let _ = tx.send(answer);
+                        let _ = tx.send(answer.clone());
                     }
                     app.ui.screen = Screen::Chat;
                     app.status = "Ready".to_owned();
