@@ -1,8 +1,9 @@
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Rect, Layout, Direction, Constraint, Padding};
+use ratatui::layout::{Alignment, Rect, Layout, Direction, Constraint};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph, Wrap, Scrollbar, ScrollbarOrientation, ScrollbarState};
+use ratatui::widgets::{Block, Paragraph, Wrap, Scrollbar, ScrollbarOrientation, ScrollbarState, Padding};
+
 use crate::app::App;
 use crate::app::chat::{TodoItem, TodoPriority, TodoStatus};
 use crate::tui::render::chat::message_list::centered_rect;
