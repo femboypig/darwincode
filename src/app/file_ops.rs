@@ -54,7 +54,10 @@ pub fn apply_transactional_edits(edits: &[Edit]) -> Result<TransactionReport, Ve
             && !parent.exists()
             && let Err(e) = fs::create_dir_all(parent)
         {
-            errors.push(format!("Failed to create directories for {}: {}", edit.path, e));
+            errors.push(format!(
+                "Failed to create directories for {}: {}",
+                edit.path, e
+            ));
             break;
         }
 
@@ -77,7 +80,8 @@ pub fn apply_transactional_edits(edits: &[Edit]) -> Result<TransactionReport, Ve
                     }
                     None => {
                         if let Err(e) = fs::remove_file(path) {
-                            rollback_errors.push(format!("Rollback failed (remove) for {}: {}", path, e));
+                            rollback_errors
+                                .push(format!("Rollback failed (remove) for {}: {}", path, e));
                         }
                     }
                 }
@@ -111,10 +115,7 @@ pub fn format_shell_output(
         }
         output.push_str(stderr);
     }
-    if !error_field.is_empty()
-        && error_field != "null"
-        && !is_still_running_err
-    {
+    if !error_field.is_empty() && error_field != "null" && !is_still_running_err {
         if !output.is_empty() {
             output.push('\n');
         }
