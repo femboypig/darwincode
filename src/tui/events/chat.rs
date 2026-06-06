@@ -141,16 +141,12 @@ pub(crate) fn handle_chat_key(
         let active_session_id = if app.chat.shell_focused {
             app.chat.focused_shell_session_id.clone()
         } else {
-            crate::tui::ACTIVE_PERSISTENT_SESSION_ID
-                .lock()
-                .ok()
-                .and_then(|g| g.clone())
+            crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock().clone()
         };
 
         if let Some(ref session_id) = active_session_id
             && let Some(registry_mutex) = crate::tui::PERSISTENT_SESSIONS.get()
-            && let Ok(mut registry_guard) = registry_mutex.lock()
-            && let Some(session) = registry_guard.get_mut(session_id)
+            && let Some(session) = registry_mutex.lock().get_mut(session_id)
         {
             use std::io::Write;
             let data = match key.code {
@@ -170,7 +166,7 @@ pub(crate) fn handle_chat_key(
         // 2. Try to write to non-persistent foreground process stdin
         if !written {
             let mut guard = crate::tui::RUNNING_PROCESS_STDIN.lock();
-            if let Some(ref mut stdin) = guard.as_mut().ok().and_then(|g| g.as_mut()) {
+            if let Some(ref mut stdin) = guard.as_mut() {
                 use std::io::Write;
                 let data = match key.code {
                     KeyCode::Char(c) => Some(c.to_string()),
@@ -182,7 +178,8 @@ pub(crate) fn handle_chat_key(
                     let _ = stdin.write_all(s.as_bytes());
                     let _ = stdin.flush();
                     written = true;
-                    if let Ok(pid_guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+                    {
+                        let pid_guard = crate::tui::RUNNING_PROCESS_PID.lock();
                         written_pid = *pid_guard;
                     }
                 }
@@ -196,8 +193,7 @@ pub(crate) fn handle_chat_key(
         {
             let bg_registry = crate::tui::BACKGROUND_PROCESSES.get();
             if let Some(registry_mutex) = bg_registry
-                && let Ok(mut registry_guard) = registry_mutex.lock()
-                && let Some(proc) = registry_guard.get_mut(&pid)
+                && let Some(proc) = registry_mutex.lock().get_mut(&pid)
                 && let Some(ref mut stdin) = proc.stdin
             {
                 use std::io::Write;
@@ -267,16 +263,8 @@ pub(crate) fn handle_chat_key(
         .core.keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
-        let is_running_process = crate::tui::RUNNING_PROCESS_PID
-            .lock()
-            .ok()
-            .and_then(|g| *g)
-            .is_some();
-        let is_active_persistent = crate::tui::ACTIVE_PERSISTENT_SESSION_ID
-            .lock()
-            .ok()
-            .and_then(|g| g.clone())
-            .is_some();
+        let is_running_process = crate::tui::RUNNING_PROCESS_PID.lock().is_some();
+        let is_active_persistent = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock().is_some();
 
         let mut has_running_command_in_history = false;
         for msg in &app.chat.history {
@@ -774,7 +762,8 @@ fn handle_interrupt_signal(app: &mut App) {
     let mut target_pid = None;
     let mut target_session_id = None;
 
-    if let Ok(mut guard) = crate::tui::RUNNING_PROCESS_PID.lock() {
+    {
+        let mut guard = crate::tui::RUNNING_PROCESS_PID.lock();
         target_pid = guard.take();
     }
     if target_pid.is_none() {
@@ -783,9 +772,7 @@ fn handle_interrupt_signal(app: &mut App) {
 
     if let Some(ref session_id) = app.chat.focused_shell_session_id {
         target_session_id = Some(session_id.clone());
-    } else if let Ok(guard) = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock()
-        && let Some(session_id) = guard.as_ref()
-    {
+    } else if let Some(session_id) = crate::tui::ACTIVE_PERSISTENT_SESSION_ID.lock().as_ref() {
         target_session_id = Some(session_id.clone());
     }
 
@@ -865,8 +852,7 @@ fn handle_interrupt_signal(app: &mut App) {
     if let Some(ref session_id) = target_session_id {
         let registry = crate::tui::PERSISTENT_SESSIONS.get();
         if let Some(registry_mutex) = registry
-            && let Ok(map) = registry_mutex.lock()
-            && let Some(session) = map.get(session_id)
+            && let Some(session) = registry_mutex.lock().get(session_id)
         {
             let p_pid = session.pid;
             #[cfg(unix)]
