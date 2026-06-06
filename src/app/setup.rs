@@ -12,6 +12,7 @@ pub enum SetupField {
     ShowThoughts,
     Theme,
     RespectIgnoreRules,
+    TrustWorkspace,
     Save,
 }
 
@@ -27,7 +28,8 @@ impl SetupField {
             Self::ShowThoughts => 6,
             Self::Theme => 7,
             Self::RespectIgnoreRules => 8,
-            Self::Save => 9,
+            Self::TrustWorkspace => 9,
+            Self::Save => 10,
         }
     }
 
@@ -42,6 +44,7 @@ impl SetupField {
             6 => Self::ShowThoughts,
             7 => Self::Theme,
             8 => Self::RespectIgnoreRules,
+            9 => Self::TrustWorkspace,
             _ => Self::Save,
         }
     }
@@ -63,6 +66,7 @@ pub struct SetupState {
     pub selected_model: usize,
     pub is_editing: bool,
     pub modal_area: std::cell::Cell<Option<ratatui::layout::Rect>>,
+    pub trust_workspace: bool,
 }
 
 impl SetupState {
@@ -82,6 +86,7 @@ impl SetupState {
             selected_model: 0,
             is_editing: false,
             modal_area: std::cell::Cell::new(None),
+            trust_workspace: config.trust_workspace,
         }
     }
 
@@ -96,7 +101,7 @@ impl SetupState {
             permission_level: self.permission_level,
             theme: self.theme.clone(),
             respect_ignore_rules: self.respect_ignore_rules,
-            trust_workspace: false,
+            trust_workspace: self.trust_workspace,
             active_agent: None,
         };
 
@@ -175,6 +180,7 @@ impl Default for SetupState {
             selected_model: 0,
             is_editing: false,
             modal_area: std::cell::Cell::new(None),
+            trust_workspace: config.trust_workspace,
         }
     }
 }
@@ -185,9 +191,9 @@ mod tests {
 
     #[test]
     fn test_setup_field_index_transitions() {
-        for idx in 0..10 {
+        for idx in 0..11 {
             let field = SetupField::from_index(idx);
-            assert_eq!(field.index(), idx.min(9));
+            assert_eq!(field.index(), idx.min(10));
         }
     }
 
