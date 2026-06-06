@@ -1,3 +1,4 @@
+#![allow(unused_imports, unused_variables, unused_mut)]
 use anyhow::Result;
 use crate::api::{ChatMessage, GeminiResponse};
 use crate::config::{PermissionLevel, StoredConfig};
@@ -1299,12 +1300,15 @@ mod tests {
 
     #[test]
     fn test_app_apply_theme() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
 
-        let mut config = StoredConfig::default();
-        config.api_key = "dummy_key".to_owned();
+        let config = StoredConfig {
+            api_key: "dummy_key".to_owned(),
+            ..Default::default()
+        };
         let mut app = App::new(Some(config));
 
         app.ui.theme_picker = ThemePickerState::new(&Theme::Auto);
@@ -1320,12 +1324,15 @@ mod tests {
 
     #[test]
     fn test_app_apply_model() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
 
-        let mut config = StoredConfig::default();
-        config.api_key = "dummy_key".to_owned();
+        let config = StoredConfig {
+            api_key: "dummy_key".to_owned(),
+            ..Default::default()
+        };
         let mut app = App::new(Some(config));
 
         app.ui.models = ModelPickerState::new(vec!["models/gemini-2.0-flash".to_owned()], "models/gemini-2.0-flash");
@@ -1351,12 +1358,15 @@ mod tests {
 
     #[test]
     fn test_app_apply_permission_level() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
 
-        let mut config = StoredConfig::default();
-        config.api_key = "dummy_key".to_owned();
+        let config = StoredConfig {
+            api_key: "dummy_key".to_owned(),
+            ..Default::default()
+        };
         let mut app = App::new(Some(config));
 
         app.ui.permissions.selected = 2; // Chaos
