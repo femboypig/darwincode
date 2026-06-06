@@ -34,12 +34,12 @@ pub(crate) struct Model {
     pub(crate) supported_generation_methods: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct Tool {
     pub(crate) function_declarations: Vec<FunctionDeclaration>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct FunctionDeclaration {
     pub(crate) name: String,
     pub(crate) description: String,
@@ -47,7 +47,7 @@ pub(crate) struct FunctionDeclaration {
     pub(crate) parameters: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct GenerateContentRequest {
     #[serde(rename = "systemInstruction", skip_serializing_if = "Option::is_none")]
     pub(crate) system_instruction: Option<Content>,
@@ -56,7 +56,7 @@ pub(crate) struct GenerateContentRequest {
     pub(crate) tools: Option<Vec<Tool>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct Content {
     pub(crate) role: String,
     pub(crate) parts: Vec<Part>,
