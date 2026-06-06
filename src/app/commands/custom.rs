@@ -42,3 +42,46 @@ pub fn execute_custom_command_internal(app: &mut App, name: &str, config: &crate
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::StoredConfig;
+    use crate::app::custom::CustomCommandConfig;
+
+    #[test]
+    fn test_execute_custom_command_internal_success() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        let config = CustomCommandConfig {
+            description: "Test cmd".to_owned(),
+            prompt: crate::app::custom::CustomPromptConfig {
+                template: "system info".to_owned(),
+            },
+            model: Some("models/gemini-2.0-flash".to_owned()),
+            context: None,
+        };
+
+        execute_custom_command_internal(&mut app, "test_cmd", &config);
+        assert_eq!(app.chat.config.model, "gemini-2.0-flash");
+        assert!(app.status.contains("executed into input buffer"));
+    }
+
+    #[test]
+    fn test_execute_custom_command_internal_with_context() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        let mut context = std::collections::HashMap::new();
+        context.insert("val".to_owned(), "echo hi".to_owned());
+        let config = CustomCommandConfig {
+            description: "Test cmd".to_owned(),
+            prompt: crate::app::custom::CustomPromptConfig {
+                template: "value is {{val}}".to_owned(),
+            },
+            model: None,
+            context: Some(context),
+        };
+
+        execute_custom_command_internal(&mut app, "test_cmd", &config);
+        assert!(app.chat.input.contains("value is hi"));
+    }
+}
+
