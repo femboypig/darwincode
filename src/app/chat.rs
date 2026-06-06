@@ -448,6 +448,9 @@ pub enum ChatCommand {
     Exit,
     Models,
     Theme,
+    Agents,
+    Agent(Option<String>),
+    Custom(String),
     Permissions(Option<PermissionLevel>),
     Resume(Option<String>),
     Clear,
@@ -474,6 +477,11 @@ impl ChatCommand {
             "/exit" | "/quit" => Self::Exit,
             "/models" => Self::Models,
             "/theme" => Self::Theme,
+            "/agents" => Self::Agents,
+            "/agent" => {
+                let arg = parts.next().map(|s| s.to_owned());
+                Self::Agent(arg)
+            }
             "/permissions" => {
                 let arg = parts.next().map(|s| s.to_lowercase());
                 let level = match arg.as_deref() {
@@ -499,12 +507,20 @@ impl ChatCommand {
             "/help" => Self::Help,
             "/plan" => Self::Plan,
             "/build" => Self::Build,
-            value => Self::Unknown(value.to_owned()),
+            value => {
+                let name = value.trim_start_matches('/');
+                let custom_cmds = crate::app::load_custom_commands();
+                if custom_cmds.contains_key(name) {
+                    Self::Custom(name.to_owned())
+                } else {
+                    Self::Unknown(value.to_owned())
+                }
+            }
         })
     }
 
     pub fn suggestions() -> Vec<CommandSuggestion> {
-        vec![
+        let mut suggs = vec![
             CommandSuggestion {
                 name: "/settings".to_owned(),
                 description: "Open settings".to_owned(),
@@ -518,16 +534,20 @@ impl ChatCommand {
                 description: "Change active theme".to_owned(),
             },
             CommandSuggestion {
+                name: "/agents".to_owned(),
+                description: "List and switch active agents".to_owned(),
+            },
+            CommandSuggestion {
+                name: "/agent".to_owned(),
+                description: "Switch to a specific agent by name".to_owned(),
+            },
+            CommandSuggestion {
                 name: "/permissions".to_owned(),
                 description: "Cycle permission levels".to_owned(),
             },
             CommandSuggestion {
                 name: "/resume".to_owned(),
                 description: "Resume saved chat sessions".to_owned(),
-            },
-            CommandSuggestion {
-                name: "/shell".to_owned(),
-                description: "List or focus active shell sessions".to_owned(),
             },
             CommandSuggestion {
                 name: "/new".to_owned(),
@@ -546,10 +566,6 @@ impl ChatCommand {
                 description: "Revert all file changes made in the last prompt".to_owned(),
             },
             CommandSuggestion {
-                name: "/help".to_owned(),
-                description: "Show available commands".to_owned(),
-            },
-            CommandSuggestion {
                 name: "/plan".to_owned(),
                 description: "Switch to Plan mode (read-only for workspace files)".to_owned(),
             },
@@ -561,7 +577,20 @@ impl ChatCommand {
                 name: "/exit".to_owned(),
                 description: "Quit darwincode".to_owned(),
             },
-        ]
+        ];
+
+        // Load custom commands dynamically from project root
+        let custom_cmds = crate::app::load_custom_commands();
+        let mut sorted_cmds: Vec<_> = custom_cmds.into_iter().collect();
+        sorted_cmds.sort_by(|a, b| a.0.cmp(&b.0));
+        for (name, config) in sorted_cmds {
+            suggs.push(CommandSuggestion {
+                name: format!("/{}", name),
+                description: config.description.clone(),
+            });
+        }
+
+        suggs
     }
 }
 
