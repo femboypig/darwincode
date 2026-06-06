@@ -220,23 +220,31 @@ impl StoredConfig {
     pub fn load() -> Result<Option<Self>> {
         let path = config_path()?;
         let mut config = if path.exists() {
-            let key = crate::crypto::derive_hardware_key()?;
-            let cipher_data =
-                fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
-            let plain_data = crate::crypto::decrypt_data(&cipher_data, &key)
-                .with_context(|| format!("failed to decrypt config {}", path.display()))?;
+            if crate::crypto::is_home_appdata_missing() {
+                let plain_data = fs::read(&path)
+                    .with_context(|| format!("failed to read {}", path.display()))?;
+                let cfg: StoredConfig = serde_json::from_slice(&plain_data)
+                    .with_context(|| format!("failed to parse config {}", path.display()))?;
+                Some(cfg)
+            } else {
+                let key = crate::crypto::derive_hardware_key()?;
+                let cipher_data =
+                    fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+                let plain_data = crate::crypto::decrypt_data(&cipher_data, &key)
+                    .with_context(|| format!("failed to decrypt config {}", path.display()))?;
 
-            let mut cfg: StoredConfig = serde_json::from_slice(&plain_data)
-                .with_context(|| format!("failed to parse config {}", path.display()))?;
+                let mut cfg: StoredConfig = serde_json::from_slice(&plain_data)
+                    .with_context(|| format!("failed to parse config {}", path.display()))?;
 
-            // Load secret from OS securely if available, otherwise use fallback from encrypted file
-            if let Ok(entry) = keyring::Entry::new("darwincode", "api_key")
-                && let Ok(secret) = entry.get_password()
-                && !secret.trim().is_empty()
-            {
-                cfg.api_key = secret;
+                // Load secret from OS securely if available, otherwise use fallback from encrypted file
+                if let Ok(entry) = keyring::Entry::new("darwincode", "api_key")
+                    && let Ok(secret) = entry.get_password()
+                    && !secret.trim().is_empty()
+                {
+                    cfg.api_key = secret;
+                }
+                Some(cfg)
             }
-            Some(cfg)
         } else {
             None
         };
@@ -271,6 +279,14 @@ impl StoredConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+
+        if crate::crypto::is_home_appdata_missing() {
+            let plain_data = serde_json::to_vec(&normalized_config)?;
+            let mut file = secure_config_file(&path)?;
+            file.write_all(&plain_data)
+                .with_context(|| format!("failed to write {}", path.display()))?;
+            return Ok(());
         }
 
         // Save secret to OS keyring securely (if available)
@@ -371,10 +387,14 @@ pub fn config_path() -> Result<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".config")))
-        .context("could not find HOME, USERPROFILE, APPDATA, or XDG_CONFIG_HOME")?;
+        .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".config")));
 
-    Ok(base.join("darwincode").join("config.json"))
+    if let Some(base_path) = base {
+        Ok(base_path.join("darwincode").join("config.json"))
+    } else {
+        let root = find_project_root().unwrap_or_else(|| PathBuf::from("."));
+        Ok(root.join("config.json"))
+    }
 }
 
 #[cfg(unix)]
