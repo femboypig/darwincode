@@ -53,3 +53,33 @@ pub(crate) fn handle_sessions_key(app: &mut App, key: KeyEvent) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::StoredConfig;
+    use crossterm::event::{KeyEvent, KeyCode, KeyModifiers};
+
+    #[test]
+    fn test_handle_sessions_key_navigation() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.sessions.sessions = vec![
+            crate::app::session::SessionMeta { id: "a".to_owned(), snippet: "a".to_owned(), timestamp: 0 },
+            crate::app::session::SessionMeta { id: "b".to_owned(), snippet: "b".to_owned(), timestamp: 0 },
+        ];
+        app.ui.sessions.selected = 0;
+
+        // Press ScrollDown
+        let key_down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
+        handle_sessions_key(&mut app, key_down).unwrap();
+        assert_eq!(app.ui.sessions.selected, 1);
+
+        // Type 'x'
+        handle_sessions_key(&mut app, KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty())).unwrap();
+        assert_eq!(app.ui.sessions.query, "x");
+
+        // Backspace
+        handle_sessions_key(&mut app, KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty())).unwrap();
+        assert_eq!(app.ui.sessions.query, "");
+    }
+}
