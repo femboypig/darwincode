@@ -26,6 +26,8 @@ pub struct StoredConfig {
     pub theme: Theme,
     #[serde(default = "default_true")]
     pub respect_ignore_rules: bool,
+    #[serde(default)]
+    pub trust_workspace: bool,
     #[serde(skip)]
     pub active_agent: Option<String>,
 }
@@ -365,6 +367,7 @@ impl Default for StoredConfig {
             permission_level: PermissionLevel::Guardian,
             theme: Theme::Auto,
             respect_ignore_rules: true,
+            trust_workspace: false,
             active_agent: None,
         }
     }
