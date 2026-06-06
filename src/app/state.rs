@@ -1,14 +1,17 @@
 #![allow(unused_imports, unused_variables, unused_mut)]
-use anyhow::Result;
-use crate::api::{ChatMessage, GeminiResponse};
-use crate::config::{PermissionLevel, StoredConfig};
-use super::chat::{ChatCommand, CommandSuggestion, MessageLine, TodoItem};
-use super::core::{App, Screen, PendingTask, SubmitAction, FunctionAction, GenerationRequest, FileBackup, DevelopMode};
 use super::agent_picker::AgentPickerState;
+use super::chat::{ChatCommand, CommandSuggestion, MessageLine, TodoItem};
+use super::core::{
+    App, DevelopMode, FileBackup, FunctionAction, GenerationRequest, PendingTask, Screen,
+    SubmitAction,
+};
 use super::model::ModelPickerState;
 use super::permission::PermissionPickerState;
-use super::theme_picker::ThemePickerState;
 use super::setup::SetupState;
+use super::theme_picker::ThemePickerState;
+use crate::api::{ChatMessage, GeminiResponse};
+use crate::config::{PermissionLevel, StoredConfig};
+use anyhow::Result;
 
 impl App {
     pub fn submit_chat_input(&mut self) -> Option<SubmitAction> {
@@ -1225,7 +1228,7 @@ mod tests {
         let mut app = App::new(Some(StoredConfig::default()));
         app.ui.theme_picker_open = true;
         app.ui.theme_picker = ThemePickerState::new(&Theme::Auto);
-        
+
         // select next theme
         app.select_next_theme();
         app.select_previous_theme();
@@ -1238,8 +1241,11 @@ mod tests {
     fn test_app_model_picker_state() {
         let mut app = App::new(Some(StoredConfig::default()));
         app.ui.model_picker_open = true;
-        app.ui.models = ModelPickerState::new(vec!["models/gemini-2.0-flash".to_owned()], "models/gemini-2.0-flash");
-        
+        app.ui.models = ModelPickerState::new(
+            vec!["models/gemini-2.0-flash".to_owned()],
+            "models/gemini-2.0-flash",
+        );
+
         app.select_next_model();
         app.select_previous_model();
         app.cancel_models();
@@ -1252,7 +1258,7 @@ mod tests {
         let mut app = App::new(Some(StoredConfig::default()));
         app.ui.agent_picker_open = true;
         app.ui.agent_picker = AgentPickerState::new(&None);
-        
+
         app.select_next_agent();
         app.select_previous_agent();
         app.cancel_agents();
@@ -1301,7 +1307,10 @@ mod tests {
     #[test]
     fn test_app_apply_theme() {
         let _lock = crate::config::TEST_LOCK.lock().unwrap();
-        let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "darwin_test_{}",
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
 
@@ -1325,7 +1334,10 @@ mod tests {
     #[test]
     fn test_app_apply_model() {
         let _lock = crate::config::TEST_LOCK.lock().unwrap();
-        let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "darwin_test_{}",
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
 
@@ -1335,7 +1347,10 @@ mod tests {
         };
         let mut app = App::new(Some(config));
 
-        app.ui.models = ModelPickerState::new(vec!["models/gemini-2.0-flash".to_owned()], "models/gemini-2.0-flash");
+        app.ui.models = ModelPickerState::new(
+            vec!["models/gemini-2.0-flash".to_owned()],
+            "models/gemini-2.0-flash",
+        );
         app.ui.models.selected = 0;
         app.ui.model_picker_open = true;
         app.apply_selected_model();
@@ -1359,7 +1374,10 @@ mod tests {
     #[test]
     fn test_app_apply_permission_level() {
         let _lock = crate::config::TEST_LOCK.lock().unwrap();
-        let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "darwin_test_{}",
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
 
