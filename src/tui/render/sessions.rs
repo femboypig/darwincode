@@ -64,7 +64,7 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     // Search row
-    let search_line = if app.sessions.query.is_empty() {
+    let search_line = if app.ui.sessions.query.is_empty() {
         Line::from(vec![
             Span::styled(
                 "Search: ",
@@ -81,14 +81,14 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
                 "Search: ",
                 Style::default().fg(dim_text).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(app.sessions.query.clone(), Style::default().fg(modal_fg)),
+            Span::styled(app.ui.sessions.query.clone(), Style::default().fg(modal_fg)),
             Span::styled("█", Style::default().fg(modal_fg)),
         ])
     };
     frame.render_widget(Paragraph::new(search_line), chunks[1]);
 
     // Position cursor
-    let cursor_x = chunks[1].x + 8 + app.sessions.query.chars().count() as u16;
+    let cursor_x = chunks[1].x + 8 + app.ui.sessions.query.chars().count() as u16;
     if cursor_x < chunks[1].right() {
         frame.set_cursor_position((cursor_x, chunks[1].y));
     }
@@ -101,11 +101,11 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
 
     // List
     let list_area = chunks[3];
-    let filtered = app.sessions.filtered_sessions();
+    let filtered = app.ui.sessions.filtered_sessions();
     let total = filtered.len();
 
     if total == 0 {
-        let msg = if app.sessions.query.is_empty() {
+        let msg = if app.ui.sessions.query.is_empty() {
             "No saved sessions"
         } else {
             "No matches found"
@@ -115,7 +115,7 @@ pub(crate) fn render_sessions_popup(frame: &mut Frame, app: &App, area: Rect) {
             list_area,
         );
     } else {
-        let selected = app.sessions.selected.min(total.saturating_sub(1));
+        let selected = app.ui.sessions.selected.min(total.saturating_sub(1));
         let visible = list_area.height as usize;
         let start = if total <= visible || selected < visible / 2 {
             0
