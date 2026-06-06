@@ -11,7 +11,7 @@ pub enum SetupField {
     PermissionLevel,
     ShowThoughts,
     Theme,
-    RespectGitignore,
+    RespectIgnoreRules,
     Save,
 }
 
@@ -26,7 +26,7 @@ impl SetupField {
             Self::PermissionLevel => 5,
             Self::ShowThoughts => 6,
             Self::Theme => 7,
-            Self::RespectGitignore => 8,
+            Self::RespectIgnoreRules => 8,
             Self::Save => 9,
         }
     }
@@ -41,7 +41,7 @@ impl SetupField {
             5 => Self::PermissionLevel,
             6 => Self::ShowThoughts,
             7 => Self::Theme,
-            8 => Self::RespectGitignore,
+            8 => Self::RespectIgnoreRules,
             _ => Self::Save,
         }
     }
@@ -57,7 +57,7 @@ pub struct SetupState {
     pub permission_level: PermissionLevel,
     pub show_thoughts: bool,
     pub theme: Theme,
-    pub respect_gitignore: bool,
+    pub respect_ignore_rules: bool,
     pub active_field: SetupField,
     pub models: Vec<String>,
     pub selected_model: usize,
@@ -75,7 +75,7 @@ impl SetupState {
             permission_level: config.permission_level,
             show_thoughts: config.show_thoughts,
             theme: config.theme.clone(),
-            respect_gitignore: config.respect_gitignore,
+            respect_ignore_rules: config.respect_ignore_rules,
             active_field: SetupField::ApiKey,
             models: Vec::new(),
             selected_model: 0,
@@ -93,7 +93,8 @@ impl SetupState {
             show_thoughts: self.show_thoughts,
             permission_level: self.permission_level,
             theme: self.theme.clone(),
-            respect_gitignore: self.respect_gitignore,
+            respect_ignore_rules: self.respect_ignore_rules,
+            active_agent: None,
         };
 
         config.validate()?;
@@ -165,7 +166,7 @@ impl Default for SetupState {
             permission_level: config.permission_level,
             show_thoughts: config.show_thoughts,
             theme: config.theme.clone(),
-            respect_gitignore: config.respect_gitignore,
+            respect_ignore_rules: config.respect_ignore_rules,
             active_field: SetupField::ApiKey,
             models: Vec::new(),
             selected_model: 0,
