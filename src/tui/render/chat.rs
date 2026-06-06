@@ -67,22 +67,22 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     };
     let wrapped_lines = wrap_text_to_lines(app.chat.input.as_str(), input_inner_w as usize);
     let display_lines = wrapped_lines.len() as u16;
-    let input_height = if app.screen == crate::app::Screen::AskUser {
-        let q_wrapped = wrap_text_to_lines(app.ask_user.question.as_str(), input_inner_w as usize);
+    let input_height = if app.ui.screen == crate::app::Screen::AskUser {
+        let q_wrapped = wrap_text_to_lines(app.ui.ask_user.question.as_str(), input_inner_w as usize);
         let q_lines = q_wrapped.len() as u16;
-        let opt_count = app.ask_user.options.len() as u16;
-        let custom_lines = if app.ask_user.is_custom {
-            if app.ask_user.custom_input.is_empty() {
+        let opt_count = app.ui.ask_user.options.len() as u16;
+        let custom_lines = if app.ui.ask_user.is_custom {
+            if app.ui.ask_user.custom_input.is_empty() {
                 1
             } else {
-                app.ask_user.custom_input.split('\n').count() as u16
+                app.ui.ask_user.custom_input.split('\n').count() as u16
             }
         } else {
             0
         };
         // q_lines + blank + opts (label only) + custom + 1 blank + 1 footer + 1 blank + 2 padding
         (q_lines + 1 + opt_count + custom_lines + 1 + 1 + 1 + 2).max(6)
-    } else if app.screen == crate::app::Screen::Permissions {
+    } else if app.ui.screen == crate::app::Screen::Permissions {
         let opts = crate::app::PermissionPickerState::options();
         let opt_count = opts.len() as u16;
         // title + blank + 2*opts + 1 blank + 1 footer + 2 padding
@@ -392,23 +392,23 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     // Inside the text block, padding is 1.
     let inner_x = text_block_area.x.saturating_add(3);
-    let inner_y = if app.screen == crate::app::Screen::AskUser {
+    let inner_y = if app.ui.screen == crate::app::Screen::AskUser {
         text_block_area.y
     } else {
         text_block_area.y.saturating_add(1)
     };
-    let inner_w = if app.screen == crate::app::Screen::AskUser {
+    let inner_w = if app.ui.screen == crate::app::Screen::AskUser {
         text_block_area.width.saturating_sub(4)
     } else {
         text_block_area.width.saturating_sub(5) // match the new inner_x and leave 2 right padding
     };
-    let inner_h = if app.screen == crate::app::Screen::AskUser {
+    let inner_h = if app.ui.screen == crate::app::Screen::AskUser {
         text_block_area.height
     } else {
         text_block_area.height.saturating_sub(1)
     };
 
-    let text_area = if app.screen == crate::app::Screen::AskUser {
+    let text_area = if app.ui.screen == crate::app::Screen::AskUser {
         Rect {
             x: inner_x,
             y: inner_y,
@@ -476,9 +476,9 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         wrapped_lines.into_iter().map(Line::from).collect()
     };
 
-    if app.screen == crate::app::Screen::AskUser {
+    if app.ui.screen == crate::app::Screen::AskUser {
         render_ask_user_in_input_box(frame, app, text_block_area);
-    } else if app.screen == crate::app::Screen::Permissions {
+    } else if app.ui.screen == crate::app::Screen::Permissions {
         render_permissions_in_input_box(frame, app, text_block_area);
     } else {
         // Render the scrollable paragraph
@@ -495,7 +495,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         let max_y = text_area.bottom().saturating_sub(1);
 
         if !app.chat.shell_focused
-            && !app.model_picker_open
+            && !app.ui.model_picker_open
             && target_y <= max_y
             && target_y >= text_area.y
         {
@@ -503,7 +503,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         }
 
         // Render the mode/model indicator row inside the bottom area of the block
-        let mode_color = match app.dev_mode {
+        let mode_color = match app.core.dev_mode {
             crate::app::DevelopMode::Plan => Color::Rgb(168, 85, 247), // purple
             crate::app::DevelopMode::Build => Color::Rgb(59, 130, 246), // blue (mockup)
         };
@@ -566,13 +566,13 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     render_statusbar(frame, app, statusbar_area);
 
-    let has_modal = app.model_picker_open
-        || app.theme_picker_open
-        || app.agent_picker_open
-        || app.screen == crate::app::Screen::Sessions
-        || app.screen == crate::app::Screen::Setup
+    let has_modal = app.ui.model_picker_open
+        || app.ui.theme_picker_open
+        || app.ui.agent_picker_open
+        || app.ui.screen == crate::app::Screen::Sessions
+        || app.ui.screen == crate::app::Screen::Setup
         || app
-            .pending
+            .proc.pending
             .as_ref()
             .is_some_and(|p| matches!(p, crate::app::PendingTask::ConfirmFunction { .. }));
 
@@ -580,27 +580,27 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         dim_buffer(frame, area);
     }
 
-    if app.model_picker_open {
+    if app.ui.model_picker_open {
         render_model_picker_modal(frame, app, area);
     }
 
-    if app.theme_picker_open {
+    if app.ui.theme_picker_open {
         render_theme_picker_modal(frame, app, area);
     }
 
-    if app.agent_picker_open {
+    if app.ui.agent_picker_open {
         render_agent_picker_modal(frame, app, area);
     }
 
-    if app.screen == crate::app::Screen::Sessions {
+    if app.ui.screen == crate::app::Screen::Sessions {
         crate::tui::render::sessions::render_sessions_popup(frame, app, area);
     }
 
-    if app.screen == crate::app::Screen::Setup {
+    if app.ui.screen == crate::app::Screen::Setup {
         crate::tui::render::setup::render_setup_modal(frame, app, area);
     }
 
-    if let Some(crate::app::PendingTask::ConfirmFunction { .. }) = &app.pending {
+    if let Some(crate::app::PendingTask::ConfirmFunction { .. }) = &app.proc.pending {
         render_confirm_modal(frame, app, area);
     }
 } // end render_chat
@@ -639,7 +639,7 @@ fn dim_buffer(frame: &mut Frame, area: Rect) {
 }
 
 fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
-    let Some(crate::app::PendingTask::ConfirmFunction { name, args }) = &app.pending else {
+    let Some(crate::app::PendingTask::ConfirmFunction { name, args }) = &app.proc.pending else {
         return;
     };
     let active_theme = crate::tui::render::get_active_theme(app);
@@ -847,8 +847,8 @@ fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         let max_scroll = body_lines.len().saturating_sub(body_area.height as usize);
-        let current_scroll = app.confirm_scroll.get().min(max_scroll as u16);
-        app.confirm_scroll.set(current_scroll);
+        let current_scroll = app.ui.confirm_scroll.get().min(max_scroll as u16);
+        app.ui.confirm_scroll.set(current_scroll);
 
         frame.render_widget(
             Paragraph::new(body_lines.clone())
@@ -921,7 +921,7 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let q_wrapped = wrap_text_to_lines(app.ask_user.question.as_str(), inner.width as usize);
+    let q_wrapped = wrap_text_to_lines(app.ui.ask_user.question.as_str(), inner.width as usize);
     let q_height = q_wrapped.len() as u16;
 
     // Render question
@@ -944,8 +944,8 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
     let list_start_y = inner.y + q_height + 1;
     // footer 1 line from bottom (so there's 1 blank row below footer = bottom padding)
     let footer_y = inner.bottom().saturating_sub(2);
-    let total_options = app.ask_user.options.len() + 1;
-    let selected = app.ask_user.selected_idx;
+    let total_options = app.ui.ask_user.options.len() + 1;
+    let selected = app.ui.ask_user.selected_idx;
 
     let mut row_y = list_start_y;
     for idx in 0..total_options {
@@ -953,11 +953,11 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
             break;
         } // leave 1 blank before footer
         let is_selected = idx == selected;
-        let is_custom = idx == app.ask_user.options.len();
+        let is_custom = idx == app.ui.ask_user.options.len();
         let label: &str = if is_custom {
             "Type your own answer"
         } else {
-            &app.ask_user.options[idx]
+            &app.ui.ask_user.options[idx]
         };
 
         let num_style = if is_selected {
@@ -993,15 +993,15 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
 
         // Custom text input (only for "Type your own answer" row when active)
         // Indent matches prefix of option line (e.g. "4.  ")
-        if is_custom && app.ask_user.is_custom && row_y < footer_y.saturating_sub(1) {
+        if is_custom && app.ui.ask_user.is_custom && row_y < footer_y.saturating_sub(1) {
             let prefix_len = format!("{}.  ", idx + 1).chars().count();
             let indent = " ".repeat(prefix_len);
-            let display = if app.ask_user.custom_input.is_empty() {
+            let display = if app.ui.ask_user.custom_input.is_empty() {
                 format!("{}Type your answer...", indent)
             } else {
-                format!("{}{}", indent, app.ask_user.custom_input)
+                format!("{}{}", indent, app.ui.ask_user.custom_input)
             };
-            let input_style = if app.ask_user.custom_input.is_empty() {
+            let input_style = if app.ui.ask_user.custom_input.is_empty() {
                 Style::default().fg(dim_text)
             } else {
                 Style::default()
@@ -1019,10 +1019,10 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
             );
             let cx = inner.x
                 + prefix_len as u16
-                + if app.ask_user.custom_input.is_empty() {
+                + if app.ui.ask_user.custom_input.is_empty() {
                     0
                 } else {
-                    app.ask_user.custom_input.chars().count() as u16
+                    app.ui.ask_user.custom_input.chars().count() as u16
                 };
             if cx < inner.right() {
                 frame.set_cursor_position((cx, row_y));
@@ -1033,7 +1033,7 @@ fn render_ask_user_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
 
     // Footer (with 1 blank line above and 1 below via footer_y offset)
     if footer_y < inner.bottom() {
-        let footer = if app.ask_user.is_custom {
+        let footer = if app.ui.ask_user.is_custom {
             Line::from(vec![
                 Span::styled(
                     "Enter ",
@@ -1109,7 +1109,7 @@ fn render_permissions_in_input_box(frame: &mut Frame, app: &App, area: Rect) {
 
     let options = crate::app::PermissionPickerState::options();
     let total = options.len();
-    let selected = app.permissions.selected.min(total.saturating_sub(1));
+    let selected = app.ui.permissions.selected.min(total.saturating_sub(1));
 
     let footer_y = inner.bottom().saturating_sub(2);
 
@@ -1268,27 +1268,27 @@ fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
         .split(chunks[2]);
     let search_content = search_row[1];
 
-    let search_line = if app.models.query.is_empty() {
+    let search_line = if app.ui.models.query.is_empty() {
         Line::from(Span::styled("Search", Style::default().fg(placeholder_fg)))
     } else {
         Line::from(Span::styled(
-            app.models.query.clone(),
+            app.ui.models.query.clone(),
             Style::default().fg(modal_fg),
         ))
     };
     frame.render_widget(Paragraph::new(search_line), search_content);
 
-    let cursor_x = search_content.x + app.models.query.chars().count() as u16;
+    let cursor_x = search_content.x + app.ui.models.query.chars().count() as u16;
     if cursor_x < search_content.right() {
         frame.set_cursor_position((cursor_x, search_content.y));
     }
 
     let list_area = chunks[4];
-    let filtered = app.models.filtered_indices();
+    let filtered = app.ui.models.filtered_indices();
     let active_model = app.chat.config.model.as_str();
 
     if filtered.is_empty() {
-        let msg = if app.models.query.is_empty() {
+        let msg = if app.ui.models.query.is_empty() {
             "No models available"
         } else {
             "No matches"
@@ -1306,7 +1306,7 @@ fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
 
     let viewport = list_area.height as usize;
     let total = filtered.len();
-    let selected = app.models.selected.min(total.saturating_sub(1));
+    let selected = app.ui.models.selected.min(total.saturating_sub(1));
     let start = if total <= viewport || selected < viewport / 2 {
         0
     } else if selected >= total - viewport / 2 {
@@ -1319,7 +1319,7 @@ fn render_model_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
 
     for offset in 0..visible_count {
         let idx = start + offset;
-        let model = &app.models.models[filtered[idx]];
+        let model = &app.ui.models.models[filtered[idx]];
         let display = model.trim_start_matches("models/");
         let is_selected = idx == selected;
         let is_active = display == active_model || model == active_model;
@@ -1462,26 +1462,26 @@ fn render_theme_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
         .split(chunks[2]);
     let search_content = search_row[1];
 
-    let search_line = if app.theme_picker.query.is_empty() {
+    let search_line = if app.ui.theme_picker.query.is_empty() {
         Line::from(Span::styled("Search", Style::default().fg(placeholder_fg)))
     } else {
         Line::from(Span::styled(
-            app.theme_picker.query.clone(),
+            app.ui.theme_picker.query.clone(),
             Style::default().fg(modal_fg),
         ))
     };
     frame.render_widget(Paragraph::new(search_line), search_content);
 
-    let cursor_x = search_content.x + app.theme_picker.query.chars().count() as u16;
+    let cursor_x = search_content.x + app.ui.theme_picker.query.chars().count() as u16;
     if cursor_x < search_content.right() {
         frame.set_cursor_position((cursor_x, search_content.y));
     }
 
     let list_area = chunks[4];
-    let filtered = app.theme_picker.filtered_indices();
+    let filtered = app.ui.theme_picker.filtered_indices();
 
     if filtered.is_empty() {
-        let msg = if app.theme_picker.query.is_empty() {
+        let msg = if app.ui.theme_picker.query.is_empty() {
             "No themes available"
         } else {
             "No matches"
@@ -1499,7 +1499,7 @@ fn render_theme_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
 
     let viewport = list_area.height as usize;
     let total = filtered.len();
-    let selected = app.theme_picker.selected.min(total.saturating_sub(1));
+    let selected = app.ui.theme_picker.selected.min(total.saturating_sub(1));
     let start = if total <= viewport || selected < viewport / 2 {
         0
     } else if selected >= total - viewport / 2 {
@@ -1512,7 +1512,7 @@ fn render_theme_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
 
     for offset in 0..visible_count {
         let idx = start + offset;
-        let theme = &app.theme_picker.themes[filtered[idx]];
+        let theme = &app.ui.theme_picker.themes[filtered[idx]];
         let display = theme.label();
         let is_selected = idx == selected;
         let is_active = theme == &app.chat.config.theme;
@@ -1655,26 +1655,26 @@ fn render_agent_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
         .split(chunks[2]);
     let search_content = search_row[1];
 
-    let search_line = if app.agent_picker.query.is_empty() {
+    let search_line = if app.ui.agent_picker.query.is_empty() {
         Line::from(Span::styled("Search", Style::default().fg(placeholder_fg)))
     } else {
         Line::from(Span::styled(
-            app.agent_picker.query.clone(),
+            app.ui.agent_picker.query.clone(),
             Style::default().fg(modal_fg),
         ))
     };
     frame.render_widget(Paragraph::new(search_line), search_content);
 
-    let cursor_x = search_content.x + app.agent_picker.query.chars().count() as u16;
+    let cursor_x = search_content.x + app.ui.agent_picker.query.chars().count() as u16;
     if cursor_x < search_content.right() {
         frame.set_cursor_position((cursor_x, search_content.y));
     }
 
     let list_area = chunks[4];
-    let filtered = app.agent_picker.filtered_indices();
+    let filtered = app.ui.agent_picker.filtered_indices();
 
     if filtered.is_empty() {
-        let msg = if app.agent_picker.query.is_empty() {
+        let msg = if app.ui.agent_picker.query.is_empty() {
             "No agents available"
         } else {
             "No matches"
@@ -1692,7 +1692,7 @@ fn render_agent_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
 
     let viewport = list_area.height as usize;
     let total = filtered.len();
-    let selected = app.agent_picker.selected.min(total.saturating_sub(1));
+    let selected = app.ui.agent_picker.selected.min(total.saturating_sub(1));
     let start = if total <= viewport || selected < viewport / 2 {
         0
     } else if selected >= total - viewport / 2 {
@@ -1705,9 +1705,9 @@ fn render_agent_picker_modal(frame: &mut Frame, app: &App, area: Rect) {
 
     for offset in 0..visible_count {
         let idx = start + offset;
-        let (agent_id, display_name) = &app.agent_picker.agents[filtered[idx]];
+        let (agent_id, display_name) = &app.ui.agent_picker.agents[filtered[idx]];
         let is_selected = idx == selected;
-        let is_active = agent_id == &app.active_agent;
+        let is_active = agent_id == &app.core.active_agent;
 
         let row_y = list_area.y + offset as u16;
         if row_y >= list_area.bottom() {
