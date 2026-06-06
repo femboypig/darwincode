@@ -1,10 +1,10 @@
+use crate::app::App;
+use crate::tui::render::logo::logo_lines_for_area;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use crate::app::App;
-use crate::tui::render::logo::logo_lines_for_area;
 
 pub(crate) fn render_welcome_logo(frame: &mut Frame, app: &App, logo_area: Rect) {
     let active_theme = crate::tui::render::get_active_theme(app);
