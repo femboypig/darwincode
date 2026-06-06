@@ -75,6 +75,10 @@ pub(crate) fn handle_chat_key(
         return handle_theme_picker_key(app, key);
     }
 
+    if app.agent_picker_open {
+        return handle_agent_picker_key(app, key);
+    }
+
     if app.chat.shell_focused {
         let is_ctrl_c = (key.code == KeyCode::Char('c')
             && key.modifiers.contains(KeyModifiers::CONTROL))
@@ -705,6 +709,59 @@ fn handle_theme_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
                 && !key.modifiers.contains(KeyModifiers::ALT) =>
         {
             app.theme_picker.push_query(c);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_agent_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
+    if app
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::Cancel, key)
+    {
+        app.cancel_agents();
+        return Ok(());
+    }
+
+    match key.code {
+        KeyCode::Esc => {
+            app.cancel_agents();
+        }
+        KeyCode::Enter => {
+            app.apply_selected_agent();
+        }
+        KeyCode::Up => {
+            app.select_previous_agent();
+        }
+        KeyCode::Down => {
+            app.select_next_agent();
+        }
+        KeyCode::PageUp => {
+            let len = app.agent_picker.filtered_indices().len();
+            for _ in 0..5 {
+                if len > 0 {
+                    app.agent_picker.selected =
+                        app.agent_picker.selected.checked_sub(1).unwrap_or(len - 1);
+                }
+            }
+        }
+        KeyCode::PageDown => {
+            let len = app.agent_picker.filtered_indices().len();
+            for _ in 0..5 {
+                if len > 0 {
+                    app.agent_picker.selected = (app.agent_picker.selected + 1) % len;
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            app.agent_picker.pop_query();
+        }
+        KeyCode::Char(c)
+            if !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT) =>
+        {
+            app.agent_picker.push_query(c);
         }
         _ => {}
     }
