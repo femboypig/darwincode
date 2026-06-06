@@ -827,7 +827,8 @@ fn load_darwincode_ignore_rules() -> Option<Vec<String>> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     loop {
         let ignore_path = current.join(".darwincode").join("ignore");
-        if ignore_path.exists() && ignore_path.is_file()
+        if ignore_path.exists()
+            && ignore_path.is_file()
             && let Ok(content) = std::fs::read_to_string(&ignore_path)
         {
             let mut rules = Vec::new();
@@ -868,7 +869,8 @@ fn load_gitignore_rules() -> Vec<String> {
     let mut current = base_dir;
     loop {
         let gitignore_path = current.join(".gitignore");
-        if gitignore_path.exists() && gitignore_path.is_file()
+        if gitignore_path.exists()
+            && gitignore_path.is_file()
             && let Ok(content) = std::fs::read_to_string(&gitignore_path)
         {
             for line in content.lines() {
