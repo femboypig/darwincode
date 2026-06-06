@@ -1,14 +1,16 @@
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
 use anyhow::Result;
 use crossterm::event::{self, Event};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
 
-use crate::app::{App, SubmitAction, Screen};
-use crate::tui::{Tui, WorkerEvent};
-use crate::tui::terminal::{start_terminal, stop_terminal};
+use crate::app::{App, Screen, SubmitAction};
 use crate::tui::events::mouse::handle_mouse_event;
 use crate::tui::events::mouse::update_selection_on_scroll;
-use crate::tui::tool_executor::{spawn_models_worker, spawn_generation_worker, handle_function_action};
+use crate::tui::terminal::{start_terminal, stop_terminal};
+use crate::tui::tool_executor::{
+    handle_function_action, spawn_generation_worker, spawn_models_worker,
+};
+use crate::tui::{Tui, WorkerEvent};
 
 pub fn run(mut app: App) -> Result<()> {
     let mut terminal = start_terminal()?;
@@ -73,10 +75,7 @@ fn run_loop(
                     spawn_models_worker(config, sender.clone());
                 }
                 SubmitAction::ExecuteFunction { name, args, config } => {
-                    handle_function_action(
-                        FunctionAction::Execute { name, args, config },
-                        sender,
-                    );
+                    handle_function_action(FunctionAction::Execute { name, args, config }, sender);
                 }
             }
         }
