@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::config::{StoredConfig, Theme};
 use super::chat::ChatState;
 use super::agent_picker::AgentPickerState;
@@ -146,14 +147,13 @@ impl App {
 
         let mut config = config;
         let mut theme_warning = None;
-        if let Some(ref mut cfg) = config {
-            if let crate::config::Theme::Custom(ref name) = cfg.theme {
-                if !crate::tui::theme::custom_themes().contains_key(name) {
-                    eprintln!("[darwincode] Custom theme '{}' not found in registry. Falling back to default theme.", name);
-                    theme_warning = Some(format!("Theme '{}' not found, falling back to default", name));
-                    cfg.theme = crate::config::Theme::default();
-                }
-            }
+        if let Some(ref mut cfg) = config
+            && let crate::config::Theme::Custom(ref name) = cfg.theme
+            && !crate::tui::theme::custom_themes().contains_key(name)
+        {
+            eprintln!("[darwincode] Custom theme '{}' not found in registry. Falling back to default theme.", name);
+            theme_warning = Some(format!("Theme '{}' not found, falling back to default", name));
+            cfg.theme = crate::config::Theme::default();
         }
 
         if let Some(ref tw) = theme_warning {
@@ -350,8 +350,10 @@ mod tests {
 
     #[test]
     fn test_invalid_theme_fallback() {
-        let mut config = StoredConfig::default();
-        config.theme = Theme::Custom("nonexistent_theme_9999".to_owned());
+        let config = StoredConfig {
+            theme: Theme::Custom("nonexistent_theme_9999".to_owned()),
+            ..Default::default()
+        };
         let app = App::new(Some(config));
         
         // It should fall back to Theme::Auto (default)
