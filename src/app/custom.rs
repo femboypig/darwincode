@@ -62,20 +62,20 @@ pub fn load_custom_commands(trust_workspace: bool) -> HashMap<String, (CustomCom
     let mut commands = HashMap::new();
 
     // 1. Load global commands
-    if let Some(global_dir) = find_global_commands_dir() {
-        if let Ok(entries) = std::fs::read_dir(global_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && path.extension().is_some_and(|ext| ext == "toml") {
-                    let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                    if !file_name.contains("schema")
-                        && !file_name.contains("template")
-                        && !file_name.contains("example")
-                        && let Ok(toml_content) = std::fs::read_to_string(&path)
-                        && let Ok(config) = toml::from_str::<CustomCommandConfig>(&toml_content)
-                    {
-                        commands.insert(file_name.to_owned(), (config, false));
-                    }
+    if let Some(global_dir) = find_global_commands_dir()
+        && let Ok(entries) = std::fs::read_dir(global_dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().is_some_and(|ext| ext == "toml") {
+                let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                if !file_name.contains("schema")
+                    && !file_name.contains("template")
+                    && !file_name.contains("example")
+                    && let Ok(toml_content) = std::fs::read_to_string(&path)
+                    && let Ok(config) = toml::from_str::<CustomCommandConfig>(&toml_content)
+                {
+                    commands.insert(file_name.to_owned(), (config, false));
                 }
             }
         }
