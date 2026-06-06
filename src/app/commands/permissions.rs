@@ -63,3 +63,36 @@ pub fn run(app: &mut App, level: Option<PermissionLevel>) -> Option<SubmitAction
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::StoredConfig;
+
+    #[test]
+    fn test_permissions_run_some() {
+        let _lock = crate::config::TEST_LOCK.lock().unwrap();
+        let temp_dir = std::env::temp_dir().join(format!("darwin_test_{}", std::time::Instant::now().elapsed().as_nanos()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = Some(temp_dir.clone());
+
+        let mut app = App::new(Some(StoredConfig::default()));
+        let result = run(&mut app, Some(PermissionLevel::Safe));
+        assert!(result.is_none());
+        assert_eq!(app.chat.config.permission_level, PermissionLevel::Safe);
+        assert!(!app.chat.messages.is_empty());
+
+        *crate::config::TEST_CONFIG_DIR.lock().unwrap() = None;
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_permissions_run_none() {
+        let mut app = App::new(Some(StoredConfig::default()));
+        app.ui.screen = Screen::Chat;
+        let result = run(&mut app, None);
+        assert!(result.is_none());
+        assert_eq!(app.ui.screen, Screen::Permissions);
+    }
+}
+
