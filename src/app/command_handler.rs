@@ -1,5 +1,5 @@
-use super::core::{App, SubmitAction};
 use super::chat::ChatCommand;
+use super::core::{App, SubmitAction};
 
 impl App {
     pub fn run_command(&mut self, command: ChatCommand) -> Option<SubmitAction> {
@@ -25,9 +25,7 @@ pub fn dispatch(app: &mut App, command: ChatCommand) -> Option<SubmitAction> {
             super::commands::exit::run(app);
             None
         }
-        ChatCommand::Models => {
-            super::commands::models::run(app)
-        }
+        ChatCommand::Models => super::commands::models::run(app),
         ChatCommand::Theme => {
             super::commands::theme::run(app);
             None
@@ -44,9 +42,7 @@ pub fn dispatch(app: &mut App, command: ChatCommand) -> Option<SubmitAction> {
             super::commands::custom::run(app, name);
             None
         }
-        ChatCommand::Permissions(level) => {
-            super::commands::permissions::run(app, level)
-        }
+        ChatCommand::Permissions(level) => super::commands::permissions::run(app, level),
         ChatCommand::Resume(session_id) => {
             super::commands::resume::run(app, session_id);
             None
