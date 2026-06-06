@@ -1,8 +1,10 @@
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Rect, Layout, Direction, Constraint};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph, Wrap, Scrollbar, ScrollbarOrientation, ScrollbarState, Padding};
+use ratatui::widgets::{
+    Block, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
+};
 
 use crate::app::App;
 use crate::app::chat::{TodoItem, TodoPriority, TodoStatus};
@@ -218,7 +220,11 @@ pub(crate) fn render_confirm_modal(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         let max_scroll = body_lines.len().saturating_sub(body_area.height as usize);
-        let current_scroll = app.ui.confirm_scroll.get().min(u16::try_from(max_scroll.min(usize::from(u16::MAX))).unwrap_or(u16::MAX));
+        let current_scroll = app
+            .ui
+            .confirm_scroll
+            .get()
+            .min(u16::try_from(max_scroll.min(usize::from(u16::MAX))).unwrap_or(u16::MAX));
         app.ui.confirm_scroll.set(current_scroll);
 
         frame.render_widget(
@@ -1179,7 +1185,9 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     let render_priority = |p: &TodoPriority| -> Span<'static> {
         match p {
             TodoPriority::High => Span::styled("!! ", Style::default().fg(Color::Rgb(239, 68, 68))),
-            TodoPriority::Medium => Span::styled("!  ", Style::default().fg(Color::Rgb(245, 158, 11))),
+            TodoPriority::Medium => {
+                Span::styled("!  ", Style::default().fg(Color::Rgb(245, 158, 11)))
+            }
             TodoPriority::Low => Span::styled("   ", Style::default()),
         }
     };
