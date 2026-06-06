@@ -907,12 +907,13 @@ fn should_ignore(path: &std::path::Path, rules: &[String]) -> bool {
         cwd.join(&base_dir)
     };
     let abs_base_dir = std::fs::canonicalize(&abs_base_dir).unwrap_or(abs_base_dir);
-    
+
     // Canonicalize the path or its closest existing parent directory
     let abs_path = if abs_path.exists() {
         std::fs::canonicalize(&abs_path).unwrap_or(abs_path)
     } else if let Some(parent) = abs_path.parent() {
-        let canonical_parent = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+        let canonical_parent =
+            std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
         if let Some(file_name) = abs_path.file_name() {
             canonical_parent.join(file_name)
         } else {
@@ -929,9 +930,9 @@ fn should_ignore(path: &std::path::Path, rules: &[String]) -> bool {
             if rel_str.is_empty() || rel_str == "." {
                 break;
             }
-            
+
             let normalized_rel_str = rel_str.replace('\\', "/");
-            
+
             for rule in rules {
                 if rule.contains('/') {
                     let clean_rule = rule.trim_start_matches('/').trim_end_matches('/');
@@ -1070,7 +1071,10 @@ pub(crate) fn handle_function_action(
                     if let Some(agent_config) = custom_agents.get(agent_id) {
                         if let Some(ref allowed) = agent_config.allowed_tools {
                             if !allowed.contains(&name) {
-                                let err_msg = format!("Permission denied: tool '{}' is not allowed for the active agent '{}'.", name, agent_id);
+                                let err_msg = format!(
+                                    "Permission denied: tool '{}' is not allowed for the active agent '{}'.",
+                                    name, agent_id
+                                );
                                 let _ = sender.send(WorkerEvent::ToolResult(
                                     name,
                                     serde_json::json!({ "error": err_msg }),
@@ -2189,11 +2193,14 @@ mod tests {
             let agent_dir = proj_root.join(".darwincode").join("agents");
             let _ = std::fs::create_dir_all(&agent_dir);
             let reviewer_path = agent_dir.join("reviewer.toml");
-            let _ = std::fs::write(&reviewer_path, r#"
+            let _ = std::fs::write(
+                &reviewer_path,
+                r#"
 name = "Reviewer"
 allowed_tools = ["read"]
 system_prompt = "Review only."
-"#);
+"#,
+            );
 
             handle_function_action(
                 crate::app::FunctionAction::Execute {
@@ -2204,7 +2211,9 @@ system_prompt = "Review only."
                 &sender,
             );
 
-            if let Ok(WorkerEvent::ToolResult(name, result)) = receiver.recv_timeout(std::time::Duration::from_secs(5)) {
+            if let Ok(WorkerEvent::ToolResult(name, result)) =
+                receiver.recv_timeout(std::time::Duration::from_secs(5))
+            {
                 assert_eq!(name, "sh");
                 let err = result.get("error").and_then(|v| v.as_str()).unwrap_or("");
                 assert!(err.contains("Permission denied"));
@@ -2230,17 +2239,38 @@ system_prompt = "Review only."
 
         assert!(should_ignore(&base_dir.join("secret_data.txt"), &rules));
         assert!(should_ignore(&base_dir.join("target"), &rules));
-        assert!(should_ignore(&base_dir.join("target").join("debug").join("main"), &rules));
-        assert!(should_ignore(&base_dir.join("src").join("notes.txt"), &rules));
-        assert!(!should_ignore(&base_dir.join("src").join("main.rs"), &rules));
-        assert!(should_ignore(&base_dir.join(".darwincode").join("config.json"), &rules));
+        assert!(should_ignore(
+            &base_dir.join("target").join("debug").join("main"),
+            &rules
+        ));
+        assert!(should_ignore(
+            &base_dir.join("src").join("notes.txt"),
+            &rules
+        ));
+        assert!(!should_ignore(
+            &base_dir.join("src").join("main.rs"),
+            &rules
+        ));
+        assert!(should_ignore(
+            &base_dir.join(".darwincode").join("config.json"),
+            &rules
+        ));
 
         // Relative path checks
-        assert!(should_ignore(std::path::Path::new("secret_data.txt"), &rules));
+        assert!(should_ignore(
+            std::path::Path::new("secret_data.txt"),
+            &rules
+        ));
         assert!(should_ignore(std::path::Path::new("target"), &rules));
-        assert!(should_ignore(std::path::Path::new("target/debug/main"), &rules));
+        assert!(should_ignore(
+            std::path::Path::new("target/debug/main"),
+            &rules
+        ));
         assert!(should_ignore(std::path::Path::new("src/notes.txt"), &rules));
         assert!(!should_ignore(std::path::Path::new("src/main.rs"), &rules));
-        assert!(should_ignore(std::path::Path::new(".darwincode/config.json"), &rules));
+        assert!(should_ignore(
+            std::path::Path::new(".darwincode/config.json"),
+            &rules
+        ));
     }
 }
