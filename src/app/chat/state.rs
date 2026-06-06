@@ -1,6 +1,6 @@
+use super::todos::TodoItem;
 use crate::api::{ChatMessage, Part};
 use crate::config::{StoredConfig, Theme};
-use super::todos::TodoItem;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MessageSelection {
