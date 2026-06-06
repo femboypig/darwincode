@@ -536,3 +536,134 @@ pub fn get_path_suggestions(path_prefix: &str) -> Vec<CommandSuggestion> {
 
     suggestions
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_undo_command_parsing() {
+        let parsed = ChatCommand::parse("/undo");
+        assert!(matches!(parsed, Some(ChatCommand::Undo)));
+
+        let parsed_plan = ChatCommand::parse("/plan");
+        assert!(matches!(parsed_plan, Some(ChatCommand::Plan)));
+
+        let parsed_build = ChatCommand::parse("/build");
+        assert!(matches!(parsed_build, Some(ChatCommand::Build)));
+
+        let suggestions = ChatCommand::suggestions();
+        assert!(suggestions.iter().any(|s| s.name == "/undo"));
+        assert!(suggestions.iter().any(|s| s.name == "/plan"));
+        assert!(suggestions.iter().any(|s| s.name == "/build"));
+    }
+
+    #[test]
+    fn test_extract_paths() {
+        let text = "Please read @src/main.rs and check @\"assets/logo.png\" or @'some file.txt' or user@host.com";
+        let paths = extract_paths(text);
+        assert_eq!(paths.len(), 3);
+        assert_eq!(
+            paths[0],
+            ("@src/main.rs".to_owned(), "src/main.rs".to_owned())
+        );
+        assert_eq!(
+            paths[1],
+            (
+                "@\"assets/logo.png\"".to_owned(),
+                "assets/logo.png".to_owned()
+            )
+        );
+        assert_eq!(
+            paths[2],
+            ("@'some file.txt'".to_owned(), "some file.txt".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_base64_encode() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+    }
+
+    #[test]
+    fn test_resolve_prompt_message() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "darwin_test_{}",
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let file_path = temp_dir.join("test.txt");
+        std::fs::write(&file_path, "Hello from test file!").unwrap();
+
+        let path_str = file_path.to_str().unwrap();
+        let prompt = format!("Check this file: @{}", path_str);
+
+        let resolved = resolve_prompt_message(&prompt);
+        assert_eq!(resolved.parts.len(), 1);
+        let text_part = resolved.parts[0].get("text").unwrap().as_str().unwrap();
+        assert!(text_part.contains("Check this file:"));
+        assert!(text_part.contains("--- File:"));
+        assert!(text_part.contains("Hello from test file!"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_clean_prompt_images() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "darwin_test_img_{}",
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let img_path = temp_dir.join("test_image.png");
+        std::fs::write(&img_path, b"dummy png bytes").unwrap();
+
+        let path_str = img_path.to_str().unwrap();
+        let prompt = format!("Here is the image: @{} and some text.", path_str);
+
+        let cleaned = clean_prompt_images(&prompt);
+        assert_eq!(
+            cleaned,
+            "Here is the image: [Image: test_image.png] and some text."
+        );
+
+        let resolved = resolve_prompt_message(&prompt);
+        assert_eq!(resolved.parts.len(), 2);
+
+        let text_part = resolved.parts[0].get("text").unwrap().as_str().unwrap();
+        assert_eq!(
+            text_part,
+            "Here is the image: [Image: test_image.png] and some text."
+        );
+
+        let inline_data = resolved.parts[1].get("inlineData").unwrap();
+        assert_eq!(
+            inline_data.get("mimeType").unwrap().as_str().unwrap(),
+            "image/png"
+        );
+        assert_eq!(
+            inline_data.get("data").unwrap().as_str().unwrap(),
+            &base64_encode(b"dummy png bytes")
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_get_at_word_at_cursor() {
+        assert_eq!(
+            get_at_word_at_cursor("hello @src/m", 12),
+            Some((6, "src/m".to_owned()))
+        );
+        assert_eq!(get_at_word_at_cursor("hello @src/m", 5), None);
+        assert_eq!(
+            get_at_word_at_cursor("hello @", 7),
+            Some((6, "".to_owned()))
+        );
+    }
+}
