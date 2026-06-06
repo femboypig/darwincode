@@ -1,12 +1,12 @@
 #![allow(unused_imports)]
-use crate::config::{StoredConfig, Theme};
-use super::chat::ChatState;
 use super::agent_picker::AgentPickerState;
+use super::chat::ChatState;
 use super::model::ModelPickerState;
 use super::permission::PermissionPickerState;
 use super::session::SessionPickerState;
 use super::setup::SetupState;
 use super::theme_picker::ThemePickerState;
+use crate::config::{StoredConfig, Theme};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Screen {
@@ -108,7 +108,8 @@ pub struct AppProcessManager {
 #[derive(Debug)]
 pub struct AppCore {
     pub keybindings: crate::tui::keybindings::KeyBindings,
-    pub sessions_cache: std::sync::Arc<std::sync::Mutex<Option<Vec<crate::app::session::SessionMeta>>>>,
+    pub sessions_cache:
+        std::sync::Arc<std::sync::Mutex<Option<Vec<crate::app::session::SessionMeta>>>>,
     pub dev_mode: DevelopMode,
     pub active_agent: Option<String>,
     pub pending_custom_command: Option<String>,
@@ -151,8 +152,14 @@ impl App {
             && let crate::config::Theme::Custom(ref name) = cfg.theme
             && !crate::tui::theme::custom_themes().contains_key(name)
         {
-            eprintln!("[darwincode] Custom theme '{}' not found in registry. Falling back to default theme.", name);
-            theme_warning = Some(format!("Theme '{}' not found, falling back to default", name));
+            eprintln!(
+                "[darwincode] Custom theme '{}' not found in registry. Falling back to default theme.",
+                name
+            );
+            theme_warning = Some(format!(
+                "Theme '{}' not found, falling back to default",
+                name
+            ));
             cfg.theme = crate::config::Theme::default();
         }
 
@@ -258,7 +265,8 @@ impl App {
                     proc,
                     core,
                     chat: ChatState::new(StoredConfig::default()),
-                    status: "Enter a Gemini API key. Use Tab to move, Enter to run an action.".to_owned(),
+                    status: "Enter a Gemini API key. Use Tab to move, Enter to run an action."
+                        .to_owned(),
                     tick: 0,
                     should_quit: false,
                     last_warning,
@@ -355,14 +363,17 @@ mod tests {
             ..Default::default()
         };
         let app = App::new(Some(config));
-        
+
         // It should fall back to Theme::Auto (default)
         assert_eq!(app.chat.config.theme, Theme::Auto);
-        
+
         // It should log a warning in app.last_warning
         assert!(app.last_warning.is_some());
         let warning = app.last_warning.unwrap();
         assert!(warning.contains("Theme 'nonexistent_theme_9999' not found"));
-        assert!(app.status.contains("Theme 'nonexistent_theme_9999' not found"));
+        assert!(
+            app.status
+                .contains("Theme 'nonexistent_theme_9999' not found")
+        );
     }
 }
