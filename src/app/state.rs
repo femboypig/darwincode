@@ -1000,28 +1000,16 @@ impl App {
                 .unwrap_or("");
             let error_field = response.get("error").and_then(|v| v.as_str()).unwrap_or("");
 
-            if !stdout.is_empty() {
-                output.push_str(stdout);
-            }
-            if !stderr.is_empty() {
-                if !output.is_empty() {
-                    output.push('\n');
-                }
-                output.push_str(stderr);
-            }
-            if !error_field.is_empty() && error_field != "null" {
-                if !output.is_empty() {
-                    output.push('\n');
-                }
-                output.push_str(error_field);
-            }
-
-            if is_aborted {
-                if !output.is_empty() {
-                    output.push('\n');
-                }
-                output.push_str("^C\n[Process terminated by user via Ctrl+C]");
-            } else if output.is_empty() && !is_running {
+            let mut output = crate::app::file_ops::format_shell_output(
+                stdout,
+                stderr,
+                error_field,
+                false,
+                is_aborted,
+                is_running,
+                None,
+            );
+            if output.is_empty() && !is_running {
                 output = "(empty output)".to_owned();
             }
 
