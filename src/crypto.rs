@@ -115,7 +115,6 @@ pub fn derive_hardware_key() -> Result<[u8; 32]> {
     bail!("Failed to retrieve or generate encryption key")
 }
 
-
 /// Encrypt data using AES-256-GCM
 pub fn encrypt_data(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
     let cipher = Aes256Gcm::new_from_slice(key)
