@@ -21,7 +21,8 @@ pub(crate) fn handle_chat_key(
         Some(crate::app::PendingTask::ConfirmFunction { .. })
     ) {
         if app
-            .core.keybindings
+            .core
+            .keybindings
             .matches(crate::tui::keybindings::TuiAction::Quit, key)
         {
             app.should_quit = true;
@@ -39,24 +40,29 @@ pub(crate) fn handle_chat_key(
                 }
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                app.ui.confirm_scroll
+                app.ui
+                    .confirm_scroll
                     .set(app.ui.confirm_scroll.get().saturating_add(1));
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                app.ui.confirm_scroll
+                app.ui
+                    .confirm_scroll
                     .set(app.ui.confirm_scroll.get().saturating_sub(1));
             }
             KeyCode::PageDown => {
-                app.ui.confirm_scroll
+                app.ui
+                    .confirm_scroll
                     .set(app.ui.confirm_scroll.get().saturating_add(10));
             }
             KeyCode::PageUp => {
-                app.ui.confirm_scroll
+                app.ui
+                    .confirm_scroll
                     .set(app.ui.confirm_scroll.get().saturating_sub(10));
             }
             _ => {
                 if app
-                    .core.keybindings
+                    .core
+                    .keybindings
                     .matches(crate::tui::keybindings::TuiAction::Cancel, key)
                     && let Some(action) = app.answer_function_confirmation(false)
                 {
@@ -83,10 +89,12 @@ pub(crate) fn handle_chat_key(
         let is_ctrl_c = (key.code == KeyCode::Char('c')
             && key.modifiers.contains(KeyModifiers::CONTROL))
             || app
-                .core.keybindings
+                .core
+                .keybindings
                 .matches(crate::tui::keybindings::TuiAction::Quit, key);
         let is_esc = app
-            .core.keybindings
+            .core
+            .keybindings
             .matches(crate::tui::keybindings::TuiAction::Cancel, key);
 
         if is_ctrl_c || is_esc {
@@ -106,28 +114,32 @@ pub(crate) fn handle_chat_key(
         }
 
         if app
-            .core.keybindings
+            .core
+            .keybindings
             .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
         {
             app.chat.scroll = app.chat.scroll.saturating_add(1);
             return Ok(());
         }
         if app
-            .core.keybindings
+            .core
+            .keybindings
             .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
         {
             app.chat.scroll = app.chat.scroll.saturating_sub(1);
             return Ok(());
         }
         if app
-            .core.keybindings
+            .core
+            .keybindings
             .matches(crate::tui::keybindings::TuiAction::PageUp, key)
         {
             app.chat.scroll = app.chat.scroll.saturating_add(15);
             return Ok(());
         }
         if app
-            .core.keybindings
+            .core
+            .keybindings
             .matches(crate::tui::keybindings::TuiAction::PageDown, key)
         {
             app.chat.scroll = app.chat.scroll.saturating_sub(15);
@@ -260,7 +272,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Quit, key)
     {
         let is_running_process = crate::tui::RUNNING_PROCESS_PID.lock().is_some();
@@ -313,7 +326,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         handle_interrupt_signal(app);
@@ -321,7 +335,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ToggleSetup, key)
     {
         app.open_setup();
@@ -329,7 +344,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ToggleModels, key)
     {
         if let Some(config) = app.begin_load_chat_models() {
@@ -339,7 +355,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ToggleSessions, key)
     {
         app.open_sessions();
@@ -347,7 +364,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Submit, key)
     {
         if let Some(action) = app.submit_chat_input() {
@@ -377,7 +395,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
     {
         let suggestions = app.command_suggestions();
@@ -403,7 +422,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
     {
         let suggestions = app.command_suggestions();
@@ -425,7 +445,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::PageUp, key)
     {
         app.chat.scroll = app.chat.scroll.saturating_add(15);
@@ -433,7 +454,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::PageDown, key)
     {
         app.chat.scroll = app.chat.scroll.saturating_sub(15);
@@ -441,7 +463,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::HistoryUp, key)
     {
         app.chat.navigate_history_up();
@@ -449,7 +472,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::HistoryDown, key)
     {
         app.chat.navigate_history_down();
@@ -457,7 +481,8 @@ pub(crate) fn handle_chat_key(
     }
 
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Paste, key)
     {
         if let Ok(Some(image_bytes)) = read_image_from_clipboard()
@@ -593,14 +618,16 @@ pub(crate) fn handle_chat_key(
 
 fn handle_model_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         app.cancel_models();
         return Ok(());
     }
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::ToggleModels, key)
     {
         app.cancel_models();
@@ -624,7 +651,8 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
             let len = app.ui.models.filtered_indices().len();
             for _ in 0..5 {
                 if len > 0 {
-                    app.ui.models.selected = app.ui.models.selected.checked_sub(1).unwrap_or(len - 1);
+                    app.ui.models.selected =
+                        app.ui.models.selected.checked_sub(1).unwrap_or(len - 1);
                 }
             }
         }
@@ -652,7 +680,8 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
 
 fn handle_theme_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         app.cancel_themes();
@@ -676,8 +705,12 @@ fn handle_theme_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
             let len = app.ui.theme_picker.filtered_indices().len();
             for _ in 0..5 {
                 if len > 0 {
-                    app.ui.theme_picker.selected =
-                        app.ui.theme_picker.selected.checked_sub(1).unwrap_or(len - 1);
+                    app.ui.theme_picker.selected = app
+                        .ui
+                        .theme_picker
+                        .selected
+                        .checked_sub(1)
+                        .unwrap_or(len - 1);
                 }
             }
         }
@@ -705,7 +738,8 @@ fn handle_theme_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
 
 fn handle_agent_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
     if app
-        .core.keybindings
+        .core
+        .keybindings
         .matches(crate::tui::keybindings::TuiAction::Cancel, key)
     {
         app.cancel_agents();
@@ -729,8 +763,12 @@ fn handle_agent_picker_key(app: &mut App, key: KeyEvent) -> Result<()> {
             let len = app.ui.agent_picker.filtered_indices().len();
             for _ in 0..5 {
                 if len > 0 {
-                    app.ui.agent_picker.selected =
-                        app.ui.agent_picker.selected.checked_sub(1).unwrap_or(len - 1);
+                    app.ui.agent_picker.selected = app
+                        .ui
+                        .agent_picker
+                        .selected
+                        .checked_sub(1)
+                        .unwrap_or(len - 1);
                 }
             }
         }
