@@ -13,13 +13,13 @@ use ratatui::widgets::{Block, Paragraph};
 use crate::app::{App, Screen};
 
 pub(crate) fn get_theme(app: &App) -> crate::config::Theme {
-    if app.theme_picker_open
-        && let Some(theme) = app.theme_picker.selected_theme()
+    if app.ui.theme_picker_open
+        && let Some(theme) = app.ui.theme_picker.selected_theme()
     {
         crate::config::resolve_theme(&theme)
     } else {
-        let raw_theme = if app.screen == Screen::Setup {
-            &app.setup.theme
+        let raw_theme = if app.ui.screen == Screen::Setup {
+            &app.ui.setup.theme
         } else {
             &app.chat.config.theme
         };
@@ -29,13 +29,13 @@ pub(crate) fn get_theme(app: &App) -> crate::config::Theme {
 
 pub(crate) fn get_active_theme(app: &App) -> crate::tui::theme::ActiveTheme {
     let temp_theme;
-    let raw_theme = if app.theme_picker_open
-        && let Some(theme) = app.theme_picker.selected_theme()
+    let raw_theme = if app.ui.theme_picker_open
+        && let Some(theme) = app.ui.theme_picker.selected_theme()
     {
         temp_theme = theme;
         &temp_theme
-    } else if app.screen == Screen::Setup {
-        &app.setup.theme
+    } else if app.ui.screen == Screen::Setup {
+        &app.ui.setup.theme
     } else {
         &app.chat.config.theme
     };
@@ -71,7 +71,7 @@ pub(crate) fn render(frame: &mut Frame, app: &App) {
         frame.area(),
     );
 
-    match app.screen {
+    match app.ui.screen {
         Screen::Setup => chat::render_chat(frame, app),
         Screen::Chat | Screen::Permissions | Screen::Sessions => chat::render_chat(frame, app),
         Screen::AskUser => chat::render_chat(frame, app),
