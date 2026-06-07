@@ -495,23 +495,8 @@ fn rect_contains(rect: ratatui::layout::Rect, x: u16, y: u16) -> bool {
 }
 
 fn wheel_over_todo(app: &App, col: u16, row: u16) -> bool {
-    if !app.chat.todos.is_empty() {
-        if let Some(rect) = app.chat.todo_area.get() {
-            if rect.width > 0 && rect.height > 0 && rect_contains(rect, col, row) {
-                return true;
-            }
-        } else {
-            if let Some(full) = app.chat.messages_area.get() {
-                let mid = full.x.saturating_add(full.width / 2);
-                return col >= mid;
-            }
-            return true;
-        }
-    }
-    if let Some(rect) = app.chat.messages_area.get()
-        && rect_contains(rect, col, row)
-    {
-        return false;
+    if let Some(rect) = app.chat.todo_area.get() {
+        return rect.width > 0 && rect.height > 0 && rect_contains(rect, col, row);
     }
     !app.chat.todos.is_empty()
 }
@@ -717,7 +702,7 @@ mod tests {
         };
         let app = app_with_layout(messages, None);
         assert!(wheel_over_todo(&app, 79, 10));
-        assert!(!wheel_over_todo(&app, 30, 10));
+        assert!(wheel_over_todo(&app, 30, 10));
     }
 
     #[test]
@@ -726,7 +711,7 @@ mod tests {
             api_key: "x".to_string(),
             ..Default::default()
         }));
-        app.chat.todo_area.set(Some(ratatui::layout::Rect {
+        app.chat.messages_area.set(Some(ratatui::layout::Rect {
             x: 0,
             y: 0,
             width: 200,
