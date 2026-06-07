@@ -81,7 +81,8 @@ fn run_loop(
         }
 
         // Handle scrolling if dragging outside the viewport vertical boundaries
-        if let Some((click_x, click_y)) = app.chat.last_mouse_drag_pos
+        if !app.ui.show_trust_modal
+            && let Some((click_x, click_y)) = app.chat.last_mouse_drag_pos
             && let Some(rect) = app.chat.messages_area.get()
         {
             if click_y < rect.y {

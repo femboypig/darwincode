@@ -6,6 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::api::GeminiClient;
+use crate::api::client::canonical_tool_name;
 use crate::app::FunctionAction;
 use crate::config::StoredConfig;
 use crate::tui::WorkerEvent;
@@ -335,7 +336,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                     let custom_agents = crate::app::load_custom_agents();
                     if let Some(agent_config) = custom_agents.get(agent_id)
                         && let Some(ref allowed) = agent_config.allowed_tools
-                        && !allowed.contains(&name)
+                        && !allowed.iter().any(|s| canonical_tool_name(s) == name)
                     {
                         let err_msg = format!(
                             "Permission denied: tool '{}' is not allowed for the active agent '{}'.",

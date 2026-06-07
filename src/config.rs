@@ -28,6 +28,8 @@ pub struct StoredConfig {
     pub respect_ignore_rules: bool,
     #[serde(default)]
     pub trust_workspace: bool,
+    #[serde(default)]
+    pub trusted_workspaces: Vec<String>,
     #[serde(skip)]
     pub active_agent: Option<String>,
 }
@@ -353,6 +355,20 @@ impl StoredConfig {
 
         Ok(())
     }
+
+    pub fn is_workspace_trusted(&self) -> bool {
+        if self.trust_workspace {
+            return true;
+        }
+        if let Some(proj_root) = find_project_root() {
+            let proj_path = std::fs::canonicalize(&proj_root)
+                .unwrap_or(proj_root)
+                .to_string_lossy()
+                .to_string();
+            return self.trusted_workspaces.contains(&proj_path);
+        }
+        false
+    }
 }
 
 impl Default for StoredConfig {
@@ -368,6 +384,7 @@ impl Default for StoredConfig {
             theme: Theme::Auto,
             respect_ignore_rules: true,
             trust_workspace: false,
+            trusted_workspaces: Vec::new(),
             active_agent: None,
         }
     }

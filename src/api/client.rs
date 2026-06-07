@@ -6,6 +6,32 @@ pub mod common;
 pub mod gemini;
 pub mod openai;
 
+/// Normalize a tool name from user-facing TOML config to the internal
+/// name the runtime actually emits to the model. Users coming from
+/// other agents (or copying the default schema template) often write
+/// `read_file`, `grep_search`, `list_dir`, `bash`, `edit_file`,
+/// `write_file`, `web_search` etc. — accept those so an agent that
+/// lists `["read_file"]` doesn't reject every real `read` call.
+pub fn canonical_tool_name(name: &str) -> &str {
+    match name.trim() {
+        "" => "",
+        "read" | "read_file" | "cat" => "read",
+        "grep" | "grep_search" | "search" => "grep",
+        "glob" | "list_dir" | "list_recursive" | "list" => "glob",
+        "edit" | "edit_file" | "patch_file" => "edit",
+        "write" | "write_file" => "write",
+        "sh" | "bash" | "shell" | "run" => "sh",
+        "patch" => "patch",
+        "websearch" | "web_search" | "fetch" => "websearch",
+        "ask" | "ask_user" | "askuser" => "ask",
+        "todo" => "todo",
+        "ps" | "list_processes" => "ps",
+        "kill" => "kill",
+        "logs" => "logs",
+        other => other,
+    }
+}
+
 #[derive(Debug)]
 pub struct GeminiClient {
     config: StoredConfig,
@@ -38,7 +64,7 @@ impl GeminiClient {
     ) -> Result<()> {
         let mut active_model = self.config.model.trim_start_matches("models/").to_owned();
         let mut agent_prompt_addition = None;
-        let mut allowed_tools = None;
+        let mut allowed_tools: Option<std::collections::HashSet<String>> = None;
 
         if let Some(ref agent_id) = self.config.active_agent {
             let custom_agents = crate::app::load_custom_agents();
@@ -47,7 +73,14 @@ impl GeminiClient {
                     active_model = model_override.trim_start_matches("models/").to_owned();
                 }
                 agent_prompt_addition = Some(agent_config.system_prompt.clone());
-                allowed_tools = agent_config.allowed_tools.clone();
+                // Normalize every entry through the alias map so users
+                // can write `read_file`, `list_dir`, `bash` etc. in
+                // their agent TOML without every call getting denied.
+                allowed_tools = agent_config.allowed_tools.as_ref().map(|list| {
+                    list.iter()
+                        .map(|s| canonical_tool_name(s).to_owned())
+                        .collect()
+                });
             }
         }
 
@@ -415,5 +448,31 @@ impl GeminiClient {
                 on_chunk,
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_tool_name;
+
+    #[test]
+    fn canonical_aliases_resolve_to_real_names() {
+        // Direct pass-through
+        assert_eq!(canonical_tool_name("read"), "read");
+        assert_eq!(canonical_tool_name("sh"), "sh");
+        // Common user-facing aliases from the schema template
+        assert_eq!(canonical_tool_name("read_file"), "read");
+        assert_eq!(canonical_tool_name("grep_search"), "grep");
+        assert_eq!(canonical_tool_name("list_dir"), "glob");
+        assert_eq!(canonical_tool_name("list_recursive"), "glob");
+        assert_eq!(canonical_tool_name("bash"), "sh");
+        assert_eq!(canonical_tool_name("web_search"), "websearch");
+        // Trimming
+        assert_eq!(canonical_tool_name("  read  "), "read");
+        // Unknown names pass through untouched so the allow-list
+        // still produces a clean error message instead of silently
+        // aliasing to a real tool.
+        assert_eq!(canonical_tool_name("nonexistent_tool"), "nonexistent_tool");
+        assert_eq!(canonical_tool_name(""), "");
     }
 }

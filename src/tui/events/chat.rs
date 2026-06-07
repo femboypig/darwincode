@@ -16,6 +16,10 @@ pub(crate) fn handle_chat_key(
     sender: &Sender<WorkerEvent>,
     key: KeyEvent,
 ) -> Result<()> {
+    if app.ui.show_trust_modal {
+        return handle_trust_modal_key(app, key);
+    }
+
     if matches!(
         app.proc.pending,
         Some(crate::app::PendingTask::ConfirmFunction { .. })
@@ -989,4 +993,30 @@ fn handle_interrupt_signal(app: &mut App) {
     );
     app.save_session();
     app.status = "Aborted by user".to_owned();
+}
+
+fn handle_trust_modal_key(app: &mut App, key: KeyEvent) -> Result<()> {
+    // Tab / arrow keys / h-l to move the focus between Yes / No buttons
+    match key.code {
+        KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
+            app.ui.trust_modal_selected_yes = true;
+        }
+        KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
+            app.ui.trust_modal_selected_yes = false;
+        }
+        KeyCode::Char('y') | KeyCode::Char('Y') => {
+            app.answer_trust_modal(true);
+        }
+        KeyCode::Char('n') | KeyCode::Char('N') => {
+            app.answer_trust_modal(false);
+        }
+        KeyCode::Enter => {
+            app.answer_trust_modal(app.ui.trust_modal_selected_yes);
+        }
+        KeyCode::Esc => {
+            app.answer_trust_modal(false);
+        }
+        _ => {}
+    }
+    Ok(())
 }
