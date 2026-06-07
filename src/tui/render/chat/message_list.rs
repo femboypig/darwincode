@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::tui::render::get_active_theme;
 use crate::tui::render::get_theme;
 use crate::tui::render::icons::icons;
 use crate::tui::render::logo::welcome_lines;
@@ -381,9 +382,13 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
             && !message.is_tool
         {
             let (min_line, min_col, max_line, max_col) = sel.normalized();
-            let highlight_style = Style::default()
-                .bg(Color::Rgb(59, 130, 246))
-                .fg(Color::White);
+            let highlight_bg = get_active_theme(app).accent;
+            let highlight_fg = if get_active_theme(app).is_light {
+                Color::Black
+            } else {
+                Color::White
+            };
+            let highlight_style = Style::default().bg(highlight_bg).fg(highlight_fg);
             for (line_idx, line) in final_msg_lines.iter_mut().enumerate() {
                 if line_idx >= min_line && line_idx <= max_line {
                     let text_chars_count = get_line_text_excluding_margin(line).chars().count();
