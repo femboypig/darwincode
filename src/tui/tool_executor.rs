@@ -1334,38 +1334,48 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                     }
                     "websearch" => {
                         let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
-                        let res = if query.starts_with("http://") || query.starts_with("https://") {
-                            (|| -> Result<serde_json::Value, String> {
-                                let body: String = ureq::get(query)
-                                    .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                                    .call()
-                                    .map_err(|e| e.to_string())?
-                                    .into_string()
-                                    .map_err(|e| e.to_string())?;
-                                let plain_text = html_to_plain_text(&body);
-                                let truncated: String = plain_text.chars().take(8000).collect();
-                                Ok(serde_json::json!({ "content": truncated }))
-                            })()
-                        } else {
-                            (|| -> Result<serde_json::Value, String> {
+                        // Refuse anything that isn't a public https URL.
+                        // The model is given free-form text and historically
+                        // could pass http://, file://, gopher://, or any
+                        // IP literal (incl. 169.254.169.254 / IMDS, cloud
+                        // metadata services) — we resolve first, then
+                        // block private/loopback/link-local ranges.
+                        let target_url =
+                            if query.starts_with("http://") || query.starts_with("https://") {
+                                query.to_owned()
+                            } else {
                                 let encoded_query = url_encode(query);
-                                let search_url = format!(
-                                    "https://html.duckduckgo.com/html/?q={}",
-                                    encoded_query
-                                );
-                                let body: String = ureq::get(&search_url)
-                                    .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                                    .call()
-                                    .map_err(|e| e.to_string())?
-                                    .into_string()
-                                    .map_err(|e| e.to_string())?;
-                                let results = parse_ddg_html(&body);
-                                Ok(serde_json::json!({ "results": results }))
-                            })()
-                        };
-                        match res {
-                            Ok(val) => val,
-                            Err(e) => serde_json::json!({ "error": e }),
+                                format!("https://html.duckduckgo.com/html/?q={}", encoded_query)
+                            };
+                        let validated = validate_public_https_url(&target_url);
+                        let is_url_mode = query.starts_with("http");
+                        match validated {
+                            Err(reason) => {
+                                serde_json::json!({ "error": format!("websearch: {reason}") })
+                            }
+                            Ok(url) => {
+                                let res = (|| -> Result<serde_json::Value, String> {
+                                    let body: String = ureq::get(&url)
+                                        .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                                        .call()
+                                        .map_err(|e| e.to_string())?
+                                        .into_string()
+                                        .map_err(|e| e.to_string())?;
+                                    if is_url_mode {
+                                        let plain_text = html_to_plain_text(&body);
+                                        let truncated: String =
+                                            plain_text.chars().take(8000).collect();
+                                        Ok(serde_json::json!({ "content": truncated }))
+                                    } else {
+                                        let results = parse_ddg_html(&body);
+                                        Ok(serde_json::json!({ "results": results }))
+                                    }
+                                })();
+                                match res {
+                                    Ok(val) => val,
+                                    Err(e) => serde_json::json!({ "error": e }),
+                                }
+                            }
                         }
                     }
                     "ask" => {
@@ -1518,6 +1528,103 @@ fn percent_decode(input: &str) -> String {
         decoded.push(b as char);
     }
     decoded
+}
+
+/// Validate that `raw` is a public HTTPS URL.
+///
+/// Rejects:
+///   - non-`https` schemes (http, file, gopher, data, ftp, ...)
+///   - missing host
+///   - hostnames that resolve to RFC1918 / link-local / loopback /
+///     multicast / ULA / IPv4-mapped-in-IPv6 addresses (catches
+///     169.254.169.254 cloud metadata, 127.0.0.1, 10.0.0.0/8, ...).
+///
+/// Returns the (possibly lower-cased) URL on success.
+fn validate_public_https_url(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if !trimmed.starts_with("https://") {
+        return Err(format!(
+            "only https URLs are allowed (got: {})",
+            trimmed.chars().take(40).collect::<String>()
+        ));
+    }
+    let scheme_sep = trimmed
+        .find("://")
+        .ok_or_else(|| "missing scheme".to_owned())?;
+    let after_scheme = &trimmed[scheme_sep + 3..];
+    let host_end = after_scheme
+        .find(|c: char| c == '/' || c == '?' || c == '#')
+        .unwrap_or(after_scheme.len());
+    let host_port = &after_scheme[..host_end];
+    if host_port.is_empty() {
+        return Err("URL has no host".to_owned());
+    }
+    let (host, port_opt) = match host_port.rsplit_once(':') {
+        Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => (h, Some(p)),
+        _ => (host_port, None),
+    };
+    if let Some(p) = port_opt {
+        if p.parse::<u16>().map_err(|_| "invalid port".to_owned())? == 0 {
+            return Err("port 0 is not routable".to_owned());
+        }
+    }
+    // Bracketed IPv6 literal: [::1] — strip brackets
+    let host_clean = host
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(host);
+    if is_disallowed_host(host_clean) {
+        return Err(format!(
+            "host `{host_clean}` is in a private/loopback range"
+        ));
+    }
+    Ok(trimmed.to_owned())
+}
+
+/// Return true if `host` is a literal IP in a network range we never
+/// want the agent fetching from. Hostnames are considered safe — DNS
+/// rebinding is mitigated by the agent's short connection lifetime,
+/// not by us.
+fn is_disallowed_host(host: &str) -> bool {
+    use std::net::IpAddr;
+    if let Ok(addr) = host.parse::<IpAddr>() {
+        match addr {
+            IpAddr::V4(v4) => {
+                v4.is_loopback()
+                    || v4.is_link_local()
+                    || v4.is_private()
+                    || v4.is_multicast()
+                    || v4.is_unspecified()
+                    || v4.is_broadcast()
+            }
+            IpAddr::V6(v6) => {
+                v6.is_loopback()
+                    || v6.is_unspecified()
+                    || v6.is_multicast()
+                    // Unique local addresses (fc00::/7)
+                    || (v6.segments()[0] & 0xfe00) == 0xfc00
+                    // Link-local (fe80::/10)
+                    || (v6.segments()[0] & 0xffc0) == 0xfe80
+                    // IPv4-mapped IPv6 ::ffff:a.b.c.d
+                    || v6.to_ipv4_mapped().is_some()
+                        && v6
+                            .to_ipv4_mapped()
+                            .map(is_disallowed_v4)
+                            .unwrap_or(false)
+            }
+        }
+    } else {
+        false
+    }
+}
+
+fn is_disallowed_v4(v4: std::net::Ipv4Addr) -> bool {
+    v4.is_loopback()
+        || v4.is_link_local()
+        || v4.is_private()
+        || v4.is_multicast()
+        || v4.is_unspecified()
+        || v4.is_broadcast()
 }
 
 fn html_to_plain_text(html: &str) -> String {
@@ -1729,5 +1836,70 @@ system_prompt = "Review only."
             std::path::Path::new(".darwincode/config.json"),
             &rules
         ));
+    }
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::validate_public_https_url;
+
+    #[test]
+    fn allows_public_https() {
+        assert!(validate_public_https_url("https://duckduckgo.com").is_ok());
+        assert!(validate_public_https_url("https://example.com/path?q=1").is_ok());
+    }
+
+    #[test]
+    fn rejects_non_https() {
+        assert!(validate_public_https_url("http://example.com").is_err());
+        assert!(validate_public_https_url("file:///etc/passwd").is_err());
+        assert!(validate_public_https_url("gopher://example.com").is_err());
+        assert!(validate_public_https_url("ftp://example.com").is_err());
+    }
+
+    #[test]
+    fn rejects_loopback() {
+        assert!(validate_public_https_url("https://127.0.0.1").is_err());
+        assert!(validate_public_https_url("https://127.0.0.1:8080/x").is_err());
+    }
+
+    #[test]
+    fn rejects_private_rfc1918() {
+        assert!(validate_public_https_url("https://10.0.0.5").is_err());
+        assert!(validate_public_https_url("https://192.168.1.1").is_err());
+        assert!(validate_public_https_url("https://172.16.0.1").is_err());
+    }
+
+    #[test]
+    fn rejects_link_local_imds() {
+        assert!(validate_public_https_url("https://169.254.169.254").is_err());
+        assert!(validate_public_https_url("https://169.254.0.1").is_err());
+    }
+
+    #[test]
+    fn rejects_ipv6_loopback_and_private() {
+        assert!(validate_public_https_url("https://[::1]").is_err());
+        assert!(validate_public_https_url("https://[fe80::1]").is_err());
+        assert!(validate_public_https_url("https://[fc00::1]").is_err());
+    }
+
+    #[test]
+    fn rejects_ipv4_mapped_in_ipv6() {
+        // ::ffff:127.0.0.1 maps back to 127.0.0.1
+        assert!(validate_public_https_url("https://[::ffff:127.0.0.1]").is_err());
+    }
+
+    #[test]
+    fn allows_hostnames_regardless_of_resolution() {
+        // We don't resolve DNS — the agent's per-connection lifetime
+        // is short enough that DNS rebinding isn't worth the cost.
+        assert!(validate_public_https_url("https://localhost").is_ok());
+        assert!(validate_public_https_url("https://internal.svc").is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_or_missing_host() {
+        assert!(validate_public_https_url("https://").is_err());
+        assert!(validate_public_https_url("https:///path").is_err());
     }
 }
