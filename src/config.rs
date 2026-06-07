@@ -340,6 +340,29 @@ impl StoredConfig {
             bail!("base URL is not a valid format");
         }
 
+        // Reject http:// for non-loopback hosts. The API key is sent
+        // as a bearer token in the Authorization header on every
+        // request, so any cleartext on the wire leaks it to anyone
+        // on the path. http://localhost / http://127.0.0.1 are kept
+        // as an explicit opt-in for local OpenAI-compatible proxies
+        // (Ollama, OmniRoute, llama.cpp, etc.).
+        if let Some(rest) = url_str_trimmed
+            .strip_prefix("http://")
+            .map(|s| s.split('/').next().unwrap_or(""))
+        {
+            let host = rest.rsplit_once(':').map(|(h, _)| h).unwrap_or(rest);
+            let host = host
+                .strip_prefix('[')
+                .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(host);
+            if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+                bail!(
+                    "base URL must use https:// for non-loopback hosts ({} sends the API key in cleartext)",
+                    host
+                );
+            }
+        }
+
         if self.api_key.starts_with("sk-") {
             if url_str_trimmed == "https://generativelanguage.googleapis.com/v1beta" {
                 bail!(
