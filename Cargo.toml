@@ -8,6 +8,7 @@ readme = "README.md"
 repository = "https://github.com/femboypig/darwincode"
 keywords = ["tui", "cli", "ai", "agent", "coding"]
 categories = ["command-line-interface", "development-tools"]
+authors = ["femboypig <harimassaa@gmail.com>"]
 
 [dependencies]
 aes-gcm = "0.10.3"
