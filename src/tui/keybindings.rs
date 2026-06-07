@@ -221,7 +221,44 @@ pub fn load_keybindings() -> (KeyBindings, Option<String>) {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(pretty) = serde_json::to_string_pretty(&kb) {
-            let _ = std::fs::write(&path, pretty);
+            match std::fs::write(&path, pretty) {
+                Ok(_) => {
+                    let added: Vec<&'static str> = kb
+                        .bindings
+                        .keys()
+                        .filter(|k| !matches!(k, TuiAction::Quit | TuiAction::Cancel))
+                        .filter_map(|k| {
+                            if matches!(k, TuiAction::TodoScrollUp | TuiAction::TodoScrollDown) {
+                                Some(
+                                    if std::mem::discriminant(k)
+                                        == std::mem::discriminant(&TuiAction::TodoScrollUp)
+                                    {
+                                        "TodoScrollUp"
+                                    } else {
+                                        "TodoScrollDown"
+                                    },
+                                )
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !added.is_empty() {
+                        eprintln!(
+                            "[darwincode] keybindings: added {} new action(s) ({}). Restart-free for in-memory; the file is on disk.",
+                            added.len(),
+                            added.join(", ")
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[darwincode] keybindings: failed to persist {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            }
         }
     }
 

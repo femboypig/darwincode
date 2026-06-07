@@ -782,6 +782,9 @@ pub fn custom_themes() -> &'static HashMap<String, ThemeConfig> {
             ("everforest", include_str!("themes/everforest.json")),
             ("github", include_str!("themes/github.json")),
             ("dracula", include_str!("themes/dracula.json")),
+            ("solarized", include_str!("themes/solarized.json")),
+            ("catppuccin", include_str!("themes/catppuccin.json")),
+            ("onedark", include_str!("themes/onedark.json")),
         ];
 
         for (name, content) in builtins {

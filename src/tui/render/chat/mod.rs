@@ -276,6 +276,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     }
 
     if let Some(queue_area) = queue_area {
+        // todo: rework this shit
         let mut queue_lines = vec![Line::from(Span::styled(
             " Queued Prompts: ",
             Style::default()
