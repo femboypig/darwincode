@@ -1595,7 +1595,7 @@ fn validate_public_https_url(raw: &str) -> Result<String, String> {
         .ok_or_else(|| "missing scheme".to_owned())?;
     let after_scheme = &trimmed[scheme_sep + 3..];
     let host_end = after_scheme
-        .find(|c: char| c == '/' || c == '?' || c == '#')
+        .find(['/', '?', '#'])
         .unwrap_or(after_scheme.len());
     let host_port = &after_scheme[..host_end];
     if host_port.is_empty() {
@@ -1605,10 +1605,10 @@ fn validate_public_https_url(raw: &str) -> Result<String, String> {
         Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => (h, Some(p)),
         _ => (host_port, None),
     };
-    if let Some(p) = port_opt {
-        if p.parse::<u16>().map_err(|_| "invalid port".to_owned())? == 0 {
-            return Err("port 0 is not routable".to_owned());
-        }
+    if let Some(p) = port_opt
+        && p.parse::<u16>().map_err(|_| "invalid port".to_owned())? == 0
+    {
+        return Err("port 0 is not routable".to_owned());
     }
     // Bracketed IPv6 literal: [::1] — strip brackets
     let host_clean = host

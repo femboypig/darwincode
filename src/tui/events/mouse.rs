@@ -456,24 +456,23 @@ pub(crate) fn handle_mouse_event(
             // Take ownership of the selection (if any) so we can clear it
             // before the clipboard helper runs, and so the borrow checker
             // doesn't see selection borrowed mutably through extract.
-            let selection = app.chat.selection.take();
-            if let Some(sel) = selection {
-                if sel.start_line != sel.end_line || sel.start_col != sel.end_col {
-                    // Bounds-check the index defensively. A streaming
-                    // response that swaps out a message between Down
-                    // and Up would otherwise panic.
-                    if let Some(message) = app.chat.messages.get(sel.msg_idx) {
-                        let text_to_copy = extract_selected_text(message, &sel);
-                        if !text_to_copy.is_empty()
-                            && crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok()
-                        {
-                            app.status = "Copied selection to clipboard".to_owned();
-                        } else if text_to_copy.is_empty() {
-                            // Either nothing was selected, or the cache
-                            // was unavailable. Don't blame the user:
-                            // surface a hint about scrolling & re-trying.
-                            app.status = "Selection empty (message scrolled out?)".to_owned();
-                        }
+            if let Some(sel) = app.chat.selection.take()
+                && (sel.start_line != sel.end_line || sel.start_col != sel.end_col)
+            {
+                // Bounds-check the index defensively. A streaming
+                // response that swaps out a message between Down
+                // and Up would otherwise panic.
+                if let Some(message) = app.chat.messages.get(sel.msg_idx) {
+                    let text_to_copy = extract_selected_text(message, &sel);
+                    if !text_to_copy.is_empty()
+                        && crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok()
+                    {
+                        app.status = "Copied selection to clipboard".to_owned();
+                    } else if text_to_copy.is_empty() {
+                        // Either nothing was selected, or the cache
+                        // was unavailable. Don't blame the user:
+                        // surface a hint about scrolling & re-trying.
+                        app.status = "Selection empty (message scrolled out?)".to_owned();
                     }
                 }
             }
