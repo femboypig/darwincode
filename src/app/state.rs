@@ -265,7 +265,9 @@ impl App {
             self.chat.last_chunk_was_thought = false;
         }
 
-        self.chat.scroll = 0;
+        if self.chat.scroll == 0 {
+            self.chat.scroll = 0;
+        }
     }
 
     fn append_to_chat_messages(&mut self, author: &'static str, text: String) {

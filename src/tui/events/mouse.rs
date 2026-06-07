@@ -487,17 +487,7 @@ pub(crate) fn handle_mouse_event(
     Ok(())
 }
 
-fn rect_contains(rect: ratatui::layout::Rect, x: u16, y: u16) -> bool {
-    x >= rect.x
-        && x < rect.x.saturating_add(rect.width)
-        && y >= rect.y
-        && y < rect.y.saturating_add(rect.height)
-}
-
-fn wheel_over_todo(app: &App, col: u16, row: u16) -> bool {
-    if let Some(rect) = app.chat.todo_area.get() {
-        return rect.width > 0 && rect.height > 0 && rect_contains(rect, col, row);
-    }
+fn wheel_over_todo(app: &App, _col: u16, _row: u16) -> bool {
     !app.chat.todos.is_empty()
 }
 
@@ -689,7 +679,7 @@ mod tests {
         };
         let app = app_with_layout(messages, Some(todo));
         assert!(wheel_over_todo(&app, 100, 10));
-        assert!(!wheel_over_todo(&app, 30, 10));
+        assert!(wheel_over_todo(&app, 30, 10));
     }
 
     #[test]
