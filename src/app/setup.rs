@@ -103,6 +103,7 @@ impl SetupState {
             respect_ignore_rules: self.respect_ignore_rules,
             trust_workspace: self.trust_workspace,
             active_agent: None,
+            ..Default::default()
         };
 
         config.validate()?;
