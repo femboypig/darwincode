@@ -51,6 +51,10 @@ pub(crate) fn check_path_safety(path: &std::path::Path) -> PathSafety {
         || path_str.starts_with("/proc")
         || path_str.starts_with("/sys")
         || path_str.starts_with("/dev")
+        || path_str.starts_with("/root")
+        || path_str.starts_with("/boot")
+        || path_str.starts_with("/var/log")
+        || path_str.starts_with("/var/lib")
     {
         return PathSafety::Blocked;
     }
@@ -60,12 +64,30 @@ pub(crate) fn check_path_safety(path: &std::path::Path) -> PathSafety {
         if abs_path.starts_with(&home) {
             let rel_to_home = abs_path.strip_prefix(&home).unwrap_or(&abs_path);
             let rel_str = rel_to_home.to_string_lossy();
-            if rel_str.starts_with(".ssh")
-                || rel_str.contains(".bashrc")
-                || rel_str.contains(".zshrc")
-                || rel_str.contains(".bash_profile")
-                || rel_str.contains(".profile")
-            {
+            // Sensitive dotfile dirs and shell config — these
+            // almost never need to be touched by an LLM, and a
+            // prompt-injected tool call could exfiltrate SSH keys
+            // or rewrite .bashrc to backdoor the shell.
+            let blocked_substr = [
+                ".ssh",
+                ".aws",
+                ".gnupg",
+                ".kube",
+                ".docker",
+                ".config/gh",
+                ".netrc",
+                ".bashrc",
+                ".zshrc",
+                ".bash_profile",
+                ".profile",
+                ".bash_history",
+                ".zsh_history",
+                ".lesshst",
+                ".viminfo",
+                ".pypirc",
+                ".netrc",
+            ];
+            if blocked_substr.iter().any(|s| rel_str.contains(s)) {
                 return PathSafety::Blocked;
             }
             return PathSafety::Safe;
