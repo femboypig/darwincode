@@ -10,6 +10,19 @@ use crate::app::App;
 use crate::config::StoredConfig;
 
 fn main() -> Result<()> {
+    // Fail fast if the environment doesn't give us a writable
+    // config directory. Without one we'd have to fall back to
+    // writing the API key in cleartext, which is the M3 finding in
+    // the project's security audit — see SECURITY.md.
+    if crate::crypto::is_home_appdata_missing() {
+        eprintln!(
+            "darwincode: no usable config directory found.\n\
+             Set one of $XDG_CONFIG_HOME, $HOME, $APPDATA, or $USERPROFILE\n\
+             to a writable path before running darwincode."
+        );
+        std::process::exit(2);
+    }
+
     // Automatically initialize the project-specific .darwincode directory structure
     crate::tui::theme::init_project_dir();
 

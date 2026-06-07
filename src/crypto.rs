@@ -23,10 +23,15 @@ fn from_hex(s: &str) -> Option<Vec<u8>> {
 }
 
 pub fn is_home_appdata_missing() -> bool {
-    std::env::var_os("XDG_CONFIG_HOME").is_none()
-        && std::env::var_os("APPDATA").is_none()
-        && std::env::var_os("HOME").is_none()
-        && std::env::var_os("USERPROFILE").is_none()
+    fn empty_or_unset(name: &str) -> bool {
+        std::env::var_os(name)
+            .map(|s| s.is_empty() || s.to_string_lossy().trim().is_empty())
+            .unwrap_or(true)
+    }
+    empty_or_unset("XDG_CONFIG_HOME")
+        && empty_or_unset("APPDATA")
+        && empty_or_unset("HOME")
+        && empty_or_unset("USERPROFILE")
 }
 
 /// Derive a secure, hardware-bound 256-bit symmetric key.
