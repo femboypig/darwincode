@@ -67,21 +67,17 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         (vertical_split[0], None, vertical_split[1])
     };
 
-    // Text wrapped for input: padding of 1 on each side inside the text block,
-    // plus margin(2) and blue line(1) on the left side of text block,
-    // plus margin(2) on the right side of text block. Total horizontal spacing is 7.
-    let input_inner_w = if app.chat.messages.is_empty() {
-        // Centered welcome input box is 70% of screen width of left_pane
-        let centered_w = (left_pane.width as u32 * 70 / 100) as u16;
-        centered_w.saturating_sub(7).max(1)
+    let text_width = if app.chat.messages.is_empty() {
+        ((left_pane.width as u32 * 70 / 100) as u16)
     } else {
-        left_pane.width.saturating_sub(7).max(1)
-    };
-    let wrapped_lines = wrap_text_to_lines(app.chat.input.as_str(), input_inner_w as usize);
+        left_pane.width
+    }
+    .saturating_sub(13)
+    .max(1);
+    let wrapped_lines = wrap_text_to_lines(app.chat.input.as_str(), text_width as usize);
     let display_lines = u16::try_from(wrapped_lines.len()).unwrap_or(u16::MAX);
     let input_height = if app.ui.screen == Screen::AskUser {
-        let q_wrapped =
-            wrap_text_to_lines(app.ui.ask_user.question.as_str(), input_inner_w as usize);
+        let q_wrapped = wrap_text_to_lines(app.ui.ask_user.question.as_str(), text_width as usize);
         let q_lines = u16::try_from(q_wrapped.len()).unwrap_or(u16::MAX);
         let opt_count = u16::try_from(app.ui.ask_user.options.len()).unwrap_or(u16::MAX);
         let custom_lines = if app.ui.ask_user.is_custom {
@@ -410,12 +406,11 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         height: 1,
     };
 
-    let input_inner_width = text_area.width.max(1);
+    let input_inner_width = text_width;
     let total_visual_lines = display_lines;
 
-    // Compute cursor visual row and column
     let mut cursor_visual_row: u16 = 0;
-    let mut cursor_col_in_logical: u16 = 0; // position within current logical line
+    let mut cursor_col_in_logical: u16 = 0;
     for (i, c) in app.chat.input.chars().enumerate() {
         if i == app.chat.cursor {
             break;
