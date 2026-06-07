@@ -487,7 +487,15 @@ pub(crate) fn handle_mouse_event(
     Ok(())
 }
 
-fn wheel_over_todo(app: &App, _col: u16, _row: u16) -> bool {
+fn wheel_over_todo(app: &App, col: u16, row: u16) -> bool {
+    if let Some(rect) = app.chat.todo_area.get() {
+        return rect.width > 0
+            && rect.height > 0
+            && col >= rect.x
+            && col < rect.x.saturating_add(rect.width)
+            && row >= rect.y
+            && row < rect.y.saturating_add(rect.height);
+    }
     !app.chat.todos.is_empty()
 }
 
@@ -679,7 +687,7 @@ mod tests {
         };
         let app = app_with_layout(messages, Some(todo));
         assert!(wheel_over_todo(&app, 100, 10));
-        assert!(wheel_over_todo(&app, 30, 10));
+        assert!(!wheel_over_todo(&app, 30, 10));
     }
 
     #[test]
@@ -700,12 +708,6 @@ mod tests {
         let app = App::new(Some(crate::config::StoredConfig {
             api_key: "x".to_string(),
             ..Default::default()
-        }));
-        app.chat.messages_area.set(Some(ratatui::layout::Rect {
-            x: 0,
-            y: 0,
-            width: 200,
-            height: 24,
         }));
         assert!(!wheel_over_todo(&app, 100, 10));
     }
