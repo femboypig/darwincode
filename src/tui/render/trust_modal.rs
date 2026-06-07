@@ -13,8 +13,6 @@ pub(crate) fn render_trust_modal(frame: &mut Frame, app: &App) {
     let active_theme = crate::tui::render::get_active_theme(app);
     let full = frame.area();
 
-    dim_background(frame, full, &active_theme);
-
     let popup = centered_rect(72, 64, full);
 
     frame.render_widget(Clear, popup);
@@ -147,22 +145,6 @@ pub(crate) fn render_trust_modal(frame: &mut Frame, app: &App) {
     ))
     .alignment(Alignment::Center);
     frame.render_widget(hint, inner_chunks[4]);
-}
-
-fn dim_background(frame: &mut Frame, area: Rect, theme: &crate::tui::theme::ActiveTheme) {
-    let scrim_bg = if theme.is_light {
-        Color::Rgb(60, 60, 60)
-    } else {
-        Color::Rgb(10, 10, 10)
-    };
-    let mut scrim = String::with_capacity(area.width as usize);
-    for _ in 0..area.width {
-        scrim.push(' ');
-    }
-    let lines: Vec<Line> = (0..area.height)
-        .map(|_| Line::from(Span::styled(scrim.as_str(), Style::default().bg(scrim_bg))))
-        .collect();
-    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

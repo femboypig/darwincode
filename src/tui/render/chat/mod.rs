@@ -527,7 +527,8 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     render_statusbar(frame, app, statusbar_area);
 
-    let has_modal = app.ui.model_picker_open
+    let has_modal = app.ui.show_trust_modal
+        || app.ui.model_picker_open
         || app.ui.theme_picker_open
         || app.ui.agent_picker_open
         || app.ui.screen == Screen::Sessions
@@ -540,6 +541,10 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     if has_modal {
         dim_buffer(frame, area);
+    }
+
+    if app.ui.show_trust_modal {
+        crate::tui::render::trust_modal::render_trust_modal(frame, app);
     }
 
     if app.ui.model_picker_open {

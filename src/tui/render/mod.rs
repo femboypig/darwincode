@@ -77,10 +77,6 @@ pub(crate) fn render(frame: &mut Frame, app: &App) {
         Screen::Chat | Screen::Permissions | Screen::Sessions => chat::render_chat(frame, app),
         Screen::AskUser => chat::render_chat(frame, app),
     }
-
-    if app.ui.show_trust_modal {
-        trust_modal::render_trust_modal(frame, app);
-    }
 }
 
 pub(crate) fn render_statusbar(frame: &mut Frame, app: &App, area: Rect) {
