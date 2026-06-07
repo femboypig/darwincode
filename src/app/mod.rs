@@ -15,7 +15,7 @@ pub mod theme_picker;
 
 pub use agent_picker::AgentPickerState;
 pub use chat::{ChatCommand, ChatState, CommandSuggestion, MessageLine};
-pub use custom::{load_custom_agents, load_custom_commands};
+pub use custom::{load_custom_agents, load_custom_commands, load_custom_commands_all};
 pub use model::ModelPickerState;
 pub use permission::PermissionPickerState;
 pub use session::SessionPickerState;

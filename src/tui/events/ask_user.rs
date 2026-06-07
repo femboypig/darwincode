@@ -83,8 +83,7 @@ pub(crate) fn handle_ask_user_key(app: &mut App, key: KeyEvent) -> Result<()> {
 
                     if let Some(name) = app.core.pending_custom_command.take() {
                         if answer == "yes" {
-                            let custom_cmds =
-                                crate::app::load_custom_commands(app.chat.config.trust_workspace);
+                            let custom_cmds = crate::app::load_custom_commands(&app.chat.config);
                             if let Some((config, _)) = custom_cmds.get(&name) {
                                 crate::app::commands::custom::execute_custom_command_internal(
                                     app, &name, config,

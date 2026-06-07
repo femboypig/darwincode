@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
+use crate::config::StoredConfig;
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct CustomCommandConfig {
     pub description: String,
@@ -60,7 +62,22 @@ pub fn find_global_commands_dir() -> Option<std::path::PathBuf> {
         .and_then(|p| p.parent().map(|p| p.join("commands")))
 }
 
-pub fn load_custom_commands(trust_workspace: bool) -> HashMap<String, (CustomCommandConfig, bool)> {
+pub fn load_custom_commands(config: &StoredConfig) -> HashMap<String, (CustomCommandConfig, bool)> {
+    let workspace_trusted = config.is_workspace_trusted();
+    load_custom_commands_with_trust(workspace_trusted)
+}
+
+/// Returns every registered custom command, ignoring the per-project
+/// trust state. Use this for the slash-command autocomplete: we want
+/// every command the user could legally type, and the actual trust
+/// check happens at execution time in `crate::app::commands::custom`.
+pub fn load_custom_commands_all() -> HashMap<String, (CustomCommandConfig, bool)> {
+    load_custom_commands_with_trust(true)
+}
+
+fn load_custom_commands_with_trust(
+    workspace_trusted: bool,
+) -> HashMap<String, (CustomCommandConfig, bool)> {
     let mut commands = HashMap::new();
 
     // 1. Load global commands
@@ -75,9 +92,9 @@ pub fn load_custom_commands(trust_workspace: bool) -> HashMap<String, (CustomCom
                     && !file_name.contains("template")
                     && !file_name.contains("example")
                     && let Ok(toml_content) = std::fs::read_to_string(&path)
-                    && let Ok(config) = toml::from_str::<CustomCommandConfig>(&toml_content)
+                    && let Ok(cfg) = toml::from_str::<CustomCommandConfig>(&toml_content)
                 {
-                    commands.insert(file_name.to_owned(), (config, false));
+                    commands.insert(file_name.to_owned(), (cfg, false));
                 }
             }
         }
@@ -95,14 +112,14 @@ pub fn load_custom_commands(trust_workspace: bool) -> HashMap<String, (CustomCom
                         && !file_name.contains("template")
                         && !file_name.contains("example")
                         && let Ok(toml_content) = std::fs::read_to_string(&path)
-                        && let Ok(config) = toml::from_str::<CustomCommandConfig>(&toml_content)
+                        && let Ok(cfg) = toml::from_str::<CustomCommandConfig>(&toml_content)
                     {
                         if commands.contains_key(file_name) {
-                            if trust_workspace {
-                                commands.insert(file_name.to_owned(), (config, true));
+                            if workspace_trusted {
+                                commands.insert(file_name.to_owned(), (cfg, true));
                             }
                         } else {
-                            commands.insert(file_name.to_owned(), (config, true));
+                            commands.insert(file_name.to_owned(), (cfg, true));
                         }
                     }
                 }

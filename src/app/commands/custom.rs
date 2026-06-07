@@ -2,7 +2,7 @@ use crate::app::chat::MessageLine;
 use crate::app::core::App;
 
 pub fn run(app: &mut App, name: String) {
-    let custom_cmds = crate::app::load_custom_commands(app.chat.config.trust_workspace);
+    let custom_cmds = crate::app::load_custom_commands(&app.chat.config);
     if let Some((config, is_workspace)) = custom_cmds.get(&name) {
         if *is_workspace && !app.chat.config.trust_workspace {
             app.ui.screen = crate::app::Screen::AskUser;
