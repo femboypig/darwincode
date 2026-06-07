@@ -37,7 +37,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     let has_todos = !app.chat.todos.is_empty() && !app.chat.messages.is_empty();
     let (left_pane, right_pane, statusbar_area) = if has_todos && area.width >= 50 {
-        let sidebar_width = if area.width >= 90 { 36 } else { 30 };
+        let sidebar_width = if area.width >= 90 { 40 } else { 34 };
         let horizontal_split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Min(20), Constraint::Length(sidebar_width)])
@@ -68,7 +68,7 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     };
 
     let text_width = if app.chat.messages.is_empty() {
-        ((left_pane.width as u32 * 70 / 100) as u16)
+        (left_pane.width as u32 * 70 / 100) as u16
     } else {
         left_pane.width
     }

@@ -6,17 +6,16 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 
-/// Render the trust-this-workspace modal as an overlay on top of the chat
-/// screen. Drawn last so it sits on top of any other content.
 pub(crate) fn render_trust_modal(frame: &mut Frame, app: &App) {
     if !app.ui.show_trust_modal {
         return;
     }
     let active_theme = crate::tui::render::get_active_theme(app);
-    let area = frame.area();
+    let full = frame.area();
 
-    // Centered popup: 70% width, ~30% height
-    let popup = centered_rect(70, 36, area);
+    dim_background(frame, full, &active_theme);
+
+    let popup = centered_rect(72, 64, full);
 
     frame.render_widget(Clear, popup);
     let border_color = if app.ui.trust_modal_selected_yes {
@@ -32,9 +31,26 @@ pub(crate) fn render_trust_modal(frame: &mut Frame, app: &App) {
                 .fg(border_color)
                 .add_modifier(Modifier::BOLD),
         )))
-        .title_alignment(Alignment::Center);
+        .title_alignment(Alignment::Center)
+        .style(
+            Style::default().bg(active_theme
+                .background_panel
+                .unwrap_or(Color::Rgb(24, 24, 24))),
+        );
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
+
+    let inner_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
 
     let path_display = app
         .ui
@@ -42,35 +58,59 @@ pub(crate) fn render_trust_modal(frame: &mut Frame, app: &App) {
         .clone()
         .unwrap_or_else(|| "(unknown path)".to_owned());
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // spacer
-            Constraint::Length(3), // body
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // buttons
-            Constraint::Length(1), // footer hint
-        ])
-        .split(inner);
-
-    let body = Paragraph::new(vec![
+    let body_lines = vec![
         Line::from(Span::styled(
-            "darwincode detected a project in this workspace:",
-            Style::default().fg(active_theme.text),
+            "Trust this project?",
+            Style::default()
+                .fg(active_theme.text)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Workspace:",
+            Style::default().fg(active_theme.text_muted),
         )),
         Line::from(Span::styled(
-            path_display,
+            format!("  {}", path_display),
             Style::default()
                 .fg(active_theme.primary)
                 .add_modifier(Modifier::BOLD),
         )),
+        Line::from(""),
         Line::from(Span::styled(
-            "Custom commands and agents in .darwincode/ may execute shell actions on your behalf.",
+            "When you trust a workspace:",
+            Style::default()
+                .fg(active_theme.text)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "  • Custom slash commands in .darwincode/commands/ run without further confirmation",
+            Style::default().fg(active_theme.text),
+        )),
+        Line::from(Span::styled(
+            "  • Custom agents in .darwincode/agents/ may invoke any tool in their allow-list",
+            Style::default().fg(active_theme.text),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "When you don't:",
+            Style::default()
+                .fg(active_theme.text)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "  • darwincode will pop a y/n confirmation before every shell action from .darwincode/",
+            Style::default().fg(active_theme.text),
+        )),
+        Line::from(Span::styled(
+            "  • You can switch to trust later with /settings → Trust Workspace",
             Style::default().fg(active_theme.text_muted),
         )),
-    ])
-    .wrap(Wrap { trim: false });
-    frame.render_widget(body, chunks[1]);
+    ];
+    let body = Paragraph::new(body_lines)
+        .wrap(Wrap { trim: false })
+        .style(Style::default().fg(active_theme.text));
+    frame.render_widget(body, inner_chunks[1]);
 
     let yes_style = if app.ui.trust_modal_selected_yes {
         Style::default()
@@ -90,23 +130,39 @@ pub(crate) fn render_trust_modal(frame: &mut Frame, app: &App) {
     };
 
     let buttons = Line::from(vec![
-        Span::raw("   "),
-        Span::styled(" [Y] Yes, trust ", yes_style),
         Span::raw("    "),
-        Span::styled(" [N] No, keep asking ", no_style),
-        Span::raw("   "),
+        Span::styled("  Y  Yes, trust this workspace  ", yes_style),
+        Span::raw("    "),
+        Span::styled("  N  No, keep asking  ", no_style),
+        Span::raw("    "),
     ]);
     frame.render_widget(
         Paragraph::new(buttons).alignment(Alignment::Center),
-        chunks[3],
+        inner_chunks[3],
     );
 
     let hint = Paragraph::new(Span::styled(
-        "←/→ to switch • Enter to confirm • Esc to dismiss",
+        "← / →  switch  •  Enter  confirm  •  Esc  dismiss without saving",
         Style::default().fg(active_theme.text_muted),
     ))
     .alignment(Alignment::Center);
-    frame.render_widget(hint, chunks[4]);
+    frame.render_widget(hint, inner_chunks[4]);
+}
+
+fn dim_background(frame: &mut Frame, area: Rect, theme: &crate::tui::theme::ActiveTheme) {
+    let scrim_bg = if theme.is_light {
+        Color::Rgb(60, 60, 60)
+    } else {
+        Color::Rgb(10, 10, 10)
+    };
+    let mut scrim = String::with_capacity(area.width as usize);
+    for _ in 0..area.width {
+        scrim.push(' ');
+    }
+    let lines: Vec<Line> = (0..area.height)
+        .map(|_| Line::from(Span::styled(scrim.as_str(), Style::default().bg(scrim_bg))))
+        .collect();
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

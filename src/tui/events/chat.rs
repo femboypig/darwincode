@@ -507,6 +507,24 @@ pub(crate) fn handle_chat_key(
         return Ok(());
     }
 
+    if app
+        .core
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::TodoScrollUp, key)
+    {
+        app.chat.todo_scroll = app.chat.todo_scroll.saturating_sub(1);
+        return Ok(());
+    }
+
+    if app
+        .core
+        .keybindings
+        .matches(crate::tui::keybindings::TuiAction::TodoScrollDown, key)
+    {
+        app.chat.todo_scroll = app.chat.todo_scroll.saturating_add(1);
+        return Ok(());
+    }
+
     match (key.code, key.modifiers) {
         (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
             app.chat.undo();

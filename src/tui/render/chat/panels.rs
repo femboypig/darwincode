@@ -1159,13 +1159,12 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // Split inner area to center the title "TODO" horizontally
     let todo_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Title "TODO"
-            Constraint::Length(1), // Spacer
-            Constraint::Min(1),    // Tasks
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
         ])
         .split(inner_area);
 
@@ -1179,8 +1178,6 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
         .alignment(Alignment::Center),
         todo_chunks[0],
     );
-
-    let mut lines = Vec::new();
 
     let render_priority = |p: &TodoPriority| -> Span<'static> {
         match p {
@@ -1225,7 +1222,15 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
 
     let tasks_area = todo_chunks[2];
 
-    for item in all_sorted_todos {
+    let first_prefix: usize = 7;
+    let cont_prefix: usize = 6;
+    let content_width = (tasks_area.width as usize)
+        .saturating_sub(first_prefix)
+        .max(1);
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut item_starts: Vec<usize> = Vec::new();
+    for item in &all_sorted_todos {
         let (status_bullet, item_style) = match item.status {
             TodoStatus::InProgress => (
                 Span::styled("● ", Style::default().fg(Color::Rgb(234, 179, 8))),
@@ -1248,7 +1253,7 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         let priority_marker = render_priority(&item.priority);
-        let content_width = (tasks_area.width as usize).saturating_sub(6).max(1);
+        item_starts.push(lines.len());
         let wrapped = wrap_text_to_lines(&item.content, content_width);
         for (idx, line_text) in wrapped.iter().enumerate() {
             if idx == 0 {
@@ -1259,13 +1264,54 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
                     Span::styled(line_text.clone(), item_style),
                 ]));
             } else {
+                let indent = " ".repeat(cont_prefix);
                 lines.push(Line::from(vec![
-                    Span::raw("      "),
+                    Span::raw(indent),
                     Span::styled(line_text.clone(), item_style),
                 ]));
             }
         }
     }
 
-    frame.render_widget(Paragraph::new(lines), tasks_area);
+    let visible_height = tasks_area.height as usize;
+    let total_lines = lines.len();
+    let mut scroll = app.chat.todo_scroll as usize;
+    if scroll >= total_lines {
+        scroll = total_lines.saturating_sub(1);
+    }
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    if scroll > max_scroll {
+        scroll = max_scroll;
+    }
+
+    if total_lines > visible_height {
+        let scroll_pct = if total_lines == 0 {
+            100
+        } else {
+            let shown_end = (scroll + visible_height).min(total_lines);
+            ((shown_end * 100) / total_lines).min(100)
+        };
+        let hint = format!(" {}% ", scroll_pct);
+        let hint_area = Rect {
+            x: todo_chunks[1].x,
+            y: todo_chunks[1].y,
+            width: todo_chunks[1].width,
+            height: 1,
+        };
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                hint,
+                Style::default().fg(active_theme.text_muted),
+            ))
+            .alignment(Alignment::Center),
+            hint_area,
+        );
+    }
+
+    frame.render_widget(
+        Paragraph::new(lines).scroll((scroll as u16, 0)),
+        tasks_area,
+    );
+
+    let _ = item_starts;
 }
