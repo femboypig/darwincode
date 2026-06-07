@@ -1532,24 +1532,44 @@ fn url_encode(input: &str) -> String {
 }
 
 fn percent_decode(input: &str) -> String {
-    let mut decoded = String::new();
-    let mut bytes = input.as_bytes().iter();
-    while let Some(&b) = bytes.next() {
-        if b == b'%' {
-            let hex_opt = bytes.next().zip(bytes.next()).and_then(|(&h1, &h2)| {
-                let hex_bytes = [h1, h2];
-                std::str::from_utf8(&hex_bytes)
-                    .ok()
-                    .and_then(|s| u8::from_str_radix(s, 16).ok())
-            });
-            if let Some(val) = hex_opt {
-                decoded.push(val as char);
+    // Strict percent-decoder: emits a Rust String (so output is
+    // guaranteed to be UTF-8) and replaces each %HH with the
+    // corresponding byte re-encoded as a UTF-8 sequence — so
+    // non-ASCII payloads coming out of a search-result uddg=
+    // parameter are preserved instead of being silently lossy'd
+    // via `as char`. We also drop control bytes (0x00-0x1F,
+    // 0x7F) and the lone '%' / '%X' / '%XY' sequences that some
+    // search engines emit unescaped, so a malicious URL can't
+    // smuggle TTY/terminal control sequences back into the
+    // LLM's context.
+    let mut decoded = Vec::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                let v = (h * 16 + l) as u8;
+                if !(v.is_ascii_control() || v == 0x7f) {
+                    decoded.push(v);
+                }
+                i += 3;
                 continue;
             }
         }
-        decoded.push(b as char);
+        // Treat any other byte as raw: push it through. This is
+        // intentionally tolerant so UTF-8 multi-byte sequences
+        // inside the URL survive intact.
+        decoded.push(bytes[i]);
+        i += 1;
     }
-    decoded
+    String::from_utf8(decoded).unwrap_or_else(|e| {
+        // Shouldn't be possible (we only ever pushed either ASCII
+        // or already-valid bytes via `as_bytes()`), but be loud
+        // rather than lossy if it ever does happen.
+        String::from_utf8_lossy(&e.into_bytes()).into_owned()
+    })
 }
 
 /// Validate that `raw` is a public HTTPS URL.
