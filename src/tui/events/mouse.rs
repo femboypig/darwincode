@@ -19,6 +19,16 @@ pub(crate) fn handle_mouse_event(
     }
     match mouse_event.kind {
         MouseEventKind::ScrollUp => {
+            if let Some(todo_rect) = app.chat.todo_area.get()
+                && rect_contains(todo_rect, mouse_event.column, mouse_event.row)
+                && !matches!(
+                    app.proc.pending,
+                    Some(crate::app::PendingTask::ConfirmFunction { .. })
+                )
+            {
+                app.chat.todo_scroll = app.chat.todo_scroll.saturating_sub(1);
+                return Ok(());
+            }
             if matches!(
                 app.proc.pending,
                 Some(crate::app::PendingTask::ConfirmFunction { .. })
@@ -32,13 +42,23 @@ pub(crate) fn handle_mouse_event(
             update_selection_on_scroll(app, mouse_event.column, mouse_event.row);
         }
         MouseEventKind::ScrollDown => {
+            if let Some(todo_rect) = app.chat.todo_area.get()
+                && rect_contains(todo_rect, mouse_event.column, mouse_event.row)
+                && !matches!(
+                    app.proc.pending,
+                    Some(crate::app::PendingTask::ConfirmFunction { .. })
+                )
+            {
+                app.chat.todo_scroll = app.chat.todo_scroll.saturating_add(1);
+                return Ok(());
+            }
             if matches!(
                 app.proc.pending,
                 Some(crate::app::PendingTask::ConfirmFunction { .. })
             ) {
                 app.ui
                     .confirm_scroll
-                    .set(app.ui.confirm_scroll.get().saturating_add(1));
+                    .set(app.ui.confirm_scroll.get().saturating_sub(1));
             } else {
                 app.chat.scroll = app.chat.scroll.saturating_sub(1);
             }
@@ -480,6 +500,13 @@ pub(crate) fn handle_mouse_event(
         _ => {}
     }
     Ok(())
+}
+
+fn rect_contains(rect: ratatui::layout::Rect, x: u16, y: u16) -> bool {
+    x >= rect.x
+        && x < rect.x.saturating_add(rect.width)
+        && y >= rect.y
+        && y < rect.y.saturating_add(rect.height)
 }
 
 fn get_line_text_excluding_margin(line: &ratatui::text::Line<'_>) -> String {

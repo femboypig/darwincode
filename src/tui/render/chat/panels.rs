@@ -1146,6 +1146,7 @@ pub(crate) fn render_agent_picker_modal(frame: &mut Frame, app: &App, area: Rect
 }
 
 pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
+    app.chat.todo_area.set(Some(area));
     let active_theme = crate::tui::render::get_active_theme(app);
     let sidebar_bg = active_theme
         .background_panel
@@ -1181,11 +1182,13 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
 
     let render_priority = |p: &TodoPriority| -> Span<'static> {
         match p {
-            TodoPriority::High => Span::styled("!! ", Style::default().fg(Color::Rgb(239, 68, 68))),
-            TodoPriority::Medium => {
-                Span::styled("!  ", Style::default().fg(Color::Rgb(245, 158, 11)))
+            TodoPriority::High => {
+                Span::styled("[H] ", Style::default().fg(Color::Rgb(239, 68, 68)))
             }
-            TodoPriority::Low => Span::styled("   ", Style::default()),
+            TodoPriority::Medium => {
+                Span::styled("[M] ", Style::default().fg(Color::Rgb(245, 158, 11)))
+            }
+            TodoPriority::Low => Span::styled("[L] ", Style::default().fg(active_theme.text_muted)),
         }
     };
 
@@ -1222,7 +1225,7 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
 
     let tasks_area = todo_chunks[2];
 
-    let first_prefix: usize = 7;
+    let first_prefix: usize = 8;
     let cont_prefix: usize = 6;
     let content_width = (tasks_area.width as usize)
         .saturating_sub(first_prefix)
