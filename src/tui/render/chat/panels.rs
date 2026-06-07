@@ -1229,7 +1229,6 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
         .max(1);
 
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let mut item_starts: Vec<usize> = Vec::new();
     for item in &all_sorted_todos {
         let (status_bullet, item_style) = match item.status {
             TodoStatus::InProgress => (
@@ -1253,7 +1252,6 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         let priority_marker = render_priority(&item.priority);
-        item_starts.push(lines.len());
         let wrapped = wrap_text_to_lines(&item.content, content_width);
         for (idx, line_text) in wrapped.iter().enumerate() {
             if idx == 0 {
@@ -1308,10 +1306,5 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
         );
     }
 
-    frame.render_widget(
-        Paragraph::new(lines).scroll((scroll as u16, 0)),
-        tasks_area,
-    );
-
-    let _ = item_starts;
+    frame.render_widget(Paragraph::new(lines).scroll((scroll as u16, 0)), tasks_area);
 }

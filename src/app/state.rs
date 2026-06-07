@@ -953,6 +953,7 @@ impl App {
                 serde_json::from_value::<Vec<super::chat::TodoItem>>(todos_val.clone())
             {
                 self.chat.todos = new_todos;
+                self.chat.todo_scroll = u16::MAX;
                 response = serde_json::json!({ "success": true });
             } else {
                 response =

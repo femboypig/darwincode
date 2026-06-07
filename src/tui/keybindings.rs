@@ -93,14 +93,8 @@ impl Default for KeyBindings {
             TuiAction::Paste,
             vec!["ctrl+v".to_owned(), "ctrl+y".to_owned()],
         );
-        bindings.insert(
-            TuiAction::TodoScrollUp,
-            vec!["alt+up".to_owned()],
-        );
-        bindings.insert(
-            TuiAction::TodoScrollDown,
-            vec!["alt+down".to_owned()],
-        );
+        bindings.insert(TuiAction::TodoScrollUp, vec!["alt+up".to_owned()]);
+        bindings.insert(TuiAction::TodoScrollDown, vec!["alt+down".to_owned()]);
         Self { bindings }
     }
 }
