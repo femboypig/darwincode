@@ -496,7 +496,7 @@ fn wheel_over_todo(app: &App, col: u16, row: u16) -> bool {
             && row >= rect.y
             && row < rect.y.saturating_add(rect.height);
     }
-    !app.chat.todos.is_empty()
+    !app.chat.todos.is_empty() && !app.chat.messages.is_empty()
 }
 
 fn get_line_text_excluding_margin(line: &ratatui::text::Line<'_>) -> String {
@@ -692,13 +692,9 @@ mod tests {
 
     #[test]
     fn wheel_over_todo_falls_back_to_right_half() {
-        let messages = ratatui::layout::Rect {
-            x: 0,
-            y: 0,
-            width: 80,
-            height: 24,
-        };
-        let app = app_with_layout(messages, None);
+        let messages = ratatui::layout::Rect { x: 0, y: 0, width: 80, height: 24 };
+        let mut app = app_with_layout(messages, None);
+        app.chat.messages.push(crate::app::MessageLine::user("hi".to_string()));
         assert!(wheel_over_todo(&app, 79, 10));
         assert!(wheel_over_todo(&app, 30, 10));
     }
