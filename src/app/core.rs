@@ -95,6 +95,12 @@ pub struct AppUiState {
     pub agent_picker: AgentPickerState,
     pub agent_picker_open: bool,
     pub confirm_scroll: std::cell::Cell<u16>,
+    pub show_trust_modal: bool,
+    pub trust_modal_selected_yes: bool,
+    /// Canonicalized path of the project that triggered the trust modal.
+    /// Used both to decide whether to show the modal and to add to
+    /// `trusted_workspaces` when the user accepts.
+    pub trust_modal_proj_path: Option<String>,
 }
 
 #[derive(Debug)]
@@ -176,7 +182,7 @@ impl App {
                 let theme_picker = ThemePickerState::new(&config.theme);
                 let agent_picker = AgentPickerState::new(&config.active_agent);
                 let active_agent = config.active_agent.clone();
-                let ui = AppUiState {
+                let mut ui = AppUiState {
                     screen: Screen::Chat,
                     setup: SetupState::default(),
                     models: ModelPickerState::default(),
@@ -195,7 +201,21 @@ impl App {
                     agent_picker,
                     agent_picker_open: false,
                     confirm_scroll: std::cell::Cell::new(0),
+                    show_trust_modal: false,
+                    trust_modal_selected_yes: true,
+                    trust_modal_proj_path: None,
                 };
+
+                if let Some(proj_root) = crate::config::find_project_root() {
+                    let proj_path = std::fs::canonicalize(&proj_root)
+                        .unwrap_or(proj_root)
+                        .to_string_lossy()
+                        .to_string();
+                    if !config.trust_workspace && !config.trusted_workspaces.contains(&proj_path) {
+                        ui.show_trust_modal = true;
+                        ui.trust_modal_proj_path = Some(proj_path);
+                    }
+                }
                 let proc = AppProcessManager {
                     pending: None,
                     cancel_token: None,
@@ -246,6 +266,9 @@ impl App {
                     agent_picker,
                     agent_picker_open: false,
                     confirm_scroll: std::cell::Cell::new(0),
+                    show_trust_modal: false,
+                    trust_modal_selected_yes: true,
+                    trust_modal_proj_path: None,
                 };
                 let proc = AppProcessManager {
                     pending: None,
@@ -303,12 +326,59 @@ impl App {
             return Ok(());
         }
 
-        let config = self.ui.setup.to_config()?;
+        let mut config = self.ui.setup.to_config()?;
+        config.trusted_workspaces = self.chat.config.trusted_workspaces.clone();
         config.save()?;
-        self.chat.config = config;
+        self.chat.config = config.clone();
         self.ui.screen = Screen::Chat;
         self.status = "Settings saved".to_owned();
+
+        if let Some(proj_root) = crate::config::find_project_root() {
+            let proj_path = std::fs::canonicalize(&proj_root)
+                .unwrap_or(proj_root)
+                .to_string_lossy()
+                .to_string();
+            if !config.trust_workspace && !config.trusted_workspaces.contains(&proj_path) {
+                self.ui.show_trust_modal = true;
+                self.ui.trust_modal_selected_yes = true;
+                self.ui.trust_modal_proj_path = Some(proj_path);
+            }
+        }
         Ok(())
+    }
+
+    /// Apply the user's choice on the trust-workspace modal.
+    ///
+    /// `accept == true` adds the project's canonical path to
+    /// `trusted_workspaces` and persists the config so the choice survives
+    /// restarts. `accept == false` simply dismisses the modal and leaves
+    /// the config untouched — per-command prompts will still be shown.
+    pub fn answer_trust_modal(&mut self, accept: bool) {
+        if !self.ui.show_trust_modal {
+            return;
+        }
+        let proj_path = self.ui.trust_modal_proj_path.clone();
+        self.ui.show_trust_modal = false;
+        self.ui.trust_modal_proj_path = None;
+        if !accept {
+            self.status = "Workspace not trusted. Custom commands will prompt.".to_owned();
+            return;
+        }
+        if let Some(path) = proj_path {
+            if !self.chat.config.trusted_workspaces.contains(&path) {
+                self.chat.config.trusted_workspaces.push(path.clone());
+            }
+            match self.chat.config.save() {
+                Ok(()) => {
+                    self.status = format!("Workspace trusted: {} (saved to config)", path);
+                }
+                Err(e) => {
+                    self.status = format!("Workspace trusted in memory but failed to save: {}", e);
+                }
+            }
+        } else {
+            self.status = "Workspace trusted for this session.".to_owned();
+        }
     }
 
     pub fn begin_load_chat_models(&mut self) -> Option<StoredConfig> {

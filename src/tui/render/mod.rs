@@ -4,6 +4,7 @@ pub(crate) mod logo;
 pub(crate) mod permissions;
 pub(crate) mod sessions;
 pub(crate) mod setup;
+pub(crate) mod trust_modal;
 
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -75,6 +76,10 @@ pub(crate) fn render(frame: &mut Frame, app: &App) {
         Screen::Setup => chat::render_chat(frame, app),
         Screen::Chat | Screen::Permissions | Screen::Sessions => chat::render_chat(frame, app),
         Screen::AskUser => chat::render_chat(frame, app),
+    }
+
+    if app.ui.show_trust_modal {
+        trust_modal::render_trust_modal(frame, app);
     }
 }
 

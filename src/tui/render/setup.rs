@@ -158,6 +158,17 @@ pub(crate) fn render_setup_modal(frame: &mut Frame, app: &App, area: Rect) {
             SetupField::RespectIgnoreRules,
             Color::Rgb(168, 85, 247),
         ),
+        (
+            "Trust Workspace",
+            (if app.ui.setup.trust_workspace {
+                icons::CHECK_ENABLED
+            } else {
+                icons::CROSS_DISABLED
+            })
+            .to_owned(),
+            SetupField::TrustWorkspace,
+            Color::Rgb(244, 63, 94),
+        ),
     ];
 
     let total_lines = fields.len() + 1; // fields + Save button

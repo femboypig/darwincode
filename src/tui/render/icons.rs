@@ -20,6 +20,7 @@ pub(crate) mod win {
     pub const SHELL_ERR: &str = "-";
     pub const ACTIVE_MARKER: &str = " > ";
     pub const INACTIVE_MARKER: &str = "   ";
+    pub const WARNING: &str = "WARN: ";
 }
 #[cfg(target_os = "windows")]
 pub(crate) use win as icons;
@@ -44,6 +45,7 @@ pub(crate) mod unix {
     pub const SHELL_ERR: &str = "-";
     pub const ACTIVE_MARKER: &str = " > ";
     pub const INACTIVE_MARKER: &str = "   ";
+    pub const WARNING: &str = "WARN: ";
 }
 #[cfg(not(target_os = "windows"))]
 pub(crate) use unix as icons;
