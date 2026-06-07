@@ -97,9 +97,6 @@ pub struct AppUiState {
     pub confirm_scroll: std::cell::Cell<u16>,
     pub show_trust_modal: bool,
     pub trust_modal_selected_yes: bool,
-    /// Canonicalized path of the project that triggered the trust modal.
-    /// Used both to decide whether to show the modal and to add to
-    /// `trusted_workspaces` when the user accepts.
     pub trust_modal_proj_path: Option<String>,
 }
 
@@ -322,10 +319,6 @@ impl App {
         self.status = format!("Switched to {} mode", self.dev_mode_label());
     }
 
-    /// Discard any in-progress text selection. Call this whenever the
-    /// user navigates away from the chat surface (modal opening,
-    /// dev-mode toggle, screen change) so stale highlights don't
-    /// linger or get extracted against a moved target.
     pub fn clear_text_selection(&mut self) {
         self.chat.selection = None;
         self.chat.last_mouse_drag_pos = None;
@@ -357,12 +350,6 @@ impl App {
         Ok(())
     }
 
-    /// Apply the user's choice on the trust-workspace modal.
-    ///
-    /// `accept == true` adds the project's canonical path to
-    /// `trusted_workspaces` and persists the config so the choice survives
-    /// restarts. `accept == false` simply dismisses the modal and leaves
-    /// the config untouched — per-command prompts will still be shown.
     pub fn answer_trust_modal(&mut self, accept: bool) {
         if !self.ui.show_trust_modal {
             return;
@@ -444,10 +431,8 @@ mod tests {
         };
         let app = App::new(Some(config));
 
-        // It should fall back to Theme::Auto (default)
         assert_eq!(app.chat.config.theme, Theme::Auto);
 
-        // It should log a warning in app.last_warning
         assert!(app.last_warning.is_some());
         let warning = app.last_warning.unwrap();
         assert!(warning.contains("Theme 'nonexistent_theme_9999' not found"));

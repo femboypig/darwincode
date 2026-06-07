@@ -353,9 +353,10 @@ pub struct MessageLine {
     pub shell_pid: Option<u32>,
     pub shell_session_id: Option<String>,
     pub is_tool: bool,
-    pub cached_wrapped:
-        std::cell::RefCell<Option<(usize, Theme, Vec<ratatui::text::Line<'static>>)>>,
+    pub cached_wrapped: std::cell::RefCell<CachedWrappedLines>,
 }
+
+type CachedWrappedLines = Option<(usize, usize, Theme, Vec<ratatui::text::Line<'static>>)>;
 
 impl MessageLine {
     pub fn error(text: String) -> Self {

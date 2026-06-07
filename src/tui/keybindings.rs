@@ -45,16 +45,13 @@ impl<'de> serde::Deserialize<'de> for KeyBindings {
                 let mut bindings = HashMap::new();
                 while let Some(key) = map.next_key::<String>()? {
                     if key == "bindings" {
-                        // Deserialize the inner map, tolerating unknown TuiAction names.
                         let raw: HashMap<String, Vec<String>> = map.next_value()?;
                         for (action_str, keys) in raw {
-                            // Try to parse the action name — skip unrecognized ones.
                             if let Ok(action) = serde_json::from_value::<TuiAction>(
                                 serde_json::Value::String(action_str.clone()),
                             ) {
                                 bindings.insert(action, keys);
                             }
-                            // Unknown action names (e.g. removed variants) are silently ignored.
                         }
                     } else {
                         let _ = map.next_value::<serde::de::IgnoredAny>()?;
@@ -93,8 +90,14 @@ impl Default for KeyBindings {
             TuiAction::Paste,
             vec!["ctrl+v".to_owned(), "ctrl+y".to_owned()],
         );
-        bindings.insert(TuiAction::TodoScrollUp, vec!["alt+up".to_owned()]);
-        bindings.insert(TuiAction::TodoScrollDown, vec!["alt+down".to_owned()]);
+        bindings.insert(
+            TuiAction::TodoScrollUp,
+            vec!["alt+up".to_owned(), "ctrl+pageup".to_owned()],
+        );
+        bindings.insert(
+            TuiAction::TodoScrollDown,
+            vec!["alt+down".to_owned(), "ctrl+pagedown".to_owned()],
+        );
         Self { bindings }
     }
 }
@@ -206,7 +209,6 @@ pub fn load_keybindings() -> (KeyBindings, Option<String>) {
         Err(_) => KeyBindings::default(),
     };
 
-    // Ensure all default actions are populated
     let defaults = KeyBindings::default();
     let mut updated = false;
     for (action, keys) in defaults.bindings {
@@ -216,51 +218,7 @@ pub fn load_keybindings() -> (KeyBindings, Option<String>) {
         }
     }
 
-    if updated && let Ok(path) = keybindings_path() {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(pretty) = serde_json::to_string_pretty(&kb) {
-            match std::fs::write(&path, pretty) {
-                Ok(_) => {
-                    let added: Vec<&'static str> = kb
-                        .bindings
-                        .keys()
-                        .filter(|k| !matches!(k, TuiAction::Quit | TuiAction::Cancel))
-                        .filter_map(|k| {
-                            if matches!(k, TuiAction::TodoScrollUp | TuiAction::TodoScrollDown) {
-                                Some(
-                                    if std::mem::discriminant(k)
-                                        == std::mem::discriminant(&TuiAction::TodoScrollUp)
-                                    {
-                                        "TodoScrollUp"
-                                    } else {
-                                        "TodoScrollDown"
-                                    },
-                                )
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    if !added.is_empty() {
-                        eprintln!(
-                            "[darwincode] keybindings: added {} new action(s) ({}). Restart-free for in-memory; the file is on disk.",
-                            added.len(),
-                            added.join(", ")
-                        );
-                    }
-                }
-                Err(e) => {
-                    eprintln!(
-                        "[darwincode] keybindings: failed to persist {}: {}",
-                        path.display(),
-                        e
-                    );
-                }
-            }
-        }
-    }
+    let _ = updated;
 
     (kb, warning)
 }
@@ -325,15 +283,12 @@ mod tests {
 
     #[test]
     fn test_keybindings_deserialize_ignores_unknown_actions() {
-        // Old JSON files may contain action names that no longer exist (e.g. "TogglePermissions").
-        // The deserializer must silently skip them instead of failing.
         let json =
             r#"{"bindings":{"Quit":["ctrl+c"],"TogglePermissions":["ctrl+o"],"Cancel":["esc"]}}"#;
         let kb: KeyBindings =
             serde_json::from_str(json).expect("should deserialize with unknown actions");
         assert!(kb.bindings.contains_key(&TuiAction::Quit));
         assert!(kb.bindings.contains_key(&TuiAction::Cancel));
-        // TogglePermissions no longer exists — it must be silently dropped.
         assert_eq!(kb.bindings.len(), 2);
     }
 
@@ -343,18 +298,13 @@ mod tests {
         let dir = std::env::temp_dir().join("darwincode_kb_test");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("keybindings.json");
-        // Write intentionally broken JSON.
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(b"{ bad json }").unwrap();
         drop(f);
 
-        // load_keybindings can't be called directly with a custom path, but we can verify
-        // the parse path: broken JSON must return an error, not panic.
         let result = serde_json::from_str::<KeyBindings>("{ bad json }");
         assert!(result.is_err(), "broken JSON must fail to parse");
 
-        // The file must NOT be overwritten by anything in this test (it is the load_keybindings
-        // logic that must not overwrite — here we just verify the file is still broken).
         let contents = std::fs::read_to_string(&path).unwrap();
         assert_eq!(contents, "{ bad json }");
         let _ = std::fs::remove_dir_all(&dir);

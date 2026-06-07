@@ -67,10 +67,6 @@ pub fn load_custom_commands(config: &StoredConfig) -> HashMap<String, (CustomCom
     load_custom_commands_with_trust(workspace_trusted)
 }
 
-/// Returns every registered custom command, ignoring the per-project
-/// trust state. Use this for the slash-command autocomplete: we want
-/// every command the user could legally type, and the actual trust
-/// check happens at execution time in `crate::app::commands::custom`.
 pub fn load_custom_commands_all() -> HashMap<String, (CustomCommandConfig, bool)> {
     load_custom_commands_with_trust(true)
 }
@@ -80,7 +76,6 @@ fn load_custom_commands_with_trust(
 ) -> HashMap<String, (CustomCommandConfig, bool)> {
     let mut commands = HashMap::new();
 
-    // 1. Load global commands
     if let Some(global_dir) = find_global_commands_dir()
         && let Ok(entries) = std::fs::read_dir(global_dir)
     {
@@ -100,7 +95,6 @@ fn load_custom_commands_with_trust(
         }
     }
 
-    // 2. Load workspace commands
     if let Some(proj_root) = crate::config::find_project_root() {
         let cmd_dir = proj_root.join(".darwincode").join("commands");
         if let Ok(entries) = std::fs::read_dir(cmd_dir) {

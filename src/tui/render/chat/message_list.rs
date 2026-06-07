@@ -48,15 +48,6 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         let is_tool = message.is_tool;
         let is_shell = message.is_shell;
 
-        // Strip "(empty)" prefix and any leading/trailing whitespace/newlines that follow it
-        if !message.pending && !is_tool && !is_shell && message.author == "Darwin" {
-            let trimmed = content.trim_start();
-            if let Some(rest) = trimmed.strip_prefix("(empty)") {
-                content = rest.trim_start().to_owned();
-            }
-        }
-
-        // Skip completely empty assistant messages
         if !message.pending
             && !is_tool
             && !is_shell
@@ -68,7 +59,7 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
         let cached_ok = {
             let cache = message.cached_wrapped.borrow();
-            if let Some((w, ref t, ref cached_lines)) = *cache {
+            if let Some((w, _text_len, ref t, ref cached_lines)) = *cache {
                 if w == width as usize && *t == get_theme(app) {
                     Some(cached_lines.clone())
                 } else {
@@ -82,6 +73,19 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         let msg_lines = if let Some(lines) = cached_ok {
             lines
         } else {
+            const MAX_RENDER_CHARS: usize = 200_000;
+            let content_text_len = content.chars().count();
+            if content_text_len > MAX_RENDER_CHARS {
+                let truncated: String = content.chars().take(MAX_RENDER_CHARS).collect::<String>()
+                    + "\n[…truncated for display…]";
+                content = truncated;
+            }
+            if !message.pending && !is_tool && !is_shell && message.author == "Darwin" {
+                let trimmed = content.trim_start();
+                if let Some(rest) = trimmed.strip_prefix("(empty)") {
+                    content = rest.trim_start().to_owned();
+                }
+            }
             let mut msg_lines = Vec::new();
             if is_shell {
                 let is_focused_shell = if shell_focused {
@@ -138,13 +142,11 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                 };
                 let title = format!("{icon} Shell {cmd_summary}");
 
-                // Top padding line
                 msg_lines.push(Line::from(vec![
                     Span::styled("┃", Style::default().fg(border_color)),
                     Span::styled(" ".repeat(block_width), card_style),
                 ]));
 
-                // Header line with command
                 let (cleaned_title, title_vis_w) =
                     clean_and_truncate_to_visual_width(&title, block_width.saturating_sub(4));
 
@@ -170,7 +172,6 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                 }
                 msg_lines.push(Line::from(title_spans));
 
-                // Spacer line between command header and command output content if output exists
                 let trimmed_content = content.trim_end();
                 if !trimmed_content.is_empty() {
                     msg_lines.push(Line::from(vec![
@@ -235,7 +236,6 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     }
                 }
 
-                // Bottom padding line
                 msg_lines.push(Line::from(vec![
                     Span::styled("┃", Style::default().fg(border_color)),
                     Span::styled(" ".repeat(block_width), card_style),
@@ -285,10 +285,8 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                             Color::Rgb(59, 130, 246)
                         };
 
-                        // Subtract 1 column for the vertical highlight line "┃"
                         let block_width = (area.width as usize).saturating_sub(5).max(1);
 
-                        // Top padding line
                         msg_lines.push(Line::from(vec![
                             Span::styled("┃", Style::default().fg(border_color)),
                             Span::styled(" ".repeat(block_width), user_style),
@@ -312,7 +310,6 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                             msg_lines.push(Line::from(spans));
                         }
 
-                        // Bottom padding line
                         msg_lines.push(Line::from(vec![
                             Span::styled("┃", Style::default().fg(border_color)),
                             Span::styled(" ".repeat(block_width), user_style),
@@ -357,8 +354,12 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                     }
                 }
             }
-            *message.cached_wrapped.borrow_mut() =
-                Some((width as usize, get_theme(app), msg_lines.clone()));
+            *message.cached_wrapped.borrow_mut() = Some((
+                width as usize,
+                content_text_len,
+                get_theme(app),
+                msg_lines.clone(),
+            ));
             msg_lines
         };
 
@@ -411,7 +412,6 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     app.chat.messages_area.set(Some(area));
     *app.chat.message_line_ranges.borrow_mut() = message_line_ranges;
 
-    // Line-by-line scrolling
     let total_lines = all_lines.len();
     let viewport_height = area.height as usize;
 
@@ -492,7 +492,6 @@ pub(crate) fn visual_width(s: &str) -> usize {
         if c == '\t' {
             w += 4;
         } else if c == '\r' || c == '\n' {
-            // ignore
         } else if !c.is_control() {
             w += c.width().unwrap_or(0);
         }

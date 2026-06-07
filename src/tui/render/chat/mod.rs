@@ -89,15 +89,12 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         } else {
             0
         };
-        // q_lines + blank + opts (label only) + custom + 1 blank + 1 footer + 1 blank + 2 padding
         (q_lines + 1 + opt_count + custom_lines + 1 + 1 + 1 + 2).max(6)
     } else if app.ui.screen == Screen::Permissions {
         let opts = crate::app::PermissionPickerState::options();
         let opt_count = u16::try_from(opts.len()).unwrap_or(u16::MAX);
-        // title + blank + 2*opts + 1 blank + 1 footer + 2 padding
         (1 + 1 + opt_count * 2 + 1 + 1 + 2).max(6)
     } else {
-        // Input block height: display_lines (min 1, max 5) + 1 top + 1 spacer + 1 mode/model + 1 bottom
         display_lines.clamp(1, 5) + 4
     };
 
@@ -276,7 +273,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     }
 
     if let Some(queue_area) = queue_area {
-        // todo: rework this shit
         let mut queue_lines = vec![Line::from(Span::styled(
             " Queued Prompts: ",
             Style::default()
@@ -310,7 +306,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
 
     let input_box = input_area.unwrap();
 
-    // --- Render input paragraph with scroll ---
     let margin = 2;
     let flat_input_area = Rect {
         x: input_box.x.saturating_add(margin),
@@ -326,7 +321,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         active_theme.primary
     };
 
-    // Draw the vertical blue line on the left (separated by 1 column)
     let mut blue_line_lines = Vec::new();
     for _ in 0..input_height {
         blue_line_lines.push(Line::from(Span::styled(
@@ -344,7 +338,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
         },
     );
 
-    // The text block starts 1 column to the right of flat_input_area.x
     let text_block_area = Rect {
         x: flat_input_area.x.saturating_add(1),
         y: flat_input_area.y,
@@ -362,11 +355,9 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     });
     let fg_color = active_theme.text;
 
-    // Render background block
     let bg_block = Block::default().style(Style::default().bg(bg_color));
     frame.render_widget(bg_block, text_block_area);
 
-    // Inside the text block, padding is 1.
     let inner_x = text_block_area.x.saturating_add(3);
     let inner_y = if app.ui.screen == Screen::AskUser {
         text_block_area.y
@@ -428,7 +419,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     }
     let cursor_x = cursor_col_in_logical % input_inner_width;
 
-    // Auto-scroll: keep cursor visible within the scrollable viewport (text_area.height)
     let max_visible = text_area.height;
     let mut input_scroll = app.chat.input_scroll;
     if cursor_visual_row < input_scroll {
@@ -456,7 +446,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
     } else if app.ui.screen == Screen::Permissions {
         render_permissions_in_input_box(frame, app, text_block_area);
     } else {
-        // Render the scrollable paragraph
         frame.render_widget(
             Paragraph::new(paragraph_content)
                 .style(Style::default().fg(fg_color))
@@ -464,7 +453,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             text_area,
         );
 
-        // Cursor position: text starts at text_area.x, y starts at text_area.y
         let cursor_y_in_box = cursor_visual_row.saturating_sub(input_scroll);
         let target_y = text_area.y + cursor_y_in_box;
         let max_y = text_area.bottom().saturating_sub(1);
@@ -477,7 +465,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             frame.set_cursor_position((text_area.x + cursor_x, target_y));
         }
 
-        // Render the mode/model indicator row inside the bottom area of the block
         let mode_color = match app.core.dev_mode {
             crate::app::DevelopMode::Plan => Color::Rgb(168, 85, 247), // purple
             crate::app::DevelopMode::Build => Color::Rgb(59, 130, 246), // blue (mockup)
@@ -516,7 +503,6 @@ pub(crate) fn render_chat(frame: &mut Frame, app: &App) {
             Span::styled(" · ", separator_style),
         ];
 
-        // Split model label by whitespace: first two words theme text, subsequent words theme text_muted
         for (idx, word) in model_str.split_whitespace().enumerate() {
             if idx > 0 {
                 mode_model_spans.push(Span::raw(" "));

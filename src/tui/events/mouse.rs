@@ -12,19 +12,16 @@ pub(crate) fn handle_mouse_event(
     sender: &Sender<WorkerEvent>,
     mouse_event: MouseEvent,
 ) -> Result<()> {
-    // While the trust modal is open, mouse events are ignored so the user
-    // must make a keyboard choice. This prevents accidental bypass.
     if app.ui.show_trust_modal {
         return Ok(());
     }
     match mouse_event.kind {
         MouseEventKind::ScrollUp => {
-            if let Some(todo_rect) = app.chat.todo_area.get()
-                && rect_contains(todo_rect, mouse_event.column, mouse_event.row)
-                && !matches!(
-                    app.proc.pending,
-                    Some(crate::app::PendingTask::ConfirmFunction { .. })
-                )
+            if !matches!(
+                app.proc.pending,
+                Some(crate::app::PendingTask::ConfirmFunction { .. })
+            ) && !app.chat.todos.is_empty()
+                && wheel_over_todo(app, mouse_event.column, mouse_event.row)
             {
                 app.chat.todo_scroll = app.chat.todo_scroll.saturating_sub(1);
                 return Ok(());
@@ -42,12 +39,11 @@ pub(crate) fn handle_mouse_event(
             update_selection_on_scroll(app, mouse_event.column, mouse_event.row);
         }
         MouseEventKind::ScrollDown => {
-            if let Some(todo_rect) = app.chat.todo_area.get()
-                && rect_contains(todo_rect, mouse_event.column, mouse_event.row)
-                && !matches!(
-                    app.proc.pending,
-                    Some(crate::app::PendingTask::ConfirmFunction { .. })
-                )
+            if !matches!(
+                app.proc.pending,
+                Some(crate::app::PendingTask::ConfirmFunction { .. })
+            ) && !app.chat.todos.is_empty()
+                && wheel_over_todo(app, mouse_event.column, mouse_event.row)
             {
                 app.chat.todo_scroll = app.chat.todo_scroll.saturating_add(1);
                 return Ok(());
@@ -423,7 +419,6 @@ pub(crate) fn handle_mouse_event(
 
                 app.chat.last_mouse_drag_pos = Some((click_x, click_y));
 
-                // Handle scrolling if dragging outside the viewport vertical boundaries
                 if click_y < rect.y {
                     app.chat.scroll = app.chat.scroll.saturating_add(1);
                 } else if click_y >= rect.y + rect.height {
@@ -473,27 +468,17 @@ pub(crate) fn handle_mouse_event(
         }
         MouseEventKind::Up(MouseButton::Left) => {
             app.chat.last_mouse_drag_pos = None;
-            // Take ownership of the selection (if any) so we can clear it
-            // before the clipboard helper runs, and so the borrow checker
-            // doesn't see selection borrowed mutably through extract.
             if let Some(sel) = app.chat.selection.take()
                 && (sel.start_line != sel.end_line || sel.start_col != sel.end_col)
+                && let Some(message) = app.chat.messages.get(sel.msg_idx)
             {
-                // Bounds-check the index defensively. A streaming
-                // response that swaps out a message between Down
-                // and Up would otherwise panic.
-                if let Some(message) = app.chat.messages.get(sel.msg_idx) {
-                    let text_to_copy = extract_selected_text(message, &sel);
-                    if !text_to_copy.is_empty()
-                        && crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok()
-                    {
-                        app.status = "Copied selection to clipboard".to_owned();
-                    } else if text_to_copy.is_empty() {
-                        // Either nothing was selected, or the cache
-                        // was unavailable. Don't blame the user:
-                        // surface a hint about scrolling & re-trying.
-                        app.status = "Selection empty (message scrolled out?)".to_owned();
-                    }
+                let text_to_copy = extract_selected_text(message, &sel);
+                if !text_to_copy.is_empty()
+                    && crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok()
+                {
+                    app.status = "Copied selection to clipboard".to_owned();
+                } else if text_to_copy.is_empty() {
+                    app.status = "Selection empty (message scrolled out?)".to_owned();
                 }
             }
         }
@@ -507,6 +492,28 @@ fn rect_contains(rect: ratatui::layout::Rect, x: u16, y: u16) -> bool {
         && x < rect.x.saturating_add(rect.width)
         && y >= rect.y
         && y < rect.y.saturating_add(rect.height)
+}
+
+fn wheel_over_todo(app: &App, col: u16, row: u16) -> bool {
+    if !app.chat.todos.is_empty() {
+        if let Some(rect) = app.chat.todo_area.get() {
+            if rect.width > 0 && rect.height > 0 && rect_contains(rect, col, row) {
+                return true;
+            }
+        } else {
+            if let Some(full) = app.chat.messages_area.get() {
+                let mid = full.x.saturating_add(full.width / 2);
+                return col >= mid;
+            }
+            return true;
+        }
+    }
+    if let Some(rect) = app.chat.messages_area.get()
+        && rect_contains(rect, col, row)
+    {
+        return false;
+    }
+    !app.chat.todos.is_empty()
 }
 
 fn get_line_text_excluding_margin(line: &ratatui::text::Line<'_>) -> String {
@@ -525,13 +532,9 @@ fn extract_selected_text(
     message: &crate::app::MessageLine,
     selection: &crate::app::chat::MessageSelection,
 ) -> String {
-    // First try the cached wrap produced by the last render. If the
-    // cache is missing (e.g. the user released the mouse on the same
-    // frame as a scroll that invalidated it, or focus toggled a shell
-    // block), recompute on the fly from the message text.
     let cached: Option<Vec<ratatui::text::Line<'static>>> = {
         let cache = message.cached_wrapped.borrow();
-        if let Some((_, _, ref lines)) = *cache {
+        if let Some((_, _, _, ref lines)) = *cache {
             Some(lines.clone())
         } else {
             None
@@ -584,11 +587,6 @@ fn extract_selected_text(
     result
 }
 
-/// Best-effort rewrap of a message's text using the same width the
-/// renderer would use. Used as a fallback when the wrap cache is empty
-/// (e.g. after a scroll that invalidated it, or before the first
-/// render). The result is only used to satisfy a copy-to-clipboard
-/// request, so we don't worry about markdown styling.
 fn recompute_wrapped_lines(message: &crate::app::MessageLine) -> Vec<ratatui::text::Line<'static>> {
     use ratatui::text::{Line, Span};
     const WIDTH: usize = 80;
@@ -620,11 +618,6 @@ fn recompute_wrapped_lines(message: &crate::app::MessageLine) -> Vec<ratatui::te
 }
 
 pub(crate) fn update_selection_on_scroll(app: &mut App, _click_x: u16, _click_y: u16) {
-    // When the user scrolls the wheel mid-drag, the scroll event's
-    // cursor position is wherever the OS pointer happens to sit, not
-    // where the user was actually dragging. Trust `last_mouse_drag_pos`
-    // (updated on every Drag event) instead, so the selection end
-    // tracks the drag point through the scroll.
     if let Some(rect) = app.chat.messages_area.get()
         && let Some((drag_x, drag_y)) = app.chat.last_mouse_drag_pos
         && let Some(ref mut sel) = app.chat.selection
@@ -663,5 +656,82 @@ pub(crate) fn update_selection_on_scroll(app: &mut App, _click_x: u16, _click_y:
             sel.end_line = rel_line;
             sel.end_col = rel_col;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::chat::todos::TodoItem;
+    use crate::app::chat::todos::TodoPriority;
+    use crate::app::chat::todos::TodoStatus;
+
+    fn app_with_layout(
+        messages: ratatui::layout::Rect,
+        todo: Option<ratatui::layout::Rect>,
+    ) -> App {
+        let mut app = App::new(Some(crate::config::StoredConfig {
+            api_key: "x".to_string(),
+            ..Default::default()
+        }));
+        app.chat.todos.push(TodoItem {
+            content: "test todo".to_string(),
+            status: TodoStatus::Pending,
+            priority: TodoPriority::Low,
+        });
+        app.chat.messages_area.set(Some(messages));
+        if let Some(t) = todo {
+            app.chat.todo_area.set(Some(t));
+        } else {
+            app.chat.todo_area.set(None);
+        }
+        app
+    }
+
+    #[test]
+    fn wheel_over_todo_respects_stored_area() {
+        let messages = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 24,
+        };
+        let todo = ratatui::layout::Rect {
+            x: 80,
+            y: 0,
+            width: 40,
+            height: 24,
+        };
+        let app = app_with_layout(messages, Some(todo));
+        assert!(wheel_over_todo(&app, 100, 10));
+        assert!(!wheel_over_todo(&app, 30, 10));
+    }
+
+    #[test]
+    fn wheel_over_todo_falls_back_to_right_half() {
+        let messages = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 24,
+        };
+        let app = app_with_layout(messages, None);
+        assert!(wheel_over_todo(&app, 79, 10));
+        assert!(!wheel_over_todo(&app, 30, 10));
+    }
+
+    #[test]
+    fn wheel_over_todo_short_circuits_when_no_todos() {
+        let app = App::new(Some(crate::config::StoredConfig {
+            api_key: "x".to_string(),
+            ..Default::default()
+        }));
+        app.chat.todo_area.set(Some(ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 24,
+        }));
+        assert!(!wheel_over_todo(&app, 100, 10));
     }
 }
