@@ -1,3 +1,9 @@
 target/
 .darwincode/config.json
 .darwincode/.env
+# Custom agent and command TOML files may be created during a session
+# (e.g. as scratch tools); ignore the runtime copies so each developer's
+# machine is independent. Templates and schemas live in source control
+# via the `init_project_dir` bootstrap.
+.darwincode/agents/*.toml
+.darwincode/commands/*.toml
