@@ -12,6 +12,11 @@ pub(crate) fn handle_mouse_event(
     sender: &Sender<WorkerEvent>,
     mouse_event: MouseEvent,
 ) -> Result<()> {
+    // While the trust modal is open, mouse events are ignored so the user
+    // must make a keyboard choice. This prevents accidental bypass.
+    if app.ui.show_trust_modal {
+        return Ok(());
+    }
     match mouse_event.kind {
         MouseEventKind::ScrollUp => {
             if matches!(
@@ -94,8 +99,7 @@ pub(crate) fn handle_mouse_event(
                                         !app.ui.setup.respect_ignore_rules;
                                 }
                                 crate::app::SetupField::TrustWorkspace => {
-                                    app.ui.setup.trust_workspace =
-                                        !app.ui.setup.trust_workspace;
+                                    app.ui.setup.trust_workspace = !app.ui.setup.trust_workspace;
                                 }
                                 crate::app::SetupField::ShowThoughts => {
                                     app.ui.setup.show_thoughts = !app.ui.setup.show_thoughts;
@@ -449,17 +453,29 @@ pub(crate) fn handle_mouse_event(
         }
         MouseEventKind::Up(MouseButton::Left) => {
             app.chat.last_mouse_drag_pos = None;
-            if let Some(ref sel) = app.chat.selection {
+            // Take ownership of the selection (if any) so we can clear it
+            // before the clipboard helper runs, and so the borrow checker
+            // doesn't see selection borrowed mutably through extract.
+            let selection = app.chat.selection.take();
+            if let Some(sel) = selection {
                 if sel.start_line != sel.end_line || sel.start_col != sel.end_col {
-                    let message = &app.chat.messages[sel.msg_idx];
-                    let text_to_copy = extract_selected_text(message, sel);
-                    if !text_to_copy.is_empty()
-                        && crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok()
-                    {
-                        app.status = "Copied selection to clipboard".to_owned();
+                    // Bounds-check the index defensively. A streaming
+                    // response that swaps out a message between Down
+                    // and Up would otherwise panic.
+                    if let Some(message) = app.chat.messages.get(sel.msg_idx) {
+                        let text_to_copy = extract_selected_text(message, &sel);
+                        if !text_to_copy.is_empty()
+                            && crate::tui::events::common::copy_to_clipboard(&text_to_copy).is_ok()
+                        {
+                            app.status = "Copied selection to clipboard".to_owned();
+                        } else if text_to_copy.is_empty() {
+                            // Either nothing was selected, or the cache
+                            // was unavailable. Don't blame the user:
+                            // surface a hint about scrolling & re-trying.
+                            app.status = "Selection empty (message scrolled out?)".to_owned();
+                        }
                     }
                 }
-                app.chat.selection = None;
             }
         }
         _ => {}
@@ -483,12 +499,27 @@ fn extract_selected_text(
     message: &crate::app::MessageLine,
     selection: &crate::app::chat::MessageSelection,
 ) -> String {
-    let cache = message.cached_wrapped.borrow();
-    let lines = if let Some((_, _, ref lines)) = *cache {
-        lines
-    } else {
-        return String::new();
+    // First try the cached wrap produced by the last render. If the
+    // cache is missing (e.g. the user released the mouse on the same
+    // frame as a scroll that invalidated it, or focus toggled a shell
+    // block), recompute on the fly from the message text.
+    let cached: Option<Vec<ratatui::text::Line<'static>>> = {
+        let cache = message.cached_wrapped.borrow();
+        if let Some((_, _, ref lines)) = *cache {
+            Some(lines.clone())
+        } else {
+            None
+        }
     };
+
+    let lines: Vec<ratatui::text::Line<'static>> = match cached {
+        Some(l) => l,
+        None => recompute_wrapped_lines(message),
+    };
+
+    if lines.is_empty() {
+        return String::new();
+    }
 
     let (min_line, min_col, max_line, max_col) = selection.normalized();
 
@@ -527,11 +558,52 @@ fn extract_selected_text(
     result
 }
 
-pub(crate) fn update_selection_on_scroll(app: &mut App, click_x: u16, click_y: u16) {
+/// Best-effort rewrap of a message's text using the same width the
+/// renderer would use. Used as a fallback when the wrap cache is empty
+/// (e.g. after a scroll that invalidated it, or before the first
+/// render). The result is only used to satisfy a copy-to-clipboard
+/// request, so we don't worry about markdown styling.
+fn recompute_wrapped_lines(message: &crate::app::MessageLine) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    const WIDTH: usize = 80;
+    let chars: Vec<char> = message.text.chars().collect();
+    if chars.is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<ratatui::text::Line<'static>> = Vec::new();
+    let mut current: Vec<char> = Vec::with_capacity(WIDTH);
+    for ch in chars {
+        if ch == '\n' {
+            let s: String = current.iter().collect();
+            out.push(Line::from(vec![Span::raw("    "), Span::raw(s)]));
+            current.clear();
+            continue;
+        }
+        if current.len() >= WIDTH {
+            let s: String = current.iter().collect();
+            out.push(Line::from(vec![Span::raw("    "), Span::raw(s)]));
+            current.clear();
+        }
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        let s: String = current.iter().collect();
+        out.push(Line::from(vec![Span::raw("    "), Span::raw(s)]));
+    }
+    out
+}
+
+pub(crate) fn update_selection_on_scroll(app: &mut App, _click_x: u16, _click_y: u16) {
+    // When the user scrolls the wheel mid-drag, the scroll event's
+    // cursor position is wherever the OS pointer happens to sit, not
+    // where the user was actually dragging. Trust `last_mouse_drag_pos`
+    // (updated on every Drag event) instead, so the selection end
+    // tracks the drag point through the scroll.
     if let Some(rect) = app.chat.messages_area.get()
+        && let Some((drag_x, drag_y)) = app.chat.last_mouse_drag_pos
         && let Some(ref mut sel) = app.chat.selection
     {
-        let clamped_y = click_y.clamp(rect.y, rect.y + rect.height - 1);
+        let clamped_y = drag_y.clamp(rect.y, rect.y + rect.height.saturating_sub(1));
         let total_lines = app
             .chat
             .message_line_ranges
@@ -556,8 +628,8 @@ pub(crate) fn update_selection_on_scroll(app: &mut App, click_x: u16, click_y: u
             let rel_line = clamped_line.saturating_sub(start_line);
 
             let text_start_x = rect.x + 6;
-            let rel_col = if click_x >= text_start_x {
-                usize::from(click_x - text_start_x)
+            let rel_col = if drag_x >= text_start_x {
+                usize::from(drag_x - text_start_x)
             } else {
                 0
             };

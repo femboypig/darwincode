@@ -318,7 +318,17 @@ impl App {
             DevelopMode::Plan => DevelopMode::Build,
             DevelopMode::Build => DevelopMode::Plan,
         };
+        self.clear_text_selection();
         self.status = format!("Switched to {} mode", self.dev_mode_label());
+    }
+
+    /// Discard any in-progress text selection. Call this whenever the
+    /// user navigates away from the chat surface (modal opening,
+    /// dev-mode toggle, screen change) so stale highlights don't
+    /// linger or get extracted against a moved target.
+    pub fn clear_text_selection(&mut self) {
+        self.chat.selection = None;
+        self.chat.last_mouse_drag_pos = None;
     }
 
     pub fn save_setup(&mut self) -> anyhow::Result<()> {

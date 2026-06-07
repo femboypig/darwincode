@@ -61,6 +61,7 @@ impl App {
             .history
             .push(super::chat::resolve_prompt_message(&input));
         self.save_session();
+        self.clear_text_selection();
         let cleaned_input = super::chat::clean_prompt_images(&input);
         self.chat.messages.push(MessageLine::user(cleaned_input));
         self.chat.messages.push(MessageLine::pending());
@@ -93,6 +94,7 @@ impl App {
         }
 
         self.proc.last_file_backups.clear();
+        self.clear_text_selection();
         self.chat
             .history
             .push(super::chat::resolve_prompt_message(&input));
@@ -185,6 +187,13 @@ impl App {
         // If the last message is pending, we remove it and start appending to a new message
         if self.chat.messages.last().is_some_and(|m| m.pending) {
             self.chat.messages.pop();
+        }
+
+        // The message list is about to be re-laid-out; the selection
+        // references line ranges that no longer match. Drop it so the
+        // user doesn't see a stale highlight (or copy a stale range).
+        if self.chat.selection.is_some() {
+            self.clear_text_selection();
         }
 
         for part in parts {
@@ -420,7 +429,7 @@ impl App {
         if self.is_busy() {
             return;
         }
-
+        self.clear_text_selection();
         self.ui.setup = SetupState::from_config(&self.chat.config);
         self.ui.screen = Screen::Setup;
         self.status = "Edit settings. Press Enter to save or Esc to quit.".to_owned();
@@ -430,6 +439,7 @@ impl App {
         if self.is_busy() {
             return;
         }
+        self.clear_text_selection();
         let cached = if let Ok(cache) = self.core.sessions_cache.lock() {
             cache.clone()
         } else {
