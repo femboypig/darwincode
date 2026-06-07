@@ -260,6 +260,33 @@ mod tests {
     }
 
     #[test]
+    fn test_todo_scroll_keys_match() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let bindings = KeyBindings::default();
+        let up_press = KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::ALT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let down_press = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::ALT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let plain_up = KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert!(bindings.matches(TuiAction::TodoScrollUp, up_press));
+        assert!(bindings.matches(TuiAction::TodoScrollDown, down_press));
+        assert!(!bindings.matches(TuiAction::TodoScrollUp, plain_up));
+    }
+
+    #[test]
     fn test_keybindings_deserialize_ignores_unknown_actions() {
         // Old JSON files may contain action names that no longer exist (e.g. "TogglePermissions").
         // The deserializer must silently skip them instead of failing.
