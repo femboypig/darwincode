@@ -759,18 +759,7 @@ You are forbidden from writing files or executing arbitrary bash commands.
 }
 
 pub fn find_project_root() -> Option<PathBuf> {
-    let mut cwd = std::env::current_dir().ok()?;
-    loop {
-        if cwd.join(".git").exists() || cwd.join(".darwincode").exists() {
-            return Some(cwd.clone());
-        }
-        if let Some(parent) = cwd.parent() {
-            cwd = parent.to_path_buf();
-        } else {
-            break;
-        }
-    }
-    std::env::current_dir().ok()
+    crate::config::find_project_root()
 }
 
 pub fn custom_themes() -> &'static HashMap<String, ThemeConfig> {
