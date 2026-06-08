@@ -427,1097 +427,1190 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                     }
                 }
 
-                let result = match name.as_str() {
-                    "read" => {
-                        let path = args.get("path").and_then(|v| v.as_str());
-                        let paths = args.get("paths").and_then(|v| v.as_array());
+                let timeout_duration = std::time::Duration::from_secs(300);
+                let tool_execution = {
+                    let name = name.clone();
+                    let args = args.clone();
+                    let config = config.clone();
+                    let sender = sender.clone();
+                    async move {
+                        match name.as_str() {
+                            "read" => {
+                                let path = args.get("path").and_then(|v| v.as_str());
+                                let paths = args.get("paths").and_then(|v| v.as_array());
 
-                        let rules_vec = if config.respect_ignore_rules {
-                            load_gitignore_rules()
-                        } else {
-                            Vec::new()
-                        };
-                        let rules = compile_rules(&rules_vec);
+                                let rules_vec = if config.respect_ignore_rules {
+                                    load_gitignore_rules()
+                                } else {
+                                    Vec::new()
+                                };
+                                let rules = compile_rules(&rules_vec);
 
-                        if let Some(paths) = paths {
-                            let mut results = serde_json::Map::new();
-                            for path_val in paths {
-                                if let Some(p_str) = path_val.as_str() {
-                                    let p = std::path::Path::new(p_str);
+                                if let Some(paths) = paths {
+                                    let mut results = serde_json::Map::new();
+                                    for path_val in paths {
+                                        if let Some(p_str) = path_val.as_str() {
+                                            let p = std::path::Path::new(p_str);
+                                            let safety = check_path_safety(p);
+                                            match safety {
+                                                PathSafety::Blocked => {
+                                                    results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied: path `{}` is restricted", p_str) }));
+                                                    continue;
+                                                }
+                                                PathSafety::Prompt => {
+                                                    let answer = prompt_user_permission(
+                                                        &format!(
+                                                            "Allow access to path `{}` outside project and home directories?",
+                                                            p_str
+                                                        ),
+                                                        &sender,
+                                                    );
+                                                    if answer != "yes" {
+                                                        results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied by user: `{}`", p_str) }));
+                                                        continue;
+                                                    }
+                                                }
+                                                PathSafety::Safe => {}
+                                            }
+
+                                            if config.respect_ignore_rules
+                                                && should_ignore(p, &rules)
+                                            {
+                                                results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", p_str) }));
+                                            } else {
+                                                match tokio::fs::read_to_string(p_str).await {
+                                                    Ok(content) => {
+                                                        results.insert(
+                                                    p_str.to_owned(),
+                                                    serde_json::json!({ "content": content }),
+                                                );
+                                                    }
+                                                    Err(e) => {
+                                                        results.insert(
+                                                    p_str.to_owned(),
+                                                    serde_json::json!({ "error": e.to_string() }),
+                                                );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    serde_json::json!({ "files": results })
+                                } else {
+                                    let target_path = path.unwrap_or(".");
+                                    let p = std::path::Path::new(target_path);
                                     let safety = check_path_safety(p);
+                                    let mut allowed = true;
                                     match safety {
                                         PathSafety::Blocked => {
-                                            results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied: path `{}` is restricted", p_str) }));
-                                            continue;
+                                            allowed = false;
                                         }
                                         PathSafety::Prompt => {
                                             let answer = prompt_user_permission(
                                                 &format!(
                                                     "Allow access to path `{}` outside project and home directories?",
-                                                    p_str
+                                                    target_path
                                                 ),
                                                 &sender,
                                             );
                                             if answer != "yes" {
-                                                results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied by user: `{}`", p_str) }));
-                                                continue;
+                                                allowed = false;
                                             }
                                         }
                                         PathSafety::Safe => {}
                                     }
 
-                                    if config.respect_ignore_rules && should_ignore(p, &rules) {
-                                        results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", p_str) }));
-                                    } else {
-                                        match tokio::fs::read_to_string(p_str).await {
+                                    if !allowed {
+                                        serde_json::json!({ "error": format!("Access denied: `{}` is restricted", target_path) })
+                                    } else if config.respect_ignore_rules
+                                        && should_ignore(p, &rules)
+                                    {
+                                        serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", target_path) })
+                                    } else if p.is_dir() {
+                                        match tokio::fs::read_dir(p).await {
+                                            Ok(mut entries) => {
+                                                let mut files = Vec::new();
+                                                while let Ok(Some(entry)) =
+                                                    entries.next_entry().await
+                                                {
+                                                    let entry_path = entry.path();
+                                                    if !config.respect_ignore_rules
+                                                        || !should_ignore(&entry_path, &rules)
+                                                    {
+                                                        files
+                                                            .push(entry_path.display().to_string());
+                                                    }
+                                                }
+                                                serde_json::json!({ "files": files })
+                                            }
+                                            Err(e) => serde_json::json!({ "error": e.to_string() }),
+                                        }
+                                    } else if p.is_file() {
+                                        match tokio::fs::read_to_string(p).await {
                                             Ok(content) => {
-                                                results.insert(
-                                                    p_str.to_owned(),
-                                                    serde_json::json!({ "content": content }),
-                                                );
+                                                serde_json::json!({ "content": content })
                                             }
-                                            Err(e) => {
-                                                results.insert(
-                                                    p_str.to_owned(),
-                                                    serde_json::json!({ "error": e.to_string() }),
-                                                );
-                                            }
+                                            Err(e) => serde_json::json!({ "error": e.to_string() }),
                                         }
+                                    } else {
+                                        serde_json::json!({ "error": format!("Path `{}` does not exist or is not readable", target_path) })
                                     }
                                 }
                             }
-                            serde_json::json!({ "files": results })
-                        } else {
-                            let target_path = path.unwrap_or(".");
-                            let p = std::path::Path::new(target_path);
-                            let safety = check_path_safety(p);
-                            let mut allowed = true;
-                            match safety {
-                                PathSafety::Blocked => {
-                                    allowed = false;
-                                }
-                                PathSafety::Prompt => {
-                                    let answer = prompt_user_permission(
-                                        &format!(
-                                            "Allow access to path `{}` outside project and home directories?",
-                                            target_path
-                                        ),
-                                        &sender,
-                                    );
-                                    if answer != "yes" {
-                                        allowed = false;
-                                    }
-                                }
-                                PathSafety::Safe => {}
-                            }
+                            "grep" => {
+                                let pattern =
+                                    args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+                                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                                let search_path = std::path::Path::new(path);
 
-                            if !allowed {
-                                serde_json::json!({ "error": format!("Access denied: `{}` is restricted", target_path) })
-                            } else if config.respect_ignore_rules && should_ignore(p, &rules) {
-                                serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", target_path) })
-                            } else if p.is_dir() {
-                                match tokio::fs::read_dir(p).await {
-                                    Ok(mut entries) => {
-                                        let mut files = Vec::new();
-                                        while let Ok(Some(entry)) = entries.next_entry().await {
-                                            let entry_path = entry.path();
-                                            if !config.respect_ignore_rules
-                                                || !should_ignore(&entry_path, &rules)
-                                            {
-                                                files.push(entry_path.display().to_string());
-                                            }
-                                        }
-                                        serde_json::json!({ "files": files })
-                                    }
-                                    Err(e) => serde_json::json!({ "error": e.to_string() }),
-                                }
-                            } else if p.is_file() {
-                                match tokio::fs::read_to_string(p).await {
-                                    Ok(content) => serde_json::json!({ "content": content }),
-                                    Err(e) => serde_json::json!({ "error": e.to_string() }),
-                                }
-                            } else {
-                                serde_json::json!({ "error": format!("Path `{}` does not exist or is not readable", target_path) })
-                            }
-                        }
-                    }
-                    "grep" => {
-                        let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-                        let search_path = std::path::Path::new(path);
-
-                        let safety = check_path_safety(search_path);
-                        let mut allowed = true;
-                        match safety {
-                            PathSafety::Blocked => {
-                                allowed = false;
-                            }
-                            PathSafety::Prompt => {
-                                let answer = prompt_user_permission(
-                                    &format!(
-                                        "Allow access to path `{}` outside project and home directories?",
-                                        path
-                                    ),
-                                    &sender,
-                                );
-                                if answer != "yes" {
-                                    allowed = false;
-                                }
-                            }
-                            PathSafety::Safe => {}
-                        }
-
-                        if !allowed {
-                            serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
-                        } else {
-                            let mut matches = Vec::new();
-                            let rules_vec = if config.respect_ignore_rules {
-                                load_gitignore_rules()
-                            } else {
-                                Vec::new()
-                            };
-                            let rules = compile_rules(&rules_vec);
-
-                            let run_res = if search_path.is_file() {
-                                if (!config.respect_ignore_rules
-                                    || !should_ignore(search_path, &rules))
-                                    && let Ok(content) = std::fs::read_to_string(search_path)
-                                {
-                                    for (line_num, line) in content.lines().enumerate() {
-                                        if line.contains(pattern) {
-                                            matches.push(format!(
-                                                "{}:{}:{}",
-                                                search_path.display(),
-                                                line_num + 1,
-                                                line
-                                            ));
-                                        }
-                                    }
-                                }
-                                Ok(())
-                            } else {
-                                recursive_search(search_path, pattern, &rules, &mut matches)
-                            };
-
-                            match run_res {
-                                Ok(_) => {
-                                    let stdout = matches.join("\n");
-                                    serde_json::json!({ "matches": stdout })
-                                }
-                                Err(e) => serde_json::json!({ "error": e.to_string() }),
-                            }
-                        }
-                    }
-                    "glob" => {
-                        let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-                        let search_path = std::path::Path::new(path);
-
-                        let safety = check_path_safety(search_path);
-                        let mut allowed = true;
-                        match safety {
-                            PathSafety::Blocked => {
-                                allowed = false;
-                            }
-                            PathSafety::Prompt => {
-                                let answer = prompt_user_permission(
-                                    &format!(
-                                        "Allow access to path `{}` outside project and home directories?",
-                                        path
-                                    ),
-                                    &sender,
-                                );
-                                if answer != "yes" {
-                                    allowed = false;
-                                }
-                            }
-                            PathSafety::Safe => {}
-                        }
-
-                        if !allowed {
-                            serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
-                        } else {
-                            let mut matches = Vec::new();
-                            let rules_vec = if config.respect_ignore_rules {
-                                load_gitignore_rules()
-                            } else {
-                                Vec::new()
-                            };
-                            let rules = compile_rules(&rules_vec);
-
-                            match recursive_glob(
-                                search_path,
-                                search_path,
-                                pattern,
-                                &rules,
-                                &mut matches,
-                            ) {
-                                Ok(_) => {
-                                    let stdout = matches.join("\n");
-                                    serde_json::json!({ "matches": stdout })
-                                }
-                                Err(e) => serde_json::json!({ "error": e.to_string() }),
-                            }
-                        }
-                    }
-                    "edit" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                        let edits = args.get("edits").and_then(|v| v.as_array());
-
-                        let rules_vec = if config.respect_ignore_rules {
-                            load_gitignore_rules()
-                        } else {
-                            Vec::new()
-                        };
-                        let rules = compile_rules(&rules_vec);
-
-                        if let Some(edits) = edits {
-                            let mut parsed_edits = Vec::new();
-                            let mut validation_errors = Vec::new();
-
-                            for (idx, edit_val) in edits.iter().enumerate() {
-                                let edit_path =
-                                    edit_val.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                                let old_string = edit_val
-                                    .get("old_string")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-                                let new_string = edit_val
-                                    .get("new_string")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-                                if edit_path.is_empty() {
-                                    validation_errors
-                                        .push(format!("Edit at index {} is missing 'path'", idx));
-                                    continue;
-                                }
-
-                                let ep = std::path::Path::new(edit_path);
-                                let safety = check_path_safety(ep);
+                                let safety = check_path_safety(search_path);
+                                let mut allowed = true;
                                 match safety {
                                     PathSafety::Blocked => {
-                                        validation_errors.push(format!(
-                                            "Access denied: path `{}` is restricted",
-                                            edit_path
-                                        ));
-                                        continue;
+                                        allowed = false;
                                     }
                                     PathSafety::Prompt => {
                                         let answer = prompt_user_permission(
                                             &format!(
                                                 "Allow access to path `{}` outside project and home directories?",
-                                                edit_path
+                                                path
                                             ),
                                             &sender,
                                         );
                                         if answer != "yes" {
-                                            validation_errors.push(format!(
-                                                "Access denied by user: `{}`",
-                                                edit_path
-                                            ));
-                                            continue;
+                                            allowed = false;
                                         }
                                     }
                                     PathSafety::Safe => {}
                                 }
 
-                                if config.respect_ignore_rules && should_ignore(ep, &rules) {
-                                    validation_errors.push(format!(
-                                        "Access denied: `{}` is ignored by .gitignore",
-                                        edit_path
-                                    ));
-                                    continue;
-                                }
-                                parsed_edits.push((
-                                    edit_path.to_owned(),
-                                    old_string.to_owned(),
-                                    new_string.to_owned(),
-                                ));
-                            }
+                                if !allowed {
+                                    serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
+                                } else {
+                                    let mut matches = Vec::new();
+                                    let rules_vec = if config.respect_ignore_rules {
+                                        load_gitignore_rules()
+                                    } else {
+                                        Vec::new()
+                                    };
+                                    let rules = compile_rules(&rules_vec);
 
-                            if !validation_errors.is_empty() {
-                                serde_json::json!({ "error": validation_errors.join("; ") })
-                            } else {
-                                let mut original_contents = std::collections::HashMap::new();
-                                let mut apply_errors = Vec::new();
-
-                                for (edit_path, _, _) in &parsed_edits {
-                                    if !original_contents.contains_key(edit_path) {
-                                        match tokio::fs::read_to_string(edit_path).await {
-                                            Ok(content) => {
-                                                original_contents
-                                                    .insert(edit_path.clone(), content);
-                                            }
-                                            Err(e) => {
-                                                apply_errors.push(format!(
-                                                    "Failed to read `{}`: {}",
-                                                    edit_path, e
-                                                ));
+                                    let run_res = if search_path.is_file() {
+                                        if (!config.respect_ignore_rules
+                                            || !should_ignore(search_path, &rules))
+                                            && let Ok(content) =
+                                                std::fs::read_to_string(search_path)
+                                        {
+                                            for (line_num, line) in content.lines().enumerate() {
+                                                if line.contains(pattern) {
+                                                    matches.push(format!(
+                                                        "{}:{}:{}",
+                                                        search_path.display(),
+                                                        line_num + 1,
+                                                        line
+                                                    ));
+                                                }
                                             }
                                         }
+                                        Ok(())
+                                    } else {
+                                        recursive_search(search_path, pattern, &rules, &mut matches)
+                                    };
+
+                                    match run_res {
+                                        Ok(_) => {
+                                            let stdout = matches.join("\n");
+                                            serde_json::json!({ "matches": stdout })
+                                        }
+                                        Err(e) => serde_json::json!({ "error": e.to_string() }),
                                     }
                                 }
+                            }
+                            "glob" => {
+                                let pattern =
+                                    args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+                                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                                let search_path = std::path::Path::new(path);
 
-                                if !apply_errors.is_empty() {
-                                    serde_json::json!({ "error": apply_errors.join("; ") })
+                                let safety = check_path_safety(search_path);
+                                let mut allowed = true;
+                                match safety {
+                                    PathSafety::Blocked => {
+                                        allowed = false;
+                                    }
+                                    PathSafety::Prompt => {
+                                        let answer = prompt_user_permission(
+                                            &format!(
+                                                "Allow access to path `{}` outside project and home directories?",
+                                                path
+                                            ),
+                                            &sender,
+                                        );
+                                        if answer != "yes" {
+                                            allowed = false;
+                                        }
+                                    }
+                                    PathSafety::Safe => {}
+                                }
+
+                                if !allowed {
+                                    serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
                                 } else {
-                                    let mut working_contents = original_contents.clone();
-                                    let mut diffs = Vec::new();
+                                    let mut matches = Vec::new();
+                                    let rules_vec = if config.respect_ignore_rules {
+                                        load_gitignore_rules()
+                                    } else {
+                                        Vec::new()
+                                    };
+                                    let rules = compile_rules(&rules_vec);
 
-                                    for (edit_path, old_string, new_string) in &parsed_edits {
-                                        let current_content =
-                                            working_contents.get_mut(edit_path).unwrap();
-                                        if current_content.contains(old_string) {
-                                            let mut diff =
-                                                format!("--- {}\n+++ {}\n", edit_path, edit_path);
-                                            let old_lines: Vec<&str> = old_string.lines().collect();
-                                            let new_lines: Vec<&str> = new_string.lines().collect();
+                                    match recursive_glob(
+                                        search_path,
+                                        search_path,
+                                        pattern,
+                                        &rules,
+                                        &mut matches,
+                                    ) {
+                                        Ok(_) => {
+                                            let stdout = matches.join("\n");
+                                            serde_json::json!({ "matches": stdout })
+                                        }
+                                        Err(e) => serde_json::json!({ "error": e.to_string() }),
+                                    }
+                                }
+                            }
+                            "edit" => {
+                                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                let edits = args.get("edits").and_then(|v| v.as_array());
 
-                                            for line in &old_lines {
-                                                diff.push_str("- ");
-                                                diff.push_str(line);
-                                                diff.push('\n');
+                                let rules_vec = if config.respect_ignore_rules {
+                                    load_gitignore_rules()
+                                } else {
+                                    Vec::new()
+                                };
+                                let rules = compile_rules(&rules_vec);
+
+                                if let Some(edits) = edits {
+                                    let mut parsed_edits = Vec::new();
+                                    let mut validation_errors = Vec::new();
+
+                                    for (idx, edit_val) in edits.iter().enumerate() {
+                                        let edit_path = edit_val
+                                            .get("path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let old_string = edit_val
+                                            .get("old_string")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let new_string = edit_val
+                                            .get("new_string")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        if edit_path.is_empty() {
+                                            validation_errors.push(format!(
+                                                "Edit at index {} is missing 'path'",
+                                                idx
+                                            ));
+                                            continue;
+                                        }
+
+                                        let ep = std::path::Path::new(edit_path);
+                                        let safety = check_path_safety(ep);
+                                        match safety {
+                                            PathSafety::Blocked => {
+                                                validation_errors.push(format!(
+                                                    "Access denied: path `{}` is restricted",
+                                                    edit_path
+                                                ));
+                                                continue;
                                             }
-                                            for line in &new_lines {
-                                                diff.push_str("+ ");
-                                                diff.push_str(line);
-                                                diff.push('\n');
+                                            PathSafety::Prompt => {
+                                                let answer = prompt_user_permission(
+                                                    &format!(
+                                                        "Allow access to path `{}` outside project and home directories?",
+                                                        edit_path
+                                                    ),
+                                                    &sender,
+                                                );
+                                                if answer != "yes" {
+                                                    validation_errors.push(format!(
+                                                        "Access denied by user: `{}`",
+                                                        edit_path
+                                                    ));
+                                                    continue;
+                                                }
                                             }
-                                            diffs.push(diff);
+                                            PathSafety::Safe => {}
+                                        }
 
-                                            *current_content =
-                                                current_content.replacen(old_string, new_string, 1);
-                                        } else {
-                                            apply_errors.push(format!(
-                                                "old_string not found in `{}`",
+                                        if config.respect_ignore_rules && should_ignore(ep, &rules)
+                                        {
+                                            validation_errors.push(format!(
+                                                "Access denied: `{}` is ignored by .gitignore",
                                                 edit_path
                                             ));
-                                            break;
+                                            continue;
                                         }
+                                        parsed_edits.push((
+                                            edit_path.to_owned(),
+                                            old_string.to_owned(),
+                                            new_string.to_owned(),
+                                        ));
                                     }
 
-                                    if !apply_errors.is_empty() {
-                                        serde_json::json!({ "error": apply_errors.join("; ") })
+                                    if !validation_errors.is_empty() {
+                                        serde_json::json!({ "error": validation_errors.join("; ") })
                                     } else {
-                                        let mut written_files = Vec::new();
-                                        let mut write_error = None;
+                                        let mut original_contents =
+                                            std::collections::HashMap::new();
+                                        let mut apply_errors = Vec::new();
 
-                                        for (edit_path, new_content) in &working_contents {
-                                            match tokio::fs::write(edit_path, new_content).await {
-                                                Ok(_) => {
-                                                    written_files.push(edit_path.clone());
+                                        for (edit_path, _, _) in &parsed_edits {
+                                            if !original_contents.contains_key(edit_path) {
+                                                match tokio::fs::read_to_string(edit_path).await {
+                                                    Ok(content) => {
+                                                        original_contents
+                                                            .insert(edit_path.clone(), content);
+                                                    }
+                                                    Err(e) => {
+                                                        apply_errors.push(format!(
+                                                            "Failed to read `{}`: {}",
+                                                            edit_path, e
+                                                        ));
+                                                    }
                                                 }
-                                                Err(e) => {
-                                                    write_error = Some(format!(
-                                                        "Failed to write `{}`: {}",
-                                                        edit_path, e
+                                            }
+                                        }
+
+                                        if !apply_errors.is_empty() {
+                                            serde_json::json!({ "error": apply_errors.join("; ") })
+                                        } else {
+                                            let mut working_contents = original_contents.clone();
+                                            let mut diffs = Vec::new();
+
+                                            for (edit_path, old_string, new_string) in &parsed_edits
+                                            {
+                                                let current_content =
+                                                    working_contents.get_mut(edit_path).unwrap();
+                                                if current_content.contains(old_string) {
+                                                    let mut diff = format!(
+                                                        "--- {}\n+++ {}\n",
+                                                        edit_path, edit_path
+                                                    );
+                                                    let old_lines: Vec<&str> =
+                                                        old_string.lines().collect();
+                                                    let new_lines: Vec<&str> =
+                                                        new_string.lines().collect();
+
+                                                    for line in &old_lines {
+                                                        diff.push_str("- ");
+                                                        diff.push_str(line);
+                                                        diff.push('\n');
+                                                    }
+                                                    for line in &new_lines {
+                                                        diff.push_str("+ ");
+                                                        diff.push_str(line);
+                                                        diff.push('\n');
+                                                    }
+                                                    diffs.push(diff);
+
+                                                    *current_content = current_content
+                                                        .replacen(old_string, new_string, 1);
+                                                } else {
+                                                    apply_errors.push(format!(
+                                                        "old_string not found in `{}`",
+                                                        edit_path
                                                     ));
                                                     break;
                                                 }
                                             }
-                                        }
 
-                                        if let Some(err) = write_error {
-                                            for edit_path in written_files {
-                                                let orig =
-                                                    original_contents.get(&edit_path).unwrap();
-                                                let _ = tokio::fs::write(&edit_path, orig).await;
-                                            }
-                                            serde_json::json!({ "error": format!("Write failed, transaction rolled back. Error: {}", err) })
-                                        } else {
-                                            let mut combined_diff = String::new();
-                                            combined_diff.push_str("```diff\n");
-                                            combined_diff.push_str(&diffs.join("\n"));
-                                            combined_diff.push_str("```");
-
-                                            serde_json::json!({ "success": true, "diff": combined_diff })
-                                        }
-                                    }
-                                }
-                            }
-                        } else if args.get("start_line").is_some() {
-                            let ep = std::path::Path::new(path);
-                            let safety = check_path_safety(ep);
-                            let mut allowed = true;
-                            match safety {
-                                PathSafety::Blocked => {
-                                    allowed = false;
-                                }
-                                PathSafety::Prompt => {
-                                    let answer = prompt_user_permission(
-                                        &format!(
-                                            "Allow access to path `{}` outside project and home directories?",
-                                            path
-                                        ),
-                                        &sender,
-                                    );
-                                    if answer != "yes" {
-                                        allowed = false;
-                                    }
-                                }
-                                PathSafety::Safe => {}
-                            }
-
-                            if !allowed {
-                                serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
-                            } else if config.respect_ignore_rules && should_ignore(ep, &rules) {
-                                serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
-                            } else {
-                                let start_line =
-                                    args.get("start_line").and_then(|v| v.as_u64()).unwrap_or(1)
-                                        as usize;
-                                let end_line =
-                                    args.get("end_line").and_then(|v| v.as_u64()).unwrap_or(1)
-                                        as usize;
-                                let new_content = args
-                                    .get("new_content")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-
-                                if start_line == 0 {
-                                    serde_json::json!({ "error": "start_line must be greater than or equal to 1" })
-                                } else if start_line > end_line {
-                                    serde_json::json!({ "error": "start_line cannot be greater than end_line" })
-                                } else {
-                                    match tokio::fs::read_to_string(path).await {
-                                        Ok(content) => {
-                                            let lines: Vec<&str> = content.lines().collect();
-                                            if start_line > lines.len() {
-                                                serde_json::json!({ "error": format!("start_line {} is beyond file line count {}", start_line, lines.len()) })
+                                            if !apply_errors.is_empty() {
+                                                serde_json::json!({ "error": apply_errors.join("; ") })
                                             } else {
-                                                let end_idx = std::cmp::min(end_line, lines.len());
+                                                let mut written_files = Vec::new();
+                                                let mut write_error = None;
 
-                                                let mut diff = String::new();
-                                                diff.push_str("```diff\n");
-                                                for line in
-                                                    lines.iter().take(end_idx).skip(start_line - 1)
-                                                {
-                                                    diff.push_str("- ");
-                                                    diff.push_str(line);
-                                                    diff.push('\n');
-                                                }
-                                                for line in new_content.lines() {
-                                                    diff.push_str("+ ");
-                                                    diff.push_str(line);
-                                                    diff.push('\n');
-                                                }
-                                                diff.push_str("```");
-
-                                                let mut new_lines = Vec::new();
-                                                for line in lines.iter().take(start_line - 1) {
-                                                    new_lines.push(*line);
-                                                }
-                                                for line in new_content.lines() {
-                                                    new_lines.push(line);
-                                                }
-                                                for line in lines.iter().skip(end_idx) {
-                                                    new_lines.push(*line);
-                                                }
-                                                let mut new_content_str = new_lines.join("\n");
-                                                if content.ends_with('\n')
-                                                    && !new_content_str.is_empty()
-                                                {
-                                                    new_content_str.push('\n');
-                                                }
-
-                                                match tokio::fs::write(path, new_content_str).await
-                                                {
-                                                    Ok(_) => {
-                                                        serde_json::json!({ "success": true, "diff": diff })
+                                                for (edit_path, new_content) in &working_contents {
+                                                    match tokio::fs::write(edit_path, new_content)
+                                                        .await
+                                                    {
+                                                        Ok(_) => {
+                                                            written_files.push(edit_path.clone());
+                                                        }
+                                                        Err(e) => {
+                                                            write_error = Some(format!(
+                                                                "Failed to write `{}`: {}",
+                                                                edit_path, e
+                                                            ));
+                                                            break;
+                                                        }
                                                     }
-                                                    Err(e) => {
-                                                        serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                                }
+
+                                                if let Some(err) = write_error {
+                                                    for edit_path in written_files {
+                                                        let orig = original_contents
+                                                            .get(&edit_path)
+                                                            .unwrap();
+                                                        let _ = tokio::fs::write(&edit_path, orig)
+                                                            .await;
                                                     }
+                                                    serde_json::json!({ "error": format!("Write failed, transaction rolled back. Error: {}", err) })
+                                                } else {
+                                                    let mut combined_diff = String::new();
+                                                    combined_diff.push_str("```diff\n");
+                                                    combined_diff.push_str(&diffs.join("\n"));
+                                                    combined_diff.push_str("```");
+
+                                                    serde_json::json!({ "success": true, "diff": combined_diff })
                                                 }
                                             }
                                         }
-                                        Err(e) => {
-                                            serde_json::json!({ "error": format!("Failed to read file: {}", e) })
+                                    }
+                                } else if args.get("start_line").is_some() {
+                                    let ep = std::path::Path::new(path);
+                                    let safety = check_path_safety(ep);
+                                    let mut allowed = true;
+                                    match safety {
+                                        PathSafety::Blocked => {
+                                            allowed = false;
                                         }
-                                    }
-                                }
-                            }
-                        } else {
-                            let ep = std::path::Path::new(path);
-                            let safety = check_path_safety(ep);
-                            let mut allowed = true;
-                            match safety {
-                                PathSafety::Blocked => {
-                                    allowed = false;
-                                }
-                                PathSafety::Prompt => {
-                                    let answer = prompt_user_permission(
-                                        &format!(
-                                            "Allow access to path `{}` outside project and home directories?",
-                                            path
-                                        ),
-                                        &sender,
-                                    );
-                                    if answer != "yes" {
-                                        allowed = false;
-                                    }
-                                }
-                                PathSafety::Safe => {}
-                            }
-
-                            if !allowed {
-                                serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
-                            } else if config.respect_ignore_rules && should_ignore(ep, &rules) {
-                                serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
-                            } else {
-                                let old_string = args
-                                    .get("old_string")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-                                let new_string = args
-                                    .get("new_string")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-                                match tokio::fs::read_to_string(path).await {
-                                    Ok(content) => {
-                                        if content.contains(old_string) {
-                                            let mut diff = String::new();
-
-                                            let old_lines: Vec<&str> = old_string.lines().collect();
-                                            let new_lines: Vec<&str> = new_string.lines().collect();
-
-                                            diff.push_str("```diff\n");
-                                            for line in &old_lines {
-                                                diff.push_str("- ");
-                                                diff.push_str(line);
-                                                diff.push('\n');
+                                        PathSafety::Prompt => {
+                                            let answer = prompt_user_permission(
+                                                &format!(
+                                                    "Allow access to path `{}` outside project and home directories?",
+                                                    path
+                                                ),
+                                                &sender,
+                                            );
+                                            if answer != "yes" {
+                                                allowed = false;
                                             }
-                                            for line in &new_lines {
-                                                diff.push_str("+ ");
-                                                diff.push_str(line);
-                                                diff.push('\n');
-                                            }
-                                            diff.push_str("```");
+                                        }
+                                        PathSafety::Safe => {}
+                                    }
 
-                                            let new_content =
-                                                content.replacen(old_string, new_string, 1);
-                                            match tokio::fs::write(path, new_content).await {
-                                                Ok(_) => {
-                                                    serde_json::json!({ "success": true, "diff": diff })
+                                    if !allowed {
+                                        serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
+                                    } else if config.respect_ignore_rules
+                                        && should_ignore(ep, &rules)
+                                    {
+                                        serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
+                                    } else {
+                                        let start_line = args
+                                            .get("start_line")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(1)
+                                            as usize;
+                                        let end_line = args
+                                            .get("end_line")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(1)
+                                            as usize;
+                                        let new_content = args
+                                            .get("new_content")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+
+                                        if start_line == 0 {
+                                            serde_json::json!({ "error": "start_line must be greater than or equal to 1" })
+                                        } else if start_line > end_line {
+                                            serde_json::json!({ "error": "start_line cannot be greater than end_line" })
+                                        } else {
+                                            match tokio::fs::read_to_string(path).await {
+                                                Ok(content) => {
+                                                    let lines: Vec<&str> =
+                                                        content.lines().collect();
+                                                    if start_line > lines.len() {
+                                                        serde_json::json!({ "error": format!("start_line {} is beyond file line count {}", start_line, lines.len()) })
+                                                    } else {
+                                                        let end_idx =
+                                                            std::cmp::min(end_line, lines.len());
+
+                                                        let mut diff = String::new();
+                                                        diff.push_str("```diff\n");
+                                                        for line in lines
+                                                            .iter()
+                                                            .take(end_idx)
+                                                            .skip(start_line - 1)
+                                                        {
+                                                            diff.push_str("- ");
+                                                            diff.push_str(line);
+                                                            diff.push('\n');
+                                                        }
+                                                        for line in new_content.lines() {
+                                                            diff.push_str("+ ");
+                                                            diff.push_str(line);
+                                                            diff.push('\n');
+                                                        }
+                                                        diff.push_str("```");
+
+                                                        let mut new_lines = Vec::new();
+                                                        for line in
+                                                            lines.iter().take(start_line - 1)
+                                                        {
+                                                            new_lines.push(*line);
+                                                        }
+                                                        for line in new_content.lines() {
+                                                            new_lines.push(line);
+                                                        }
+                                                        for line in lines.iter().skip(end_idx) {
+                                                            new_lines.push(*line);
+                                                        }
+                                                        let mut new_content_str =
+                                                            new_lines.join("\n");
+                                                        if content.ends_with('\n')
+                                                            && !new_content_str.is_empty()
+                                                        {
+                                                            new_content_str.push('\n');
+                                                        }
+
+                                                        match tokio::fs::write(
+                                                            path,
+                                                            new_content_str,
+                                                        )
+                                                        .await
+                                                        {
+                                                            Ok(_) => {
+                                                                serde_json::json!({ "success": true, "diff": diff })
+                                                            }
+                                                            Err(e) => {
+                                                                serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                                 Err(e) => {
-                                                    serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                                    serde_json::json!({ "error": format!("Failed to read file: {}", e) })
                                                 }
                                             }
-                                        } else {
-                                            serde_json::json!({ "error": "old_string not found in file." })
                                         }
                                     }
-                                    Err(e) => {
-                                        serde_json::json!({ "error": format!("Failed to read file: {}", e) })
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    "write" => {
-                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                        let ep = std::path::Path::new(path);
-                        let safety = check_path_safety(ep);
-                        let mut allowed = true;
-                        match safety {
-                            PathSafety::Blocked => {
-                                allowed = false;
-                            }
-                            PathSafety::Prompt => {
-                                let answer = prompt_user_permission(
-                                    &format!(
-                                        "Allow access to path `{}` outside project and home directories?",
-                                        path
-                                    ),
-                                    &sender,
-                                );
-                                if answer != "yes" {
-                                    allowed = false;
-                                }
-                            }
-                            PathSafety::Safe => {}
-                        }
-
-                        if !allowed {
-                            serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
-                        } else {
-                            let rules_vec = if config.respect_ignore_rules {
-                                load_gitignore_rules()
-                            } else {
-                                Vec::new()
-                            };
-                            let rules = compile_rules(&rules_vec);
-
-                            if config.respect_ignore_rules && should_ignore(ep, &rules) {
-                                serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
-                            } else {
-                                let content =
-                                    args.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                                let write_res = async {
-                                    if let Some(parent) = std::path::Path::new(path).parent()
-                                        && !parent.as_os_str().is_empty()
-                                    {
-                                        tokio::fs::create_dir_all(parent).await?;
-                                    }
-                                    tokio::fs::write(path, content).await?;
-                                    Ok::<(), std::io::Error>(())
-                                }
-                                .await;
-                                match write_res {
-                                    Ok(_) => serde_json::json!({ "success": true }),
-                                    Err(e) => {
-                                        serde_json::json!({ "error": format!("Failed to write file: {}", e) })
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    "sh" => {
-                        let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                        let background = args
-                            .get("background")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        let input = args.get("input").and_then(|v| v.as_str());
-                        let persistent_session_id =
-                            args.get("persistent_session_id").and_then(|v| v.as_str());
-
-                        if let Some(session_id) = persistent_session_id {
-                            match crate::tui::run_persistent_bash(
-                                session_id,
-                                cmd,
-                                input,
-                                sender.clone(),
-                            ) {
-                                Ok(val) => val,
-                                Err(e) => serde_json::json!({ "error": e.to_string() }),
-                            }
-                        } else {
-                            let run_result = async {
-                                if background {
-                                    let mut command = std::process::Command::new("bash");
-                                    command
-                                        .arg("-c")
-                                        .arg(cmd)
-                                        .stdin(std::process::Stdio::piped())
-                                        .stdout(std::process::Stdio::piped())
-                                        .stderr(std::process::Stdio::piped());
-
-                                    #[cfg(unix)]
-                                    {
-                                        use std::os::unix::process::CommandExt;
-                                        unsafe {
-                                            command.pre_exec(|| {
-                                                libc::setpgid(0, 0);
-                                                Ok(())
-                                            });
-                                        }
-                                    }
-
-                                    let mut child = command.spawn()?;
-                                    let pid = child.id();
-                                    let mut child_stdin = child.stdin.take();
-                                    if let Some(ref mut stdin) = child_stdin.as_mut()
-                                        && let Some(inp) = input
-                                    {
-                                        use std::io::Write;
-                                        let _ = stdin.write_all(inp.as_bytes());
-                                        let _ = stdin.flush();
-                                    }
-
-                                    let stdout = child.stdout.take().unwrap();
-                                    let stderr = child.stderr.take().unwrap();
-
-                                    let stdout_accumulator =
-                                        std::sync::Arc::new(Mutex::new(String::new()));
-                                    let stderr_accumulator =
-                                        std::sync::Arc::new(Mutex::new(String::new()));
-
-                                    let sender_stdout = sender.clone();
-                                    let stdout_acc_clone = stdout_accumulator.clone();
-                                    let stdout_handle = std::thread::spawn(move || {
-                                        use std::io::Read;
-                                        let mut buffer = [0; 1024];
-                                        let mut reader = stdout;
-                                        while let Ok(n) = reader.read(&mut buffer) {
-                                            if n == 0 {
-                                                break;
-                                            }
-                                            let chunk =
-                                                String::from_utf8_lossy(&buffer[..n]).into_owned();
-                                            {
-                                                let mut guard = stdout_acc_clone.lock();
-                                                guard.push_str(&chunk);
-                                            }
-                                            let _ = sender_stdout
-                                                .send(WorkerEvent::BashStdout(Some(pid), chunk));
-                                        }
-                                    });
-
-                                    let sender_stderr = sender.clone();
-                                    let stderr_acc_clone = stderr_accumulator.clone();
-                                    let stderr_handle = std::thread::spawn(move || {
-                                        use std::io::Read;
-                                        let mut buffer = [0; 1024];
-                                        let mut reader = stderr;
-                                        while let Ok(n) = reader.read(&mut buffer) {
-                                            if n == 0 {
-                                                break;
-                                            }
-                                            let chunk =
-                                                String::from_utf8_lossy(&buffer[..n]).into_owned();
-                                            {
-                                                let mut guard = stderr_acc_clone.lock();
-                                                guard.push_str(&chunk);
-                                            }
-                                            let _ = sender_stderr
-                                                .send(WorkerEvent::BashStderr(Some(pid), chunk));
-                                        }
-                                    });
-
-                                    crate::tui::register_background_process(
-                                        pid,
-                                        cmd.to_owned(),
-                                        child,
-                                        child_stdin,
-                                        stdout_accumulator.clone(),
-                                        stderr_accumulator.clone(),
-                                    );
-                                    std::thread::spawn(move || {
-                                        let _ = stdout_handle.join();
-                                        let _ = stderr_handle.join();
-                                    });
-                                    Ok::<serde_json::Value, std::io::Error>(serde_json::json!({
-                                        "status": "running",
-                                        "pid": pid
-                                    }))
                                 } else {
-                                    let mut command = tokio::process::Command::new("bash");
-                                    command
-                                        .arg("-c")
-                                        .arg(cmd)
-                                        .stdin(std::process::Stdio::piped())
-                                        .stdout(std::process::Stdio::piped())
-                                        .stderr(std::process::Stdio::piped());
-
-                                    #[cfg(unix)]
-                                    {
-                                        unsafe {
-                                            command.pre_exec(|| {
-                                                libc::setpgid(0, 0);
-                                                Ok(())
-                                            });
+                                    let ep = std::path::Path::new(path);
+                                    let safety = check_path_safety(ep);
+                                    let mut allowed = true;
+                                    match safety {
+                                        PathSafety::Blocked => {
+                                            allowed = false;
                                         }
-                                    }
-
-                                    let mut child = command.spawn()?;
-                                    let pid = child.id().unwrap();
-
-                                    let mut child_stdin = child.stdin.take();
-                                    if let Some(ref mut stdin) = child_stdin.as_mut()
-                                        && let Some(inp) = input
-                                    {
-                                        use tokio::io::AsyncWriteExt;
-                                        let _ = stdin.write_all(inp.as_bytes()).await;
-                                        let _ = stdin.flush().await;
-                                    }
-                                    *crate::tui::RUNNING_PROCESS_STDIN.lock() = child_stdin.take();
-
-                                    let stdout = child.stdout.take().unwrap();
-                                    let stderr = child.stderr.take().unwrap();
-
-                                    let stdout_accumulator =
-                                        std::sync::Arc::new(Mutex::new(String::new()));
-                                    let stderr_accumulator =
-                                        std::sync::Arc::new(Mutex::new(String::new()));
-
-                                    let sender_stdout = sender.clone();
-                                    let stdout_acc_clone = stdout_accumulator.clone();
-                                    let stdout_task =
-                                        crate::tui::async_runtime::spawn(async move {
-                                            use tokio::io::AsyncReadExt;
-                                            let mut buffer = [0; 1024];
-                                            let mut reader = stdout;
-                                            while let Ok(n) = reader.read(&mut buffer).await {
-                                                if n == 0 {
-                                                    break;
-                                                }
-                                                let chunk = String::from_utf8_lossy(&buffer[..n])
-                                                    .into_owned();
-                                                {
-                                                    let mut guard = stdout_acc_clone.lock();
-                                                    guard.push_str(&chunk);
-                                                }
-                                                let _ = sender_stdout.send(
-                                                    WorkerEvent::BashStdout(Some(pid), chunk),
-                                                );
+                                        PathSafety::Prompt => {
+                                            let answer = prompt_user_permission(
+                                                &format!(
+                                                    "Allow access to path `{}` outside project and home directories?",
+                                                    path
+                                                ),
+                                                &sender,
+                                            );
+                                            if answer != "yes" {
+                                                allowed = false;
                                             }
-                                        });
+                                        }
+                                        PathSafety::Safe => {}
+                                    }
 
-                                    let sender_stderr = sender.clone();
-                                    let stderr_acc_clone = stderr_accumulator.clone();
-                                    let stderr_task =
-                                        crate::tui::async_runtime::spawn(async move {
-                                            use tokio::io::AsyncReadExt;
-                                            let mut buffer = [0; 1024];
-                                            let mut reader = stderr;
-                                            while let Ok(n) = reader.read(&mut buffer).await {
-                                                if n == 0 {
-                                                    break;
-                                                }
-                                                let chunk = String::from_utf8_lossy(&buffer[..n])
-                                                    .into_owned();
-                                                {
-                                                    let mut guard = stderr_acc_clone.lock();
-                                                    guard.push_str(&chunk);
-                                                }
-                                                let _ = sender_stderr.send(
-                                                    WorkerEvent::BashStderr(Some(pid), chunk),
-                                                );
-                                            }
-                                        });
-
+                                    if !allowed {
+                                        serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
+                                    } else if config.respect_ignore_rules
+                                        && should_ignore(ep, &rules)
                                     {
-                                        let mut guard = crate::tui::RUNNING_PROCESS_PID.lock();
-                                        *guard = Some(pid);
-                                    }
-                                    let status = child.wait().await?;
-                                    {
-                                        let mut guard = crate::tui::RUNNING_PROCESS_PID.lock();
-                                        *guard = None;
-                                    }
-                                    *crate::tui::RUNNING_PROCESS_STDIN.lock() = None;
-
-                                    let _ = stdout_task.await;
-                                    let _ = stderr_task.await;
-
-                                    let stdout_content = stdout_accumulator.lock().clone();
-                                    let stderr_content = stderr_accumulator.lock().clone();
-                                    let status_code = status.code();
-                                    let mut err_val = serde_json::Value::Null;
-
-                                    if status_code.is_none() {
-                                        err_val = serde_json::json!(
-                                            "Process terminated by user via Ctrl+C"
-                                        );
-                                    }
-
-                                    Ok::<serde_json::Value, std::io::Error>(serde_json::json!({
-                                        "status": status_code,
-                                        "stdout": stdout_content,
-                                        "stderr": stderr_content,
-                                        "error": err_val,
-                                    }))
-                                }
-                            }
-                            .await;
-
-                            match run_result {
-                                Ok(val) => val,
-                                Err(e) => serde_json::json!({ "error": e.to_string() }),
-                            }
-                        }
-                    }
-                    "ps" => {
-                        let pid = args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                        crate::tui::run_check_process(pid)
-                    }
-                    "kill" => {
-                        let pid = args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                        crate::tui::run_kill_process(pid)
-                    }
-                    "logs" => {
-                        let pid = args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                        let limit = args
-                            .get("limit")
-                            .and_then(|v| v.as_u64())
-                            .map(|v| v as usize);
-                        crate::tui::run_get_logs(pid, limit)
-                    }
-                    "patch" => {
-                        let patch = args.get("patch").and_then(|v| v.as_str()).unwrap_or("");
-                        let run_res = (|| -> Result<serde_json::Value, String> {
-                            let file_path = patch
-                                .lines()
-                                .find_map(|line| {
-                                    if let Some(stripped) = line.strip_prefix("--- a/") {
-                                        Some(stripped)
-                                    } else if let Some(stripped) = line.strip_prefix("+++ b/") {
-                                        Some(stripped)
+                                        serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
                                     } else {
-                                        None
+                                        let old_string = args
+                                            .get("old_string")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let new_string = args
+                                            .get("new_string")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        match tokio::fs::read_to_string(path).await {
+                                            Ok(content) => {
+                                                if content.contains(old_string) {
+                                                    let mut diff = String::new();
+
+                                                    let old_lines: Vec<&str> =
+                                                        old_string.lines().collect();
+                                                    let new_lines: Vec<&str> =
+                                                        new_string.lines().collect();
+
+                                                    diff.push_str("```diff\n");
+                                                    for line in &old_lines {
+                                                        diff.push_str("- ");
+                                                        diff.push_str(line);
+                                                        diff.push('\n');
+                                                    }
+                                                    for line in &new_lines {
+                                                        diff.push_str("+ ");
+                                                        diff.push_str(line);
+                                                        diff.push('\n');
+                                                    }
+                                                    diff.push_str("```");
+
+                                                    let new_content =
+                                                        content.replacen(old_string, new_string, 1);
+                                                    match tokio::fs::write(path, new_content).await
+                                                    {
+                                                        Ok(_) => {
+                                                            serde_json::json!({ "success": true, "diff": diff })
+                                                        }
+                                                        Err(e) => {
+                                                            serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                                        }
+                                                    }
+                                                } else {
+                                                    serde_json::json!({ "error": "old_string not found in file." })
+                                                }
+                                            }
+                                            Err(e) => {
+                                                serde_json::json!({ "error": format!("Failed to read file: {}", e) })
+                                            }
+                                        }
                                     }
-                                })
-                                .and_then(|rest| rest.split_whitespace().next());
-
-                            let start_dir = if let Some(fp) = file_path {
-                                let p = std::path::Path::new(fp);
-                                let parent = p.parent().unwrap_or(std::path::Path::new(""));
-                                if parent.as_os_str().is_empty() {
-                                    std::env::current_dir()
-                                        .unwrap_or_else(|_| std::path::PathBuf::from("/"))
-                                } else {
-                                    std::env::current_dir()
-                                        .unwrap_or_else(|_| std::path::PathBuf::from("/"))
-                                        .join(parent)
-                                }
-                            } else {
-                                std::env::current_dir()
-                                    .unwrap_or_else(|_| std::path::PathBuf::from("/"))
-                            };
-
-                            let mut cwd = start_dir;
-                            let mut git_root = None;
-                            loop {
-                                if cwd.join(".git").exists() {
-                                    git_root = Some(cwd.clone());
-                                    break;
-                                }
-                                if let Some(parent) = cwd.parent() {
-                                    cwd = parent.to_path_buf();
-                                } else {
-                                    break;
                                 }
                             }
+                            "write" => {
+                                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                let ep = std::path::Path::new(path);
+                                let safety = check_path_safety(ep);
+                                let mut allowed = true;
+                                match safety {
+                                    PathSafety::Blocked => {
+                                        allowed = false;
+                                    }
+                                    PathSafety::Prompt => {
+                                        let answer = prompt_user_permission(
+                                            &format!(
+                                                "Allow access to path `{}` outside project and home directories?",
+                                                path
+                                            ),
+                                            &sender,
+                                        );
+                                        if answer != "yes" {
+                                            allowed = false;
+                                        }
+                                    }
+                                    PathSafety::Safe => {}
+                                }
 
-                            if git_root.is_none() {
-                                let original_cwd = std::env::current_dir()
-                                    .unwrap_or_else(|_| std::path::PathBuf::from("/"));
-                                if let Ok(entries) = std::fs::read_dir(&original_cwd) {
-                                    let mut candidates = Vec::new();
-                                    for entry in entries.flatten() {
-                                        let path = entry.path();
-                                        if path.is_dir() && path.join(".git").exists() {
-                                            candidates.push(path);
+                                if !allowed {
+                                    serde_json::json!({ "error": format!("Access denied: `{}` is restricted", path) })
+                                } else {
+                                    let rules_vec = if config.respect_ignore_rules {
+                                        load_gitignore_rules()
+                                    } else {
+                                        Vec::new()
+                                    };
+                                    let rules = compile_rules(&rules_vec);
+
+                                    if config.respect_ignore_rules && should_ignore(ep, &rules) {
+                                        serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", path) })
+                                    } else {
+                                        let content = args
+                                            .get("content")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let write_res = async {
+                                            if let Some(parent) =
+                                                std::path::Path::new(path).parent()
+                                                && !parent.as_os_str().is_empty()
+                                            {
+                                                tokio::fs::create_dir_all(parent).await?;
+                                            }
+                                            tokio::fs::write(path, content).await?;
+                                            Ok::<(), std::io::Error>(())
+                                        }
+                                        .await;
+                                        match write_res {
+                                            Ok(_) => serde_json::json!({ "success": true }),
+                                            Err(e) => {
+                                                serde_json::json!({ "error": format!("Failed to write file: {}", e) })
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            "sh" => {
+                                let cmd =
+                                    args.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                                let background = args
+                                    .get("background")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+                                let input = args.get("input").and_then(|v| v.as_str());
+                                let persistent_session_id =
+                                    args.get("persistent_session_id").and_then(|v| v.as_str());
+
+                                if let Some(session_id) = persistent_session_id {
+                                    match crate::tui::run_persistent_bash(
+                                        session_id,
+                                        cmd,
+                                        input,
+                                        sender.clone(),
+                                    ) {
+                                        Ok(val) => val,
+                                        Err(e) => serde_json::json!({ "error": e.to_string() }),
+                                    }
+                                } else {
+                                    let run_result = async {
+                                        if background {
+                                            let mut command = std::process::Command::new("bash");
+                                            command
+                                                .arg("-c")
+                                                .arg(cmd)
+                                                .stdin(std::process::Stdio::piped())
+                                                .stdout(std::process::Stdio::piped())
+                                                .stderr(std::process::Stdio::piped());
+
+                                            #[cfg(unix)]
+                                            {
+                                                use std::os::unix::process::CommandExt;
+                                                unsafe {
+                                                    command.pre_exec(|| {
+                                                        libc::setpgid(0, 0);
+                                                        Ok(())
+                                                    });
+                                                }
+                                            }
+
+                                            let mut child = command.spawn()?;
+                                            let pid = child.id();
+                                            let mut child_stdin = child.stdin.take();
+                                            if let Some(ref mut stdin) = child_stdin.as_mut()
+                                                && let Some(inp) = input
+                                            {
+                                                use std::io::Write;
+                                                let _ = stdin.write_all(inp.as_bytes());
+                                                let _ = stdin.flush();
+                                            }
+
+                                            let stdout = child.stdout.take().unwrap();
+                                            let stderr = child.stderr.take().unwrap();
+
+                                            let stdout_accumulator =
+                                                std::sync::Arc::new(Mutex::new(String::new()));
+                                            let stderr_accumulator =
+                                                std::sync::Arc::new(Mutex::new(String::new()));
+
+                                            let sender_stdout = sender.clone();
+                                            let stdout_acc_clone = stdout_accumulator.clone();
+                                            let stdout_handle = std::thread::spawn(move || {
+                                                use std::io::Read;
+                                                let mut buffer = [0; 1024];
+                                                let mut reader = stdout;
+                                                while let Ok(n) = reader.read(&mut buffer) {
+                                                    if n == 0 {
+                                                        break;
+                                                    }
+                                                    let chunk =
+                                                        String::from_utf8_lossy(&buffer[..n])
+                                                            .into_owned();
+                                                    {
+                                                        let mut guard = stdout_acc_clone.lock();
+                                                        guard.push_str(&chunk);
+                                                    }
+                                                    let _ = sender_stdout.send(
+                                                        WorkerEvent::BashStdout(Some(pid), chunk),
+                                                    );
+                                                }
+                                            });
+
+                                            let sender_stderr = sender.clone();
+                                            let stderr_acc_clone = stderr_accumulator.clone();
+                                            let stderr_handle = std::thread::spawn(move || {
+                                                use std::io::Read;
+                                                let mut buffer = [0; 1024];
+                                                let mut reader = stderr;
+                                                while let Ok(n) = reader.read(&mut buffer) {
+                                                    if n == 0 {
+                                                        break;
+                                                    }
+                                                    let chunk =
+                                                        String::from_utf8_lossy(&buffer[..n])
+                                                            .into_owned();
+                                                    {
+                                                        let mut guard = stderr_acc_clone.lock();
+                                                        guard.push_str(&chunk);
+                                                    }
+                                                    let _ = sender_stderr.send(
+                                                        WorkerEvent::BashStderr(Some(pid), chunk),
+                                                    );
+                                                }
+                                            });
+
+                                            crate::tui::register_background_process(
+                                                pid,
+                                                cmd.to_owned(),
+                                                child,
+                                                child_stdin,
+                                                stdout_accumulator.clone(),
+                                                stderr_accumulator.clone(),
+                                            );
+                                            std::thread::spawn(move || {
+                                                let _ = stdout_handle.join();
+                                                let _ = stderr_handle.join();
+                                            });
+                                            Ok::<serde_json::Value, std::io::Error>(
+                                                serde_json::json!({
+                                                    "status": "running",
+                                                    "pid": pid
+                                                }),
+                                            )
+                                        } else {
+                                            let mut command = tokio::process::Command::new("bash");
+                                            command
+                                                .arg("-c")
+                                                .arg(cmd)
+                                                .stdin(std::process::Stdio::piped())
+                                                .stdout(std::process::Stdio::piped())
+                                                .stderr(std::process::Stdio::piped());
+
+                                            #[cfg(unix)]
+                                            {
+                                                unsafe {
+                                                    command.pre_exec(|| {
+                                                        libc::setpgid(0, 0);
+                                                        Ok(())
+                                                    });
+                                                }
+                                            }
+
+                                            let mut child = command.spawn()?;
+                                            let pid = child.id().unwrap();
+
+                                            let mut child_stdin = child.stdin.take();
+                                            if let Some(ref mut stdin) = child_stdin.as_mut()
+                                                && let Some(inp) = input
+                                            {
+                                                use tokio::io::AsyncWriteExt;
+                                                let _ = stdin.write_all(inp.as_bytes()).await;
+                                                let _ = stdin.flush().await;
+                                            }
+                                            *crate::tui::RUNNING_PROCESS_STDIN.lock() =
+                                                child_stdin.take();
+
+                                            let stdout = child.stdout.take().unwrap();
+                                            let stderr = child.stderr.take().unwrap();
+
+                                            let stdout_accumulator =
+                                                std::sync::Arc::new(Mutex::new(String::new()));
+                                            let stderr_accumulator =
+                                                std::sync::Arc::new(Mutex::new(String::new()));
+
+                                            let sender_stdout = sender.clone();
+                                            let stdout_acc_clone = stdout_accumulator.clone();
+                                            let stdout_task =
+                                                crate::tui::async_runtime::spawn(async move {
+                                                    use tokio::io::AsyncReadExt;
+                                                    let mut buffer = [0; 1024];
+                                                    let mut reader = stdout;
+                                                    while let Ok(n) = reader.read(&mut buffer).await
+                                                    {
+                                                        if n == 0 {
+                                                            break;
+                                                        }
+                                                        let chunk =
+                                                            String::from_utf8_lossy(&buffer[..n])
+                                                                .into_owned();
+                                                        {
+                                                            let mut guard = stdout_acc_clone.lock();
+                                                            guard.push_str(&chunk);
+                                                        }
+                                                        let _ = sender_stdout.send(
+                                                            WorkerEvent::BashStdout(
+                                                                Some(pid),
+                                                                chunk,
+                                                            ),
+                                                        );
+                                                    }
+                                                });
+
+                                            let sender_stderr = sender.clone();
+                                            let stderr_acc_clone = stderr_accumulator.clone();
+                                            let stderr_task =
+                                                crate::tui::async_runtime::spawn(async move {
+                                                    use tokio::io::AsyncReadExt;
+                                                    let mut buffer = [0; 1024];
+                                                    let mut reader = stderr;
+                                                    while let Ok(n) = reader.read(&mut buffer).await
+                                                    {
+                                                        if n == 0 {
+                                                            break;
+                                                        }
+                                                        let chunk =
+                                                            String::from_utf8_lossy(&buffer[..n])
+                                                                .into_owned();
+                                                        {
+                                                            let mut guard = stderr_acc_clone.lock();
+                                                            guard.push_str(&chunk);
+                                                        }
+                                                        let _ = sender_stderr.send(
+                                                            WorkerEvent::BashStderr(
+                                                                Some(pid),
+                                                                chunk,
+                                                            ),
+                                                        );
+                                                    }
+                                                });
+
+                                            {
+                                                let mut guard =
+                                                    crate::tui::RUNNING_PROCESS_PID.lock();
+                                                *guard = Some(pid);
+                                            }
+                                            let status = child.wait().await?;
+                                            {
+                                                let mut guard =
+                                                    crate::tui::RUNNING_PROCESS_PID.lock();
+                                                *guard = None;
+                                            }
+                                            *crate::tui::RUNNING_PROCESS_STDIN.lock() = None;
+
+                                            let _ = stdout_task.await;
+                                            let _ = stderr_task.await;
+
+                                            let stdout_content = stdout_accumulator.lock().clone();
+                                            let stderr_content = stderr_accumulator.lock().clone();
+                                            let status_code = status.code();
+                                            let mut err_val = serde_json::Value::Null;
+
+                                            if status_code.is_none() {
+                                                err_val = serde_json::json!(
+                                                    "Process terminated by user via Ctrl+C"
+                                                );
+                                            }
+
+                                            Ok::<serde_json::Value, std::io::Error>(
+                                                serde_json::json!({
+                                                    "status": status_code,
+                                                    "stdout": stdout_content,
+                                                    "stderr": stderr_content,
+                                                    "error": err_val,
+                                                }),
+                                            )
+                                        }
+                                    }
+                                    .await;
+
+                                    match run_result {
+                                        Ok(val) => val,
+                                        Err(e) => serde_json::json!({ "error": e.to_string() }),
+                                    }
+                                }
+                            }
+                            "ps" => {
+                                let pid =
+                                    args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                crate::tui::run_check_process(pid)
+                            }
+                            "kill" => {
+                                let pid =
+                                    args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                crate::tui::run_kill_process(pid)
+                            }
+                            "logs" => {
+                                let pid =
+                                    args.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                let limit = args
+                                    .get("limit")
+                                    .and_then(|v| v.as_u64())
+                                    .map(|v| v as usize);
+                                crate::tui::run_get_logs(pid, limit)
+                            }
+                            "patch" => {
+                                let patch =
+                                    args.get("patch").and_then(|v| v.as_str()).unwrap_or("");
+                                let run_res = (|| -> Result<serde_json::Value, String> {
+                                    let file_path = patch
+                                        .lines()
+                                        .find_map(|line| {
+                                            if let Some(stripped) = line.strip_prefix("--- a/") {
+                                                Some(stripped)
+                                            } else if let Some(stripped) =
+                                                line.strip_prefix("+++ b/")
+                                            {
+                                                Some(stripped)
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .and_then(|rest| rest.split_whitespace().next());
+
+                                    let start_dir = if let Some(fp) = file_path {
+                                        let p = std::path::Path::new(fp);
+                                        let parent = p.parent().unwrap_or(std::path::Path::new(""));
+                                        if parent.as_os_str().is_empty() {
+                                            std::env::current_dir()
+                                                .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                                        } else {
+                                            std::env::current_dir()
+                                                .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                                                .join(parent)
+                                        }
+                                    } else {
+                                        std::env::current_dir()
+                                            .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                                    };
+
+                                    let mut cwd = start_dir;
+                                    let mut git_root = None;
+                                    loop {
+                                        if cwd.join(".git").exists() {
+                                            git_root = Some(cwd.clone());
+                                            break;
+                                        }
+                                        if let Some(parent) = cwd.parent() {
+                                            cwd = parent.to_path_buf();
+                                        } else {
+                                            break;
                                         }
                                     }
 
-                                    if !candidates.is_empty() {
-                                        let found = if let Some(fp) = file_path {
-                                            candidates.iter().find(|cand| cand.join(fp).exists())
-                                        } else {
-                                            None
-                                        };
+                                    if git_root.is_none() {
+                                        let original_cwd = std::env::current_dir()
+                                            .unwrap_or_else(|_| std::path::PathBuf::from("/"));
+                                        if let Ok(entries) = std::fs::read_dir(&original_cwd) {
+                                            let mut candidates = Vec::new();
+                                            for entry in entries.flatten() {
+                                                let path = entry.path();
+                                                if path.is_dir() && path.join(".git").exists() {
+                                                    candidates.push(path);
+                                                }
+                                            }
 
-                                        git_root = Some(match found {
-                                            Some(cand) => cand.clone(),
-                                            None => candidates[0].clone(),
-                                        });
+                                            if !candidates.is_empty() {
+                                                let found = if let Some(fp) = file_path {
+                                                    candidates
+                                                        .iter()
+                                                        .find(|cand| cand.join(fp).exists())
+                                                } else {
+                                                    None
+                                                };
+
+                                                git_root = Some(match found {
+                                                    Some(cand) => cand.clone(),
+                                                    None => candidates[0].clone(),
+                                                });
+                                            }
+                                        }
                                     }
-                                }
-                            }
 
-                            let git_root = match git_root {
-                                Some(root) => root,
-                                None => return Err("Not a git repository".to_owned()),
-                            };
+                                    let git_root = match git_root {
+                                        Some(root) => root,
+                                        None => return Err("Not a git repository".to_owned()),
+                                    };
 
-                            let git_bin = if std::path::Path::new("/usr/bin/git").exists() {
-                                "/usr/bin/git"
-                            } else {
-                                "git"
-                            };
+                                    let git_bin = if std::path::Path::new("/usr/bin/git").exists() {
+                                        "/usr/bin/git"
+                                    } else {
+                                        "git"
+                                    };
 
-                            let random_val = {
-                                let mut bytes = [0u8; 8];
-                                rand::fill(&mut bytes);
-                                bytes
-                                    .iter()
-                                    .map(|b| format!("{:02x}", b))
-                                    .collect::<String>()
-                            };
-                            let temp_path = std::path::PathBuf::from(format!(
-                                "/tmp/_apply_patch_{}.diff",
-                                random_val
-                            ));
-                            std::fs::write(&temp_path, patch).map_err(|e| {
-                                format!("Failed to write temporary patch file: {}", e)
-                            })?;
+                                    let random_val = {
+                                        let mut bytes = [0u8; 8];
+                                        rand::fill(&mut bytes);
+                                        bytes
+                                            .iter()
+                                            .map(|b| format!("{:02x}", b))
+                                            .collect::<String>()
+                                    };
+                                    let temp_path = std::path::PathBuf::from(format!(
+                                        "/tmp/_apply_patch_{}.diff",
+                                        random_val
+                                    ));
+                                    std::fs::write(&temp_path, patch).map_err(|e| {
+                                        format!("Failed to write temporary patch file: {}", e)
+                                    })?;
 
-                            let cleanup = |path: &std::path::Path| {
-                                let _ = std::fs::remove_file(path);
-                            };
+                                    let cleanup = |path: &std::path::Path| {
+                                        let _ = std::fs::remove_file(path);
+                                    };
 
-                            let mut cmd = std::process::Command::new(git_bin);
-                            cmd.current_dir(&git_root);
-                            cmd.args(["apply", &temp_path.to_string_lossy()]);
-                            cmd.stdout(std::process::Stdio::piped());
-                            cmd.stderr(std::process::Stdio::piped());
+                                    let mut cmd = std::process::Command::new(git_bin);
+                                    cmd.current_dir(&git_root);
+                                    cmd.args(["apply", &temp_path.to_string_lossy()]);
+                                    cmd.stdout(std::process::Stdio::piped());
+                                    cmd.stderr(std::process::Stdio::piped());
 
-                            let output = cmd.output().map_err(|e| {
-                                cleanup(&temp_path);
-                                format!("Failed waiting for git apply: {}", e)
-                            })?;
+                                    let output = cmd.output().map_err(|e| {
+                                        cleanup(&temp_path);
+                                        format!("Failed waiting for git apply: {}", e)
+                                    })?;
 
-                            if !output.status.success() {
-                                cleanup(&temp_path);
-                                let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-                                return Err(format!("git apply failed:\n{}", stderr));
-                            }
-
-                            cleanup(&temp_path);
-
-                            let diff_out = std::process::Command::new(git_bin)
-                                .current_dir(&git_root)
-                                .args(["diff", "--cached"])
-                                .output();
-                            let mut diff_str = match diff_out {
-                                Ok(out) if out.status.success() => {
-                                    String::from_utf8_lossy(&out.stdout).into_owned()
-                                }
-                                _ => String::new(),
-                            };
-                            if diff_str.is_empty() {
-                                let diff_uncached = std::process::Command::new(git_bin)
-                                    .current_dir(&git_root)
-                                    .arg("diff")
-                                    .output();
-                                if let Ok(out) = diff_uncached {
-                                    let success = out.status.success();
-                                    if success {
-                                        diff_str =
-                                            String::from_utf8_lossy(&out.stdout).into_owned();
+                                    if !output.status.success() {
+                                        cleanup(&temp_path);
+                                        let stderr =
+                                            String::from_utf8_lossy(&output.stderr).into_owned();
+                                        return Err(format!("git apply failed:\n{}", stderr));
                                     }
+
+                                    cleanup(&temp_path);
+
+                                    let diff_out = std::process::Command::new(git_bin)
+                                        .current_dir(&git_root)
+                                        .args(["diff", "--cached"])
+                                        .output();
+                                    let mut diff_str = match diff_out {
+                                        Ok(out) if out.status.success() => {
+                                            String::from_utf8_lossy(&out.stdout).into_owned()
+                                        }
+                                        _ => String::new(),
+                                    };
+                                    if diff_str.is_empty() {
+                                        let diff_uncached = std::process::Command::new(git_bin)
+                                            .current_dir(&git_root)
+                                            .arg("diff")
+                                            .output();
+                                        if let Ok(out) = diff_uncached {
+                                            let success = out.status.success();
+                                            if success {
+                                                diff_str = String::from_utf8_lossy(&out.stdout)
+                                                    .into_owned();
+                                            }
+                                        }
+                                    }
+
+                                    Ok(serde_json::json!({
+                                        "success": true,
+                                        "diff": diff_str
+                                    }))
+                                })();
+                                match run_res {
+                                    Ok(val) => val,
+                                    Err(e) => serde_json::json!({ "error": e }),
                                 }
                             }
-
-                            Ok(serde_json::json!({
-                                "success": true,
-                                "diff": diff_str
-                            }))
-                        })();
-                        match run_res {
-                            Ok(val) => val,
-                            Err(e) => serde_json::json!({ "error": e }),
-                        }
-                    }
-                    "websearch" => {
-                        let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
-                        // Refuse anything that isn't a public https URL.
-                        // The model is given free-form text and historically
-                        // could pass http://, file://, gopher://, or any
-                        // IP literal (incl. 169.254.169.254 / IMDS, cloud
-                        // metadata services) — we resolve first, then
-                        // block private/loopback/link-local ranges.
-                        let target_url =
-                            if query.starts_with("http://") || query.starts_with("https://") {
-                                query.to_owned()
-                            } else {
-                                let encoded_query = url_encode(query);
-                                format!("https://html.duckduckgo.com/html/?q={}", encoded_query)
-                            };
-                        let validated = validate_public_https_url(&target_url);
-                        let is_url_mode = query.starts_with("http");
-                        match validated {
-                            Err(reason) => {
-                                serde_json::json!({ "error": format!("websearch: {reason}") })
-                            }
-                            Ok(url) => {
-                                let res = (|| -> Result<serde_json::Value, String> {
-                                    let body = crate::tui::async_runtime::block_on(async {
-                                        let client = reqwest::Client::new();
-                                        let text = client.get(&url)
+                            "websearch" => {
+                                let query =
+                                    args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                                // Refuse anything that isn't a public https URL.
+                                // The model is given free-form text and historically
+                                // could pass http://, file://, gopher://, or any
+                                // IP literal (incl. 169.254.169.254 / IMDS, cloud
+                                // metadata services) — we resolve first, then
+                                // block private/loopback/link-local ranges.
+                                let target_url = if query.starts_with("http://")
+                                    || query.starts_with("https://")
+                                {
+                                    query.to_owned()
+                                } else {
+                                    let encoded_query = url_encode(query);
+                                    format!("https://html.duckduckgo.com/html/?q={}", encoded_query)
+                                };
+                                let validated = validate_public_https_url(&target_url);
+                                let is_url_mode = query.starts_with("http");
+                                match validated {
+                                    Err(reason) => {
+                                        serde_json::json!({ "error": format!("websearch: {reason}") })
+                                    }
+                                    Ok(url) => {
+                                        let res = (|| -> Result<serde_json::Value, String> {
+                                            let body = crate::tui::async_runtime::block_on(
+                                                async {
+                                                    let client = reqwest::Client::new();
+                                                    let text = client.get(&url)
                                             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                                             .send()
                                             .await
@@ -1525,51 +1618,61 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                             .text()
                                             .await
                                             .map_err(|e| e.to_string())?;
-                                        Ok::<String, String>(text)
-                                    })?;
-                                    if is_url_mode {
-                                        let plain_text = html_to_plain_text(&body);
-                                        let truncated: String =
-                                            plain_text.chars().take(8000).collect();
-                                        Ok(serde_json::json!({ "content": truncated }))
-                                    } else {
-                                        let results = parse_ddg_html(&body);
-                                        Ok(serde_json::json!({ "results": results }))
+                                                    Ok::<String, String>(text)
+                                                },
+                                            )?;
+                                            if is_url_mode {
+                                                let plain_text = html_to_plain_text(&body);
+                                                let truncated: String =
+                                                    plain_text.chars().take(8000).collect();
+                                                Ok(serde_json::json!({ "content": truncated }))
+                                            } else {
+                                                let results = parse_ddg_html(&body);
+                                                Ok(serde_json::json!({ "results": results }))
+                                            }
+                                        })();
+                                        match res {
+                                            Ok(val) => val,
+                                            Err(e) => serde_json::json!({ "error": e }),
+                                        }
                                     }
-                                })();
-                                match res {
-                                    Ok(val) => val,
-                                    Err(e) => serde_json::json!({ "error": e }),
                                 }
                             }
+                            "ask" => {
+                                let question =
+                                    args.get("question").and_then(|v| v.as_str()).unwrap_or("");
+                                let options = args
+                                    .get("options")
+                                    .and_then(|v| v.as_array())
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|v| v.as_str().map(|s| s.to_owned()))
+                                            .collect::<Vec<String>>()
+                                    })
+                                    .unwrap_or_default();
+
+                                let (tx, rx) = std::sync::mpsc::channel();
+                                *crate::tui::ASK_USER_CHANNEL.lock() =
+                                    Some((tx, question.to_owned(), options));
+
+                                let answer = rx.recv().unwrap_or_default();
+
+                                *crate::tui::ASK_USER_CHANNEL.lock() = None;
+
+                                serde_json::json!({ "answer": answer })
+                            }
+                            "todo" => {
+                                serde_json::json!({ "success": true })
+                            }
+                            _ => serde_json::json!({ "error": "Unknown function" }),
                         }
                     }
-                    "ask" => {
-                        let question = args.get("question").and_then(|v| v.as_str()).unwrap_or("");
-                        let options = args
-                            .get("options")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_owned()))
-                                    .collect::<Vec<String>>()
-                            })
-                            .unwrap_or_default();
-
-                        let (tx, rx) = std::sync::mpsc::channel();
-                        *crate::tui::ASK_USER_CHANNEL.lock() =
-                            Some((tx, question.to_owned(), options));
-
-                        let answer = rx.recv().unwrap_or_default();
-
-                        *crate::tui::ASK_USER_CHANNEL.lock() = None;
-
-                        serde_json::json!({ "answer": answer })
-                    }
-                    "todo" => {
-                        serde_json::json!({ "success": true })
-                    }
-                    _ => serde_json::json!({ "error": "Unknown function" }),
+                };
+                let result = match tokio::time::timeout(timeout_duration, tool_execution).await {
+                    Ok(res) => res,
+                    Err(_) => serde_json::json!({
+                        "error": format!("Tool '{}' execution timed out after {} seconds.", name, timeout_duration.as_secs())
+                    }),
                 };
                 let _ = sender.send(WorkerEvent::ToolResult(name, result));
             });
