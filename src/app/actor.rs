@@ -58,6 +58,15 @@ impl AppActor {
                     let _ = terminal.clear();
                 }
                 self.handle_command(cmd, &worker_tx)?;
+
+                // Drain all immediately pending commands to avoid rendering intermediate frames
+                while let Ok(cmd) = self.rx.try_recv() {
+                    if matches!(cmd, AppCommand::Resize) {
+                        let _ = terminal.autoresize();
+                        let _ = terminal.clear();
+                    }
+                    self.handle_command(cmd, &worker_tx)?;
+                }
             }
         }
         Ok(())
@@ -147,6 +156,7 @@ impl AppActor {
                 }
             }
         }
+        self.app.chat.prune_messages();
         Ok(())
     }
 
