@@ -808,7 +808,10 @@ impl App {
         if self.chat.session_id.starts_with("test_mock") {
             return;
         }
-        let _ = super::session::save_session(&self.chat);
+        self.chat.prune_history();
+        if let Err(e) = super::session::save_session(&self.chat) {
+            self.status = format!("Error: Failed to save session: {}", e);
+        }
 
         if let Ok(mut cache) = self.core.sessions_cache.lock()
             && let Some(ref mut list) = *cache
