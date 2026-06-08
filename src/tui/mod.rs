@@ -39,10 +39,11 @@ pub(crate) struct BackgroundProcess {
 pub(crate) static BACKGROUND_PROCESSES: OnceLock<Mutex<HashMap<u32, BackgroundProcess>>> =
     OnceLock::new();
 
+#[derive(Clone)]
 pub(crate) struct PersistentSession {
     pub(crate) pid: u32,
     pub(crate) child: Arc<Mutex<std::process::Child>>,
-    pub(crate) stdin: std::process::ChildStdin,
+    pub(crate) stdin: Arc<Mutex<std::process::ChildStdin>>,
     pub(crate) stdout_accumulator: Arc<Mutex<String>>,
     pub(crate) stderr_accumulator: Arc<Mutex<String>>,
 }
@@ -207,83 +208,86 @@ pub(crate) fn run_persistent_bash(
     sender: Sender<WorkerEvent>,
 ) -> Result<serde_json::Value, std::io::Error> {
     let registry = PERSISTENT_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut map = registry.lock();
+    let entry = {
+        let mut map = registry.lock();
+        map.entry(session_id.to_owned())
+            .or_insert_with(|| {
+                let mut command = std::process::Command::new("bash");
+                command
+                    .arg("--noprofile")
+                    .arg("--norc")
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped());
 
-    let entry = map.entry(session_id.to_owned()).or_insert_with(|| {
-        let mut command = std::process::Command::new("bash");
-        command
-            .arg("--noprofile")
-            .arg("--norc")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::CommandExt;
+                    unsafe {
+                        command.pre_exec(|| {
+                            let _ = libc::setpgid(0, 0);
+                            Ok(())
+                        });
+                    }
+                }
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            unsafe {
-                command.pre_exec(|| {
-                    let _ = libc::setpgid(0, 0);
-                    Ok(())
+                let mut child = command.spawn().expect("Failed to spawn persistent bash");
+                let stdin = child.stdin.take().unwrap();
+                let stdout = child.stdout.take().unwrap();
+                let stderr = child.stderr.take().unwrap();
+                let pid = child.id();
+                let child_arc = Arc::new(Mutex::new(child));
+
+                let sender_stdout = sender.clone();
+                let stdout_acc = Arc::new(Mutex::new(String::new()));
+                let stdout_acc_clone = stdout_acc.clone();
+                std::thread::spawn(move || {
+                    use std::io::Read;
+                    let mut buffer = [0; 1024];
+                    let mut reader = stdout;
+                    while let Ok(n) = reader.read(&mut buffer) {
+                        if n == 0 {
+                            break;
+                        }
+                        let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
+                        {
+                            let mut guard = stdout_acc_clone.lock();
+                            guard.push_str(&chunk);
+                        }
+                        let _ = sender_stdout.send(WorkerEvent::BashStdout(Some(pid), chunk));
+                    }
                 });
-            }
-        }
 
-        let mut child = command.spawn().expect("Failed to spawn persistent bash");
-        let stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
-        let pid = child.id();
-        let child_arc = Arc::new(Mutex::new(child));
+                let sender_stderr = sender.clone();
+                let stderr_acc = Arc::new(Mutex::new(String::new()));
+                let stderr_acc_clone = stderr_acc.clone();
+                std::thread::spawn(move || {
+                    use std::io::Read;
+                    let mut buffer = [0; 1024];
+                    let mut reader = stderr;
+                    while let Ok(n) = reader.read(&mut buffer) {
+                        if n == 0 {
+                            break;
+                        }
+                        let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
+                        {
+                            let mut guard = stderr_acc_clone.lock();
+                            guard.push_str(&chunk);
+                        }
+                        let _ = sender_stderr.send(WorkerEvent::BashStderr(Some(pid), chunk));
+                    }
+                });
 
-        let sender_stdout = sender.clone();
-        let stdout_acc = Arc::new(Mutex::new(String::new()));
-        let stdout_acc_clone = stdout_acc.clone();
-        std::thread::spawn(move || {
-            use std::io::Read;
-            let mut buffer = [0; 1024];
-            let mut reader = stdout;
-            while let Ok(n) = reader.read(&mut buffer) {
-                if n == 0 {
-                    break;
+                PersistentSession {
+                    pid,
+                    child: child_arc,
+                    stdin: Arc::new(Mutex::new(stdin)),
+                    stdout_accumulator: stdout_acc,
+                    stderr_accumulator: stderr_acc,
                 }
-                let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
-                {
-                    let mut guard = stdout_acc_clone.lock();
-                    guard.push_str(&chunk);
-                }
-                let _ = sender_stdout.send(WorkerEvent::BashStdout(Some(pid), chunk));
-            }
-        });
-
-        let sender_stderr = sender.clone();
-        let stderr_acc = Arc::new(Mutex::new(String::new()));
-        let stderr_acc_clone = stderr_acc.clone();
-        std::thread::spawn(move || {
-            use std::io::Read;
-            let mut buffer = [0; 1024];
-            let mut reader = stderr;
-            while let Ok(n) = reader.read(&mut buffer) {
-                if n == 0 {
-                    break;
-                }
-                let chunk = String::from_utf8_lossy(&buffer[..n]).into_owned();
-                {
-                    let mut guard = stderr_acc_clone.lock();
-                    guard.push_str(&chunk);
-                }
-                let _ = sender_stderr.send(WorkerEvent::BashStderr(Some(pid), chunk));
-            }
-        });
-
-        PersistentSession {
-            pid,
-            child: child_arc,
-            stdin,
-            stdout_accumulator: stdout_acc,
-            stderr_accumulator: stderr_acc,
-        }
-    });
+            })
+            .clone()
+    };
 
     // Set the active persistent session ID for keystroke forwarding
     {
@@ -305,12 +309,15 @@ pub(crate) fn run_persistent_bash(
     );
     let sentinel = format!("___SENTINEL_{}___", nonce);
 
-    writeln!(entry.stdin, "{}", cmd)?;
-    if let Some(inp) = input {
-        writeln!(entry.stdin, "{}", inp)?;
+    {
+        let mut stdin_guard = entry.stdin.lock();
+        writeln!(stdin_guard, "{}", cmd)?;
+        if let Some(inp) = input {
+            writeln!(stdin_guard, "{}", inp)?;
+        }
+        writeln!(stdin_guard, "echo \"{}\"", sentinel)?;
+        let _ = stdin_guard.flush();
     }
-    writeln!(entry.stdin, "echo \"{}\"", sentinel)?;
-    let _ = entry.stdin.flush();
 
     let mut check_count = 0;
     let max_checks = 100;
