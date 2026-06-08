@@ -328,7 +328,6 @@ pub(crate) fn run_persistent_bash(
     while check_count < max_checks {
         std::thread::sleep(std::time::Duration::from_millis(50));
 
-        // Check if bash process has exited early
         if let Some(status) = entry.child.lock().try_wait().ok().flatten() {
             has_exited = true;
             exit_status = Some(status.code().unwrap_or(-1));
@@ -343,10 +342,29 @@ pub(crate) fn run_persistent_bash(
         check_count += 1;
     }
 
-    // Clear active persistent session ID
+    if !found && !has_exited {
+        let mut child_guard = entry.child.lock();
+        let _ = child_guard.kill();
+        drop(child_guard);
+        
+        let registry = PERSISTENT_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
+        {
+            let mut map = registry.lock();
+            map.remove(session_id);
+        }
+        
+        *ACTIVE_PERSISTENT_SESSION_ID.lock() = None;
+        
+        return Ok(serde_json::json!({
+            "status": -1,
+            "stdout": "",
+            "stderr": "",
+            "error": "Command timed out and shell process was terminated"
+        }));
+    }
+
     *ACTIVE_PERSISTENT_SESSION_ID.lock() = None;
 
-    // Clean up registry entry if process has exited
     if has_exited {
         let registry = PERSISTENT_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
         {
