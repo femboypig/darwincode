@@ -154,20 +154,35 @@ pub(crate) fn compile_rules(rules: &[String]) -> globset::GlobSet {
     for rule in rules {
         if rule.contains('/') {
             let clean = rule.trim_start_matches('/');
-            if let Ok(g) = globset::Glob::new(clean) {
+            if let Ok(g) = globset::GlobBuilder::new(clean)
+                .literal_separator(true)
+                .build()
+            {
                 builder.add(g);
             }
-            if let Ok(g) = globset::Glob::new(&format!("{}/**", clean)) {
+            if let Ok(g) = globset::GlobBuilder::new(&format!("{}/**", clean))
+                .literal_separator(true)
+                .build()
+            {
                 builder.add(g);
             }
         } else {
-            if let Ok(g) = globset::Glob::new(rule) {
+            if let Ok(g) = globset::GlobBuilder::new(rule)
+                .literal_separator(true)
+                .build()
+            {
                 builder.add(g);
             }
-            if let Ok(g) = globset::Glob::new(&format!("**/{}", rule)) {
+            if let Ok(g) = globset::GlobBuilder::new(&format!("**/{}", rule))
+                .literal_separator(true)
+                .build()
+            {
                 builder.add(g);
             }
-            if let Ok(g) = globset::Glob::new(&format!("**/{}/**", rule)) {
+            if let Ok(g) = globset::GlobBuilder::new(&format!("**/{}/**", rule))
+                .literal_separator(true)
+                .build()
+            {
                 builder.add(g);
             }
         }
@@ -1967,8 +1982,16 @@ system_prompt = "Review only."
             ".darwincode".to_owned(),
             "secret_data.txt".to_owned(),
             "src/*.txt".to_owned(),
+            "test".to_owned(),
         ];
         let rules = compile_rules(&rules_vec);
+
+        let rel_path = std::path::Path::new("src/contest/file.txt");
+        let matches = rules.matches(rel_path);
+        println!("rules_vec: {:?}", rules_vec);
+        for idx in &matches {
+            println!("Matched glob index: {}", idx);
+        }
 
         assert!(should_ignore(&base_dir.join("secret_data.txt"), &rules));
         assert!(should_ignore(&base_dir.join("target"), &rules));
@@ -1986,6 +2009,20 @@ system_prompt = "Review only."
         ));
         assert!(should_ignore(
             &base_dir.join(".darwincode").join("config.json"),
+            &rules
+        ));
+
+        // Test if "test" matches "src/test/file.txt" but NOT "src/contest/file.txt" or "src/attest/file.txt"
+        assert!(should_ignore(
+            &base_dir.join("src").join("test").join("file.txt"),
+            &rules
+        ));
+        assert!(!should_ignore(
+            &base_dir.join("src").join("contest").join("file.txt"),
+            &rules
+        ));
+        assert!(!should_ignore(
+            &base_dir.join("src").join("attest").join("file.txt"),
             &rules
         ));
 
