@@ -12,6 +12,7 @@ pub struct AsyncGeminiClient {
 }
 
 impl AsyncGeminiClient {
+    #[allow(dead_code)]
     pub fn new(config: StoredConfig) -> Self {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(900))
@@ -107,10 +108,9 @@ impl AsyncGeminiClient {
 
         if let Some(ref agent_id) = self.config.active_agent {
             let custom_agents = crate::app::load_custom_agents();
-            if let Some(agent_config) = custom_agents.get(agent_id) {
-                if let Some(ref model_override) = agent_config.model {
-                    active_model = model_override.trim_start_matches("models/").to_owned();
-                }
+            if let Some(model_override) = custom_agents.get(agent_id).and_then(|a| a.model.as_ref())
+            {
+                active_model = model_override.trim_start_matches("models/").to_owned();
             }
         }
 
@@ -192,24 +192,21 @@ impl AsyncGeminiClient {
                         let text = String::from_utf8_lossy(&chunk);
 
                         for line in text.lines() {
-                            if let Some(data) = line.strip_prefix("data: ") {
-                                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data)
-                                {
-                                    if let Some(candidates) = parsed["candidates"].as_array() {
-                                        if let Some(first) = candidates.first() {
-                                            if let Some(parts) =
-                                                first["content"]["parts"].as_array()
-                                            {
-                                                let parts_vec: Vec<serde_json::Value> =
-                                                    parts.iter().cloned().collect();
-                                                if !parts_vec.is_empty() {
-                                                    return Some(Ok(GeminiResponse::Turn(
-                                                        parts_vec,
-                                                    )));
-                                                }
-                                            }
-                                        }
-                                    }
+                            if let Some(parts_vec) = line
+                                .strip_prefix("data: ")
+                                .and_then(|data| {
+                                    serde_json::from_str::<serde_json::Value>(data).ok()
+                                })
+                                .and_then(|parsed| {
+                                    parsed["candidates"]
+                                        .as_array()
+                                        .and_then(|c| c.first())
+                                        .and_then(|f| f["content"]["parts"].as_array())
+                                        .map(|p| p.to_vec())
+                                })
+                            {
+                                if !parts_vec.is_empty() {
+                                    return Some(Ok(GeminiResponse::Turn(parts_vec)));
                                 }
                             }
                         }
