@@ -8,7 +8,6 @@ pub(crate) mod terminal;
 pub(crate) mod theme;
 pub(crate) mod tool_executor;
 
-pub use async_runtime::{block_on, runtime, spawn};
 pub use event_loop::run;
 pub use terminal::Tui;
 pub(crate) use tool_executor::{
