@@ -3,8 +3,6 @@ use crate::config::StoredConfig;
 use anyhow::Result;
 
 pub mod common;
-pub mod gemini;
-pub mod openai;
 
 pub fn canonical_tool_name(name: &str) -> &str {
     match name.trim() {
