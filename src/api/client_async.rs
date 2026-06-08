@@ -22,6 +22,10 @@ impl AsyncGeminiClient {
         Self { config, client }
     }
 
+    pub fn new_with_client(config: StoredConfig, client: reqwest::Client) -> Self {
+        Self { config, client }
+    }
+
     pub async fn list_models(&self) -> Result<Vec<String>> {
         if self.config.api_key.starts_with("sk-") {
             self.list_models_openai().await
