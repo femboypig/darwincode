@@ -107,6 +107,45 @@ impl ChatState {
         }
     }
 
+    pub fn prune_history(&mut self) {
+        while self.history.len() > 100 {
+            self.history.remove(0);
+        }
+
+        let estimate_tokens = |msg: &ChatMessage| -> usize {
+            let mut chars = 0;
+            for part in &msg.parts {
+                if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+                    chars += text.len();
+                } else if let Ok(serialized) = serde_json::to_string(part) {
+                    chars += serialized.len();
+                }
+            }
+            chars / 4
+        };
+
+        let mut total_tokens: usize = self.history.iter().map(estimate_tokens).sum();
+        while total_tokens > 120_000 && self.history.len() > 2 {
+            self.history.remove(0);
+            total_tokens = self.history.iter().map(estimate_tokens).sum();
+        }
+
+        while !self.history.is_empty() && self.history[0].role != "user" {
+            self.history.remove(0);
+        }
+    }
+
+    pub fn prune_messages(&mut self) {
+        const MAX_MESSAGES: usize = 500;
+        if self.messages.len() > MAX_MESSAGES {
+            let to_remove = self.messages.len() - MAX_MESSAGES;
+            self.messages.drain(0..to_remove);
+
+            let current_scroll = self.scroll.get();
+            self.scroll.set(current_scroll.saturating_sub(to_remove as u16));
+        }
+    }
+
     pub fn get_user_prompts(&self) -> Vec<String> {
         self.history
             .iter()
