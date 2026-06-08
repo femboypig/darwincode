@@ -18,32 +18,30 @@ pub fn run(app: App) -> Result<()> {
                     if let Ok(evt) = event::read() {
                         match evt {
                             Event::Key(key) => {
-                                if key.kind != event::KeyEventKind::Release
-                                    && tx_crossterm
-                                        .send(crate::app::AppCommand::KeyEvent(key))
-                                        .is_err()
-                                {
-                                    break;
+                                if key.kind != event::KeyEventKind::Release {
+                                    let res =
+                                        tx_crossterm.send(crate::app::AppCommand::KeyEvent(key));
+                                    if res.is_err() {
+                                        break;
+                                    }
                                 }
                             }
                             Event::Mouse(mouse_event) => {
-                                if tx_crossterm
-                                    .send(crate::app::AppCommand::MouseEvent(mouse_event))
-                                    .is_err()
-                                {
+                                let res = tx_crossterm
+                                    .send(crate::app::AppCommand::MouseEvent(mouse_event));
+                                if res.is_err() {
                                     break;
                                 }
                             }
                             Event::Paste(text) => {
-                                if tx_crossterm
-                                    .send(crate::app::AppCommand::Paste(text))
-                                    .is_err()
-                                {
+                                let res = tx_crossterm.send(crate::app::AppCommand::Paste(text));
+                                if res.is_err() {
                                     break;
                                 }
                             }
                             Event::Resize(_, _) => {
-                                if tx_crossterm.send(crate::app::AppCommand::Resize).is_err() {
+                                let res = tx_crossterm.send(crate::app::AppCommand::Resize);
+                                if res.is_err() {
                                     break;
                                 }
                             }
