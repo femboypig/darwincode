@@ -28,11 +28,52 @@ fn get_home_dir() -> Option<std::path::PathBuf> {
         })
 }
 
+fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+    use std::path::{Component, PathBuf};
+    let mut components = path.components().peekable();
+    let mut ret = if let Some(c @ Component::Prefix(..)) = components.peek() {
+        let buf = PathBuf::from(c.as_os_str());
+        components.next();
+        buf
+    } else {
+        PathBuf::new()
+    };
+
+    let mut has_root = false;
+    if let Some(c @ Component::RootDir) = components.peek() {
+        has_root = true;
+        ret.push(c.as_os_str());
+        components.next();
+    }
+
+    for component in components {
+        match component {
+            Component::Prefix(..) => {}
+            Component::RootDir => {}
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !ret.pop() && !has_root {
+                    ret.push(Component::ParentDir);
+                }
+            }
+            Component::Normal(c) => {
+                ret.push(c);
+            }
+        }
+    }
+    ret
+}
+
 fn canonicalize_safe(path: &std::path::Path) -> std::path::PathBuf {
-    if let Ok(p) = std::fs::canonicalize(path) {
+    let abs_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+    if let Ok(p) = std::fs::canonicalize(&abs_path) {
         p
     } else {
-        path.to_path_buf()
+        normalize_path(&abs_path)
     }
 }
 
@@ -1884,6 +1925,7 @@ system_prompt = "Review only."
 #[cfg(test)]
 mod url_tests {
     use super::validate_public_https_url;
+    use super::{normalize_path, check_path_safety, PathSafety};
 
     #[test]
     fn allows_public_https() {
@@ -1943,5 +1985,26 @@ mod url_tests {
     fn rejects_empty_or_missing_host() {
         assert!(validate_public_https_url("https://").is_err());
         assert!(validate_public_https_url("https:///path").is_err());
+    }
+
+    #[test]
+    fn test_normalize_path() {
+        use std::path::Path;
+        let p = Path::new("/foo/bar/../baz");
+        assert_eq!(normalize_path(p), Path::new("/foo/baz"));
+
+        let p2 = Path::new("/foo/bar/nonexistent/../../baz");
+        assert_eq!(normalize_path(p2), Path::new("/foo/baz"));
+    }
+
+    #[test]
+    fn test_check_path_safety_traversal() {
+        let proj_root = crate::config::find_project_root()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let proj_root = std::fs::canonicalize(&proj_root).unwrap_or(proj_root);
+
+        let escape_path = proj_root.join("nonexistent_folder/../../../../etc/passwd");
+        let safety = check_path_safety(&escape_path);
+        assert!(!matches!(safety, PathSafety::Safe));
     }
 }
