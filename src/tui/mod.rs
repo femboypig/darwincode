@@ -21,7 +21,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, OnceLock};
 
 pub static RUNNING_PROCESS_PID: parking_lot::Mutex<Option<u32>> = parking_lot::Mutex::new(None);
-pub static RUNNING_PROCESS_STDIN: parking_lot::Mutex<Option<std::process::ChildStdin>> =
+pub static RUNNING_PROCESS_STDIN: parking_lot::Mutex<Option<tokio::process::ChildStdin>> =
     parking_lot::Mutex::new(None);
 type AskUserChannel = (std::sync::mpsc::Sender<String>, String, Vec<String>);
 
