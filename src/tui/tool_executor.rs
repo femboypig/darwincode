@@ -905,7 +905,8 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                                     new_content_str.push('\n');
                                                 }
 
-                                                match tokio::fs::write(path, new_content_str).await {
+                                                match tokio::fs::write(path, new_content_str).await
+                                                {
                                                     Ok(_) => {
                                                         serde_json::json!({ "success": true, "diff": diff })
                                                     }
@@ -1046,7 +1047,8 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                     }
                                     tokio::fs::write(path, content).await?;
                                     Ok::<(), std::io::Error>(())
-                                }.await;
+                                }
+                                .await;
                                 match write_res {
                                     Ok(_) => serde_json::json!({ "success": true }),
                                     Err(e) => {
@@ -1217,45 +1219,49 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
 
                                     let sender_stdout = sender.clone();
                                     let stdout_acc_clone = stdout_accumulator.clone();
-                                    let stdout_task = crate::tui::async_runtime::spawn(async move {
-                                        use tokio::io::AsyncReadExt;
-                                        let mut buffer = [0; 1024];
-                                        let mut reader = stdout;
-                                        while let Ok(n) = reader.read(&mut buffer).await {
-                                            if n == 0 {
-                                                break;
+                                    let stdout_task =
+                                        crate::tui::async_runtime::spawn(async move {
+                                            use tokio::io::AsyncReadExt;
+                                            let mut buffer = [0; 1024];
+                                            let mut reader = stdout;
+                                            while let Ok(n) = reader.read(&mut buffer).await {
+                                                if n == 0 {
+                                                    break;
+                                                }
+                                                let chunk = String::from_utf8_lossy(&buffer[..n])
+                                                    .into_owned();
+                                                {
+                                                    let mut guard = stdout_acc_clone.lock();
+                                                    guard.push_str(&chunk);
+                                                }
+                                                let _ = sender_stdout.send(
+                                                    WorkerEvent::BashStdout(Some(pid), chunk),
+                                                );
                                             }
-                                            let chunk =
-                                                String::from_utf8_lossy(&buffer[..n]).into_owned();
-                                            {
-                                                let mut guard = stdout_acc_clone.lock();
-                                                guard.push_str(&chunk);
-                                            }
-                                            let _ = sender_stdout
-                                                .send(WorkerEvent::BashStdout(Some(pid), chunk));
-                                        }
-                                    });
+                                        });
 
                                     let sender_stderr = sender.clone();
                                     let stderr_acc_clone = stderr_accumulator.clone();
-                                    let stderr_task = crate::tui::async_runtime::spawn(async move {
-                                        use tokio::io::AsyncReadExt;
-                                        let mut buffer = [0; 1024];
-                                        let mut reader = stderr;
-                                        while let Ok(n) = reader.read(&mut buffer).await {
-                                            if n == 0 {
-                                                break;
+                                    let stderr_task =
+                                        crate::tui::async_runtime::spawn(async move {
+                                            use tokio::io::AsyncReadExt;
+                                            let mut buffer = [0; 1024];
+                                            let mut reader = stderr;
+                                            while let Ok(n) = reader.read(&mut buffer).await {
+                                                if n == 0 {
+                                                    break;
+                                                }
+                                                let chunk = String::from_utf8_lossy(&buffer[..n])
+                                                    .into_owned();
+                                                {
+                                                    let mut guard = stderr_acc_clone.lock();
+                                                    guard.push_str(&chunk);
+                                                }
+                                                let _ = sender_stderr.send(
+                                                    WorkerEvent::BashStderr(Some(pid), chunk),
+                                                );
                                             }
-                                            let chunk =
-                                                String::from_utf8_lossy(&buffer[..n]).into_owned();
-                                            {
-                                                let mut guard = stderr_acc_clone.lock();
-                                                guard.push_str(&chunk);
-                                            }
-                                            let _ = sender_stderr
-                                                .send(WorkerEvent::BashStderr(Some(pid), chunk));
-                                        }
-                                    });
+                                        });
 
                                     {
                                         let mut guard = crate::tui::RUNNING_PROCESS_PID.lock();
@@ -1289,7 +1295,8 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                         "error": err_val,
                                     }))
                                 }
-                            }.await;
+                            }
+                            .await;
 
                             match run_result {
                                 Ok(val) => val,
@@ -1589,15 +1596,12 @@ pub(crate) fn spawn_generation_worker(
             let sender_c = sender_clone.clone();
             let cancel_c = cancel_clone.clone();
             let history_c = history.clone();
-            let result = GeminiClient::new(config.clone()).generate_stream(
-                &history_c,
-                cancel_c,
-                &dev_mode,
-                move |chunk| {
+            let result = GeminiClient::new(config.clone())
+                .generate_stream(&history_c, cancel_c, &dev_mode, move |chunk| {
                     let _ = sender_c.send(WorkerEvent::StreamChunk(generation_id, chunk));
                     Ok(())
-                },
-            ).await;
+                })
+                .await;
             match result {
                 Ok(_) => {
                     let _ = sender.send(WorkerEvent::StreamDone(generation_id));
