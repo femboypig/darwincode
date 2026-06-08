@@ -219,6 +219,48 @@ impl AsyncGeminiClient {
         Ok(stream)
     }
 
+    fn configure_reasoning_params(&self, request: &mut serde_json::Value, model: &str) {
+        let model_lower = model.to_lowercase();
+        let base_url = &self.config.base_url;
+
+        // 1. OpenRouter
+        if base_url.contains("openrouter.ai") {
+            if let Some(obj) = request.as_object_mut() {
+                obj.insert("include_reasoning".to_owned(), serde_json::json!(true));
+                obj.insert("reasoning".to_owned(), serde_json::json!({
+                    "exclude": false
+                }));
+            }
+        }
+
+        // 2. OpenAI o1 / o3-mini models
+        if model_lower.starts_with("o1") || model_lower.starts_with("o3-") {
+            if let Some(obj) = request.as_object_mut() {
+                obj.insert("reasoning_effort".to_owned(), serde_json::json!("medium"));
+            }
+        }
+
+        // 3. DeepSeek R1 models (or compatible)
+        if model_lower.contains("r1") || model_lower.contains("reasoner") || model_lower.contains("deepseek-v4") {
+            if let Some(obj) = request.as_object_mut() {
+                obj.insert("thinking".to_owned(), serde_json::json!({
+                    "type": "enabled"
+                }));
+                obj.insert("reasoning_effort".to_owned(), serde_json::json!("high"));
+            }
+        }
+
+        // 4. Claude 3.7 Sonnet (Anthropic compatibility or custom proxies)
+        if model_lower.contains("claude-3-7") || model_lower.contains("claude-3.7") {
+            if let Some(obj) = request.as_object_mut() {
+                obj.insert("thinking".to_owned(), serde_json::json!({
+                    "type": "enabled",
+                    "budget_tokens": 2048
+                }));
+            }
+        }
+    }
+
     async fn generate_stream_openai(
         &self,
         model: &str,
@@ -252,6 +294,7 @@ impl AsyncGeminiClient {
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false)
                         || part.get("reasoning_content").is_some()
+                        || part.get("reasoning").is_some()
                 })
             });
         if let Some(sys) = system_instruction
@@ -343,7 +386,9 @@ impl AsyncGeminiClient {
 
                     for part in &msg.parts {
                         let text = part.get("text").and_then(|v| v.as_str());
-                        let reasoning = part.get("reasoning_content").and_then(|v| v.as_str());
+                        let reasoning = part.get("reasoning_content")
+                            .or_else(|| part.get("reasoning"))
+                            .and_then(|v| v.as_str());
 
                         if reasoning.is_some()
                             || part
@@ -432,11 +477,23 @@ impl AsyncGeminiClient {
                             "reasoning_content".to_owned(),
                             serde_json::json!(reasoning_content),
                         );
+                        if !self.config.base_url.contains("api.openai.com") {
+                            msg_obj.as_object_mut().unwrap().insert(
+                                "reasoning".to_owned(),
+                                serde_json::json!(reasoning_content),
+                            );
+                        }
                     } else if has_reasoning {
                         msg_obj
                             .as_object_mut()
                             .unwrap()
                             .insert("reasoning_content".to_owned(), serde_json::json!(""));
+                        if !self.config.base_url.contains("api.openai.com") {
+                            msg_obj
+                                .as_object_mut()
+                                .unwrap()
+                                .insert("reasoning".to_owned(), serde_json::json!(""));
+                        }
                     }
                     openai_messages.push(msg_obj);
                 }
@@ -477,6 +534,8 @@ impl AsyncGeminiClient {
                 .unwrap()
                 .insert("tools".to_owned(), serde_json::json!(openai_tools));
         }
+
+        self.configure_reasoning_params(&mut request, model);
 
         let url = format!("{}/chat/completions", self.config.base_url);
         let response = crate::api::client::common::execute_with_retry_async(&self.client, |c| {
@@ -592,6 +651,7 @@ impl AsyncGeminiClient {
                                         let reasoning = delta
                                             .get("reasoning_content")
                                             .or_else(|| delta.get("reasoning"))
+                                            .or_else(|| delta.get("thinking"))
                                             .and_then(|v| v.as_str());
                                         if let Some(reasoning) = reasoning
                                             && !reasoning.is_empty()
@@ -677,5 +737,55 @@ mod tests {
         };
 
         let _client = AsyncGeminiClient::new(config);
+    }
+
+    #[test]
+    fn test_configure_reasoning_params() {
+        let client = AsyncGeminiClient::new(StoredConfig {
+            api_key: "sk-test".to_owned(),
+            base_url: "https://openrouter.ai/api/v1".to_owned(),
+            ..Default::default()
+        });
+
+        let mut request = serde_json::json!({
+            "messages": []
+        });
+
+        // 1. OpenRouter
+        client.configure_reasoning_params(&mut request, "anthropic/claude-3.7-sonnet");
+        assert_eq!(request["include_reasoning"].as_bool(), Some(true));
+        assert_eq!(request["reasoning"]["exclude"].as_bool(), Some(false));
+
+        // 2. OpenAI o1/o3-mini
+        let client_openai = AsyncGeminiClient::new(StoredConfig {
+            api_key: "sk-openai".to_owned(),
+            base_url: "https://api.openai.com/v1".to_owned(),
+            ..Default::default()
+        });
+        let mut request = serde_json::json!({"messages": []});
+        client_openai.configure_reasoning_params(&mut request, "o3-mini");
+        assert_eq!(request["reasoning_effort"].as_str(), Some("medium"));
+
+        // 3. DeepSeek R1
+        let client_ds = AsyncGeminiClient::new(StoredConfig {
+            api_key: "sk-ds".to_owned(),
+            base_url: "https://api.deepseek.com/v1".to_owned(),
+            ..Default::default()
+        });
+        let mut request = serde_json::json!({"messages": []});
+        client_ds.configure_reasoning_params(&mut request, "deepseek-r1");
+        assert_eq!(request["thinking"]["type"].as_str(), Some("enabled"));
+        assert_eq!(request["reasoning_effort"].as_str(), Some("high"));
+
+        // 4. Claude 3.7
+        let client_claude = AsyncGeminiClient::new(StoredConfig {
+            api_key: "sk-claude".to_owned(),
+            base_url: "https://api.anthropic.com/v1".to_owned(),
+            ..Default::default()
+        });
+        let mut request = serde_json::json!({"messages": []});
+        client_claude.configure_reasoning_params(&mut request, "claude-3-7-sonnet-20250219");
+        assert_eq!(request["thinking"]["type"].as_str(), Some("enabled"));
+        assert_eq!(request["thinking"]["budget_tokens"].as_u64(), Some(2048));
     }
 }
