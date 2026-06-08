@@ -35,8 +35,6 @@ pub fn model_supports_vision(model: &str, base_url: &str) -> bool {
     true
 }
 
-
-
 pub async fn execute_with_retry_async<F, Fut>(
     client: &reqwest::Client,
     make_request: F,
@@ -54,8 +52,7 @@ where
             Ok(resp) => return Ok(resp),
             Err(err) => {
                 let is_ret = if let Some(status) = err.status() {
-                    status == reqwest::StatusCode::TOO_MANY_REQUESTS
-                        || status.is_server_error()
+                    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
                 } else {
                     err.is_request() || err.is_connect() || err.is_timeout()
                 };
