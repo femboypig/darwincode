@@ -1925,7 +1925,7 @@ system_prompt = "Review only."
 #[cfg(test)]
 mod url_tests {
     use super::validate_public_https_url;
-    use super::{normalize_path, check_path_safety, PathSafety};
+    use super::{PathSafety, check_path_safety, normalize_path};
 
     #[test]
     fn allows_public_https() {
