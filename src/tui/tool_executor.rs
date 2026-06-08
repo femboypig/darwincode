@@ -1868,12 +1868,36 @@ fn validate_public_https_url(raw: &str) -> Result<String, String> {
     Ok(trimmed.to_owned())
 }
 
+/// Hostnames known to resolve to internal/cloud metadata services.
+/// These are blocked regardless of DNS resolution to prevent SSRF
+/// through the websearch tool.
+const BLOCKED_HOSTNAMES: &[&str] = &[
+    "localhost",
+    "metadata.google.internal",
+    "metadata.internal",
+    "instance-data",
+    "kubernetes.default",
+    "kubernetes.default.svc",
+];
+
 /// Return true if `host` is a literal IP in a network range we never
-/// want the agent fetching from. Hostnames are considered safe — DNS
-/// rebinding is mitigated by the agent's short connection lifetime,
-/// not by us.
+/// want the agent fetching from, OR a well-known internal hostname.
 fn is_disallowed_host(host: &str) -> bool {
     use std::net::IpAddr;
+
+    let host_lower = host.to_lowercase();
+
+    // Block well-known internal/metadata hostnames
+    if BLOCKED_HOSTNAMES.contains(&host_lower.as_str()) {
+        return true;
+    }
+    // Block any subdomain of blocked hostnames (e.g. foo.localhost)
+    for blocked in BLOCKED_HOSTNAMES {
+        if host_lower.ends_with(&format!(".{}", blocked)) {
+            return true;
+        }
+    }
+
     if let Ok(addr) = host.parse::<IpAddr>() {
         match addr {
             IpAddr::V4(v4) => {
@@ -2200,10 +2224,17 @@ mod url_tests {
     }
 
     #[test]
-    fn allows_hostnames_regardless_of_resolution() {
-        // We don't resolve DNS — the agent's per-connection lifetime
-        // is short enough that DNS rebinding isn't worth the cost.
-        assert!(validate_public_https_url("https://localhost").is_ok());
+    fn rejects_internal_hostnames() {
+        assert!(validate_public_https_url("https://localhost").is_err());
+        assert!(validate_public_https_url("https://localhost:8080/x").is_err());
+        assert!(validate_public_https_url("https://metadata.google.internal").is_err());
+        assert!(validate_public_https_url("https://kubernetes.default.svc").is_err());
+        assert!(validate_public_https_url("https://foo.localhost").is_err());
+    }
+
+    #[test]
+    fn allows_regular_hostnames() {
+        assert!(validate_public_https_url("https://example.com").is_ok());
         assert!(validate_public_https_url("https://internal.svc").is_ok());
     }
 
