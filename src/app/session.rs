@@ -839,4 +839,53 @@ mod tests {
         assert_eq!(todos[0].status, TodoStatus::Pending);
         assert_eq!(todos[0].priority, TodoPriority::High);
     }
+
+    #[test]
+    fn test_rebuild_reasoning_from_history() {
+        let mut history = Vec::new();
+
+        // 1. Assistant message with reasoning_content
+        history.push(ChatMessage {
+            role: "model".to_owned(),
+            parts: vec![
+                serde_json::json!({
+                    "text": "thinking step 1",
+                    "reasoning_content": "thinking step 1"
+                }),
+                serde_json::json!({
+                    "text": "final result"
+                })
+            ]
+        });
+
+        // 2. Assistant message with reasoning field
+        history.push(ChatMessage {
+            role: "model".to_owned(),
+            parts: vec![
+                serde_json::json!({
+                    "text": "thinking step 2",
+                    "reasoning": "thinking step 2"
+                }),
+                serde_json::json!({
+                    "text": "second final result"
+                })
+            ]
+        });
+
+        // Rebuild with show_thoughts = true
+        let messages = rebuild_messages_from_history(&history, true);
+        assert_eq!(messages.len(), 2);
+        assert!(messages[0].text.contains("Thinking: thinking step 1"));
+        assert!(messages[0].text.contains("final result"));
+        assert!(messages[1].text.contains("Thinking: thinking step 2"));
+        assert!(messages[1].text.contains("second final result"));
+
+        // Rebuild with show_thoughts = false
+        let messages = rebuild_messages_from_history(&history, false);
+        assert_eq!(messages.len(), 2);
+        assert!(!messages[0].text.contains("Thinking:"));
+        assert_eq!(messages[0].text, "final result");
+        assert!(!messages[1].text.contains("Thinking:"));
+        assert_eq!(messages[1].text, "second final result");
+    }
 }
