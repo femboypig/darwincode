@@ -43,7 +43,7 @@ impl GeminiClient {
     }
 
     pub fn list_models(&self) -> Result<Vec<String>> {
-        let async_client = crate::api::client_async::AsyncGeminiClient::new(self.config.clone());
+        let async_client = crate::api::client_async::AsyncGeminiClient::new_with_client(self.config.clone(), self.client.clone());
         crate::tui::async_runtime::block_on(async_client.list_models())
     }
 
@@ -412,7 +412,7 @@ impl GeminiClient {
             })],
         });
 
-        let async_client = crate::api::client_async::AsyncGeminiClient::new(self.config.clone());
+        let async_client = crate::api::client_async::AsyncGeminiClient::new_with_client(self.config.clone(), self.client.clone());
 
         let async_cancel = tokio_util::sync::CancellationToken::new();
         let cancel_clone = async_cancel.clone();
