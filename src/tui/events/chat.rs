@@ -195,7 +195,7 @@ pub(crate) fn handle_chat_key(
                     _ => None,
                 };
                 if let Some(s) = data {
-                    let mut stdin_write = stdin;
+                    let stdin_write = stdin;
                     let _ = crate::tui::async_runtime::block_on(async {
                         use tokio::io::AsyncWriteExt;
                         let _ = stdin_write.write_all(s.as_bytes()).await;
