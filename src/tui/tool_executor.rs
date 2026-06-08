@@ -1418,12 +1418,18 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                             }
                             Ok(url) => {
                                 let res = (|| -> Result<serde_json::Value, String> {
-                                    let body: String = ureq::get(&url)
-                                        .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                                        .call()
-                                        .map_err(|e| e.to_string())?
-                                        .into_string()
-                                        .map_err(|e| e.to_string())?;
+                                    let body = crate::tui::async_runtime::block_on(async {
+                                        let client = reqwest::Client::new();
+                                        let text = client.get(&url)
+                                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                                            .send()
+                                            .await
+                                            .map_err(|e| e.to_string())?
+                                            .text()
+                                            .await
+                                            .map_err(|e| e.to_string())?;
+                                        Ok::<String, String>(text)
+                                    })?;
                                     if is_url_mode {
                                         let plain_text = html_to_plain_text(&body);
                                         let truncated: String =
