@@ -416,7 +416,17 @@ pub(crate) fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let viewport_height = area.height as usize;
 
     let max_scroll = total_lines.saturating_sub(viewport_height);
-    let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
+    let mut scroll = app.chat.scroll.get() as usize;
+
+    let last_lines = app.chat.last_total_lines.get();
+    if scroll > 0 && last_lines > 0 && total_lines > last_lines {
+        let diff = total_lines - last_lines;
+        scroll = (scroll + diff).min(max_scroll);
+    }
+    app.chat.last_total_lines.set(total_lines);
+
+    let scroll_offset = scroll.min(max_scroll);
+    app.chat.scroll.set(scroll_offset as u16);
     let scroll_y = max_scroll.saturating_sub(scroll_offset);
 
     let start_idx = scroll_y;

@@ -122,7 +122,7 @@ pub(crate) fn handle_chat_key(
             .keybindings
             .matches(crate::tui::keybindings::TuiAction::ScrollUp, key)
         {
-            app.chat.scroll = app.chat.scroll.saturating_add(1);
+            app.chat.scroll.set(app.chat.scroll.get().saturating_add(1));
             return Ok(());
         }
         if app
@@ -130,7 +130,7 @@ pub(crate) fn handle_chat_key(
             .keybindings
             .matches(crate::tui::keybindings::TuiAction::ScrollDown, key)
         {
-            app.chat.scroll = app.chat.scroll.saturating_sub(1);
+            app.chat.scroll.set(app.chat.scroll.get().saturating_sub(1));
             return Ok(());
         }
         if app
@@ -138,7 +138,9 @@ pub(crate) fn handle_chat_key(
             .keybindings
             .matches(crate::tui::keybindings::TuiAction::PageUp, key)
         {
-            app.chat.scroll = app.chat.scroll.saturating_add(15);
+            app.chat
+                .scroll
+                .set(app.chat.scroll.get().saturating_add(15));
             return Ok(());
         }
         if app
@@ -146,7 +148,9 @@ pub(crate) fn handle_chat_key(
             .keybindings
             .matches(crate::tui::keybindings::TuiAction::PageDown, key)
         {
-            app.chat.scroll = app.chat.scroll.saturating_sub(15);
+            app.chat
+                .scroll
+                .set(app.chat.scroll.get().saturating_sub(15));
             return Ok(());
         }
 
@@ -417,10 +421,10 @@ pub(crate) fn handle_chat_key(
             let old_cursor = app.chat.cursor;
             app.chat.move_cursor_up();
             if app.chat.cursor == old_cursor {
-                app.chat.scroll = app.chat.scroll.saturating_add(1);
+                app.chat.scroll.set(app.chat.scroll.get().saturating_add(1));
             }
         } else {
-            app.chat.scroll = app.chat.scroll.saturating_add(1);
+            app.chat.scroll.set(app.chat.scroll.get().saturating_add(1));
         }
         return Ok(());
     }
@@ -440,10 +444,10 @@ pub(crate) fn handle_chat_key(
             let old_cursor = app.chat.cursor;
             app.chat.move_cursor_down();
             if app.chat.cursor == old_cursor {
-                app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                app.chat.scroll.set(app.chat.scroll.get().saturating_sub(1));
             }
         } else {
-            app.chat.scroll = app.chat.scroll.saturating_sub(1);
+            app.chat.scroll.set(app.chat.scroll.get().saturating_sub(1));
         }
         return Ok(());
     }
@@ -453,7 +457,9 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::PageUp, key)
     {
-        app.chat.scroll = app.chat.scroll.saturating_add(15);
+        app.chat
+            .scroll
+            .set(app.chat.scroll.get().saturating_add(15));
         return Ok(());
     }
 
@@ -462,7 +468,9 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::PageDown, key)
     {
-        app.chat.scroll = app.chat.scroll.saturating_sub(15);
+        app.chat
+            .scroll
+            .set(app.chat.scroll.get().saturating_sub(15));
         return Ok(());
     }
 
@@ -512,7 +520,9 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::TodoScrollUp, key)
     {
-        app.chat.todo_scroll = app.chat.todo_scroll.saturating_sub(1);
+        app.chat
+            .todo_scroll
+            .set(app.chat.todo_scroll.get().saturating_sub(1));
         return Ok(());
     }
 
@@ -521,7 +531,9 @@ pub(crate) fn handle_chat_key(
         .keybindings
         .matches(crate::tui::keybindings::TuiAction::TodoScrollDown, key)
     {
-        app.chat.todo_scroll = app.chat.todo_scroll.saturating_add(1);
+        app.chat
+            .todo_scroll
+            .set(app.chat.todo_scroll.get().saturating_add(1));
         return Ok(());
     }
 
@@ -608,7 +620,7 @@ pub(crate) fn handle_chat_key(
                         app.chat.focused_shell_session_id = None;
                         app.chat.focused_shell_pid = None;
                     }
-                    app.chat.scroll = 0; // Automatically scroll to the bottom to show the last shell block
+                    app.chat.scroll.set(0); // Automatically scroll to the bottom to show the last shell block
                     app.status = "Shell/Messages focused. Press Tab to return, or Ctrl+C to abort running command.".to_owned();
                 } else {
                     app.chat.focused_shell_session_id = None;

@@ -3,7 +3,8 @@ use crate::app::core::App;
 pub fn run(app: &mut App) {
     app.chat.history.clear();
     app.chat.messages.clear();
-    app.chat.scroll = 0;
+    app.chat.scroll.set(0);
+    app.chat.last_total_lines.set(0);
     app.chat.message_queue.clear();
     app.chat.sent_history_index = None;
     app.chat.input_draft.clear();

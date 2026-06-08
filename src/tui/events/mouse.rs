@@ -23,7 +23,9 @@ pub(crate) fn handle_mouse_event(
             ) && !app.chat.todos.is_empty()
                 && wheel_over_todo(app, mouse_event.column, mouse_event.row)
             {
-                app.chat.todo_scroll = app.chat.todo_scroll.saturating_sub(1);
+                app.chat
+                    .todo_scroll
+                    .set(app.chat.todo_scroll.get().saturating_sub(1));
                 return Ok(());
             }
             if matches!(
@@ -34,7 +36,7 @@ pub(crate) fn handle_mouse_event(
                     .confirm_scroll
                     .set(app.ui.confirm_scroll.get().saturating_sub(1));
             } else {
-                app.chat.scroll = app.chat.scroll.saturating_add(1);
+                app.chat.scroll.set(app.chat.scroll.get().saturating_add(1));
             }
             update_selection_on_scroll(app, mouse_event.column, mouse_event.row);
         }
@@ -45,7 +47,9 @@ pub(crate) fn handle_mouse_event(
             ) && !app.chat.todos.is_empty()
                 && wheel_over_todo(app, mouse_event.column, mouse_event.row)
             {
-                app.chat.todo_scroll = app.chat.todo_scroll.saturating_add(1);
+                app.chat
+                    .todo_scroll
+                    .set(app.chat.todo_scroll.get().saturating_add(1));
                 return Ok(());
             }
             if matches!(
@@ -56,7 +60,7 @@ pub(crate) fn handle_mouse_event(
                     .confirm_scroll
                     .set(app.ui.confirm_scroll.get().saturating_sub(1));
             } else {
-                app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                app.chat.scroll.set(app.chat.scroll.get().saturating_sub(1));
             }
             update_selection_on_scroll(app, mouse_event.column, mouse_event.row);
         }
@@ -190,7 +194,7 @@ pub(crate) fn handle_mouse_event(
                     .unwrap_or(0);
                 let viewport_height = rect.height as usize;
                 let max_scroll = total_lines.saturating_sub(viewport_height);
-                let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
+                let scroll_offset = (app.chat.scroll.get() as usize).min(max_scroll);
                 let scroll_y = max_scroll.saturating_sub(scroll_offset);
 
                 let clicked_line = scroll_y + usize::from(click_y - rect.y);
@@ -246,11 +250,13 @@ pub(crate) fn handle_mouse_event(
                             let mid_line = start_line + msg_height / 2;
                             let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
                             let scroll_val = max_scroll.saturating_sub(target_scroll_y);
-                            app.chat.scroll = u16::try_from(scroll_val).unwrap_or(u16::MAX);
+                            app.chat
+                                .scroll
+                                .set(u16::try_from(scroll_val).unwrap_or(u16::MAX));
                             scrolled = true;
                         }
                         if !scrolled {
-                            app.chat.scroll = 0;
+                            app.chat.scroll.set(0);
                         }
 
                         *app.chat.message_line_ranges.borrow_mut() = Vec::new();
@@ -310,11 +316,13 @@ pub(crate) fn handle_mouse_event(
                                 let mid_line = start_line + msg_height / 2;
                                 let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
                                 let scroll_val = max_scroll.saturating_sub(target_scroll_y);
-                                app.chat.scroll = u16::try_from(scroll_val).unwrap_or(u16::MAX);
+                                app.chat
+                                    .scroll
+                                    .set(u16::try_from(scroll_val).unwrap_or(u16::MAX));
                                 scrolled = true;
                             }
                             if !scrolled {
-                                app.chat.scroll = 0;
+                                app.chat.scroll.set(0);
                             }
 
                             *app.chat.message_line_ranges.borrow_mut() = Vec::new();
@@ -355,11 +363,13 @@ pub(crate) fn handle_mouse_event(
                                 let mid_line = start_line + msg_height / 2;
                                 let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
                                 let scroll_val = max_scroll.saturating_sub(target_scroll_y);
-                                app.chat.scroll = u16::try_from(scroll_val).unwrap_or(u16::MAX);
+                                app.chat
+                                    .scroll
+                                    .set(u16::try_from(scroll_val).unwrap_or(u16::MAX));
                                 scrolled = true;
                             }
                             if !scrolled {
-                                app.chat.scroll = 0;
+                                app.chat.scroll.set(0);
                             }
 
                             *app.chat.message_line_ranges.borrow_mut() = Vec::new();
@@ -420,9 +430,9 @@ pub(crate) fn handle_mouse_event(
                 app.chat.last_mouse_drag_pos = Some((click_x, click_y));
 
                 if click_y < rect.y {
-                    app.chat.scroll = app.chat.scroll.saturating_add(1);
+                    app.chat.scroll.set(app.chat.scroll.get().saturating_add(1));
                 } else if click_y >= rect.y + rect.height {
-                    app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                    app.chat.scroll.set(app.chat.scroll.get().saturating_sub(1));
                 }
 
                 if let Some(ref mut sel) = app.chat.selection {
@@ -437,7 +447,7 @@ pub(crate) fn handle_mouse_event(
                         .unwrap_or(0);
                     let viewport_height = rect.height as usize;
                     let max_scroll = total_lines.saturating_sub(viewport_height);
-                    let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
+                    let scroll_offset = (app.chat.scroll.get() as usize).min(max_scroll);
                     let scroll_y = max_scroll.saturating_sub(scroll_offset);
 
                     let clicked_line = scroll_y + usize::from(clamped_y - rect.y);
@@ -615,7 +625,7 @@ pub(crate) fn update_selection_on_scroll(app: &mut App, _click_x: u16, _click_y:
             .unwrap_or(0);
         let viewport_height = rect.height as usize;
         let max_scroll = total_lines.saturating_sub(viewport_height);
-        let scroll_offset = (app.chat.scroll as usize).min(max_scroll);
+        let scroll_offset = (app.chat.scroll.get() as usize).min(max_scroll);
         let scroll_y = max_scroll.saturating_sub(scroll_offset);
 
         let clicked_line = scroll_y + usize::from(clamped_y - rect.y);
@@ -692,9 +702,16 @@ mod tests {
 
     #[test]
     fn wheel_over_todo_falls_back_to_right_half() {
-        let messages = ratatui::layout::Rect { x: 0, y: 0, width: 80, height: 24 };
+        let messages = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 24,
+        };
         let mut app = app_with_layout(messages, None);
-        app.chat.messages.push(crate::app::MessageLine::user("hi".to_string()));
+        app.chat
+            .messages
+            .push(crate::app::MessageLine::user("hi".to_string()));
         assert!(wheel_over_todo(&app, 79, 10));
         assert!(wheel_over_todo(&app, 30, 10));
     }

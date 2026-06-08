@@ -66,11 +66,11 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
                 let mid_line = start_line + msg_height / 2;
                 let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
                 let scroll_val = max_scroll.saturating_sub(target_scroll_y);
-                app.chat.scroll = scroll_val as u16;
+                app.chat.scroll.set(scroll_val as u16);
                 scrolled = true;
             }
             if !scrolled {
-                app.chat.scroll = 0;
+                app.chat.scroll.set(0);
             }
 
             *app.chat.message_line_ranges.borrow_mut() = Vec::new();
@@ -125,11 +125,11 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
                 let mid_line = start_line + msg_height / 2;
                 let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
                 let scroll_val = max_scroll.saturating_sub(target_scroll_y);
-                app.chat.scroll = scroll_val as u16;
+                app.chat.scroll.set(scroll_val as u16);
                 scrolled = true;
             }
             if !scrolled {
-                app.chat.scroll = 0;
+                app.chat.scroll.set(0);
             }
 
             *app.chat.message_line_ranges.borrow_mut() = Vec::new();
@@ -183,11 +183,11 @@ pub fn run(app: &mut App, session_arg: Option<String>) {
                 let mid_line = start_line + msg_height / 2;
                 let target_scroll_y = mid_line.saturating_sub(viewport_height / 2);
                 let scroll_val = max_scroll.saturating_sub(target_scroll_y);
-                app.chat.scroll = scroll_val as u16;
+                app.chat.scroll.set(scroll_val as u16);
                 scrolled = true;
             }
             if !scrolled {
-                app.chat.scroll = 0;
+                app.chat.scroll.set(0);
             }
 
             *app.chat.message_line_ranges.borrow_mut() = Vec::new();

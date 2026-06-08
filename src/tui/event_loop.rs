@@ -86,10 +86,10 @@ fn run_loop(
             && let Some(rect) = app.chat.messages_area.get()
         {
             if click_y < rect.y {
-                app.chat.scroll = app.chat.scroll.saturating_add(1);
+                app.chat.scroll.set(app.chat.scroll.get().saturating_add(1));
                 update_selection_on_scroll(app, click_x, click_y);
             } else if click_y >= rect.y + rect.height {
-                app.chat.scroll = app.chat.scroll.saturating_sub(1);
+                app.chat.scroll.set(app.chat.scroll.get().saturating_sub(1));
                 update_selection_on_scroll(app, click_x, click_y);
             }
         }

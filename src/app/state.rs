@@ -32,7 +32,7 @@ impl App {
             self.chat.input.clear();
             self.chat.cursor = 0;
             self.chat.input_scroll = 0;
-            self.chat.scroll = 0;
+            self.chat.scroll.set(0);
             return self.run_command(command);
         }
 
@@ -40,7 +40,7 @@ impl App {
             self.chat.input.clear();
             self.chat.cursor = 0;
             self.chat.input_scroll = 0;
-            self.chat.scroll = 0;
+            self.chat.scroll.set(0);
 
             // Queue prompt in memory only (rendered in gray below the messages box)
             self.chat.message_queue.push(input);
@@ -50,7 +50,8 @@ impl App {
         self.chat.input.clear();
         self.chat.cursor = 0;
         self.chat.input_scroll = 0;
-        self.chat.scroll = 0;
+        self.chat.scroll.set(0);
+        self.chat.last_total_lines.set(0);
 
         if let Some(command) = ChatCommand::parse(&input) {
             return self.run_command(command);
@@ -265,8 +266,8 @@ impl App {
             self.chat.last_chunk_was_thought = false;
         }
 
-        if self.chat.scroll == 0 {
-            self.chat.scroll = 0;
+        if self.chat.scroll.get() == 0 {
+            self.chat.scroll.set(0);
         }
     }
 
@@ -304,7 +305,8 @@ impl App {
         }
         self.chat.messages.push(MessageLine::error(error));
         self.chat.streaming_parts.clear();
-        self.chat.scroll = 0;
+        self.chat.scroll.set(0);
+        self.chat.last_total_lines.set(0);
         self.proc.pending = None;
         self.status = "Ready".to_owned();
         self.save_session();
@@ -928,7 +930,8 @@ impl App {
         name: String,
         response: serde_json::Value,
     ) -> Option<FunctionAction> {
-        self.chat.scroll = 0;
+        self.chat.scroll.set(0);
+        self.chat.last_total_lines.set(0);
         let args = if let Some(ChatMessage { parts, .. }) =
             self.chat.history.iter().rev().find(|m| m.role == "model")
         {
@@ -955,7 +958,7 @@ impl App {
                 serde_json::from_value::<Vec<super::chat::TodoItem>>(todos_val.clone())
             {
                 self.chat.todos = new_todos;
-                self.chat.todo_scroll = u16::MAX;
+                self.chat.todo_scroll.set(u16::MAX);
                 response = serde_json::json!({ "success": true });
             } else {
                 response =
@@ -1217,7 +1220,8 @@ impl App {
             let summary = format!("**{}** executing...", name);
             self.chat.messages.push(MessageLine::tool(summary));
         }
-        self.chat.scroll = 0;
+        self.chat.scroll.set(0);
+        self.chat.last_total_lines.set(0);
     }
 }
 

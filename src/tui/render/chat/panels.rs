@@ -1276,14 +1276,12 @@ pub(crate) fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
 
     let visible_height = tasks_area.height as usize;
     let total_lines = lines.len();
-    let mut scroll = app.chat.todo_scroll as usize;
-    if scroll >= total_lines {
-        scroll = total_lines.saturating_sub(1);
-    }
+    let mut scroll = app.chat.todo_scroll.get() as usize;
     let max_scroll = total_lines.saturating_sub(visible_height);
     if scroll > max_scroll {
         scroll = max_scroll;
     }
+    app.chat.todo_scroll.set(scroll as u16);
 
     if total_lines > visible_height {
         let scroll_pct = if total_lines == 0 {
