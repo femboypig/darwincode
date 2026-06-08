@@ -225,6 +225,10 @@ pub(crate) fn run_persistent_bash(
                 #[cfg(unix)]
                 {
                     use std::os::unix::process::CommandExt;
+                    // SAFETY: setpgid(0,0) puts the child into its own process group
+                    // so we can signal the entire group on Ctrl+C. This is safe because
+                    // we are in the pre_exec hook (post-fork, pre-exec) and setpgid is
+                    // async-signal-safe.
                     unsafe {
                         command.pre_exec(|| {
                             let _ = libc::setpgid(0, 0);

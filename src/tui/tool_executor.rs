@@ -1167,6 +1167,9 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                             #[cfg(unix)]
                                             {
                                                 use std::os::unix::process::CommandExt;
+                                                // SAFETY: setpgid(0,0) is async-signal-safe and called
+                                                // in pre_exec (post-fork, pre-exec) to create a new
+                                                // process group for proper signal delivery.
                                                 unsafe {
                                                     command.pre_exec(|| {
                                                         libc::setpgid(0, 0);
@@ -1269,6 +1272,9 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
 
                                             #[cfg(unix)]
                                             {
+                                                // SAFETY: setpgid(0,0) is async-signal-safe and called
+                                                // in pre_exec (post-fork, pre-exec) to create a new
+                                                // process group for proper signal delivery.
                                                 unsafe {
                                                     command.pre_exec(|| {
                                                         libc::setpgid(0, 0);
