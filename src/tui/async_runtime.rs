@@ -18,6 +18,7 @@ pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     runtime().block_on(future)
 }
 
+#[allow(dead_code)]
 pub fn spawn<F>(future: F) -> tokio::task::JoinHandle<F::Output>
 where
     F: std::future::Future + Send + 'static,
