@@ -166,7 +166,7 @@ pub(crate) fn handle_chat_key(
 
         if let Some(ref session_id) = active_session_id
             && let Some(registry_mutex) = crate::tui::PERSISTENT_SESSIONS.get()
-            && let Some(session) = registry_mutex.lock().get_mut(session_id)
+            && let Some(session) = registry_mutex.lock().get(session_id)
         {
             use std::io::Write;
             let data = match key.code {
@@ -176,8 +176,9 @@ pub(crate) fn handle_chat_key(
                 _ => None,
             };
             if let Some(s) = data {
-                let _ = session.stdin.write_all(s.as_bytes());
-                let _ = session.stdin.flush();
+                let mut stdin = session.stdin.lock();
+                let _ = stdin.write_all(s.as_bytes());
+                let _ = stdin.flush();
                 written = true;
                 written_pid = Some(session.pid);
             }
