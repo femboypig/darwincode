@@ -18,19 +18,27 @@ pub fn run(app: App) -> Result<()> {
                     if let Ok(evt) = event::read() {
                         match evt {
                             Event::Key(key) => {
-                                if key.kind != event::KeyEventKind::Release {
-                                    if tx_crossterm.send(crate::app::AppCommand::KeyEvent(key)).is_err() {
-                                        break;
-                                    }
+                                if key.kind != event::KeyEventKind::Release
+                                    && tx_crossterm
+                                        .send(crate::app::AppCommand::KeyEvent(key))
+                                        .is_err()
+                                {
+                                    break;
                                 }
                             }
                             Event::Mouse(mouse_event) => {
-                                if tx_crossterm.send(crate::app::AppCommand::MouseEvent(mouse_event)).is_err() {
+                                if tx_crossterm
+                                    .send(crate::app::AppCommand::MouseEvent(mouse_event))
+                                    .is_err()
+                                {
                                     break;
                                 }
                             }
                             Event::Paste(text) => {
-                                if tx_crossterm.send(crate::app::AppCommand::Paste(text)).is_err() {
+                                if tx_crossterm
+                                    .send(crate::app::AppCommand::Paste(text))
+                                    .is_err()
+                                {
                                     break;
                                 }
                             }
@@ -61,9 +69,7 @@ pub fn run(app: App) -> Result<()> {
         }
     });
 
-    let result = crate::tui::async_runtime::block_on(async {
-        actor.run(&mut terminal).await
-    });
+    let result = crate::tui::async_runtime::block_on(async { actor.run(&mut terminal).await });
 
     stop_terminal(&mut terminal)?;
 
