@@ -547,6 +547,7 @@ impl ThemeConfig {
 pub fn init_project_dir() {
     if let Some(proj_root) = find_project_root() {
         let dc_dir = proj_root.join(".darwincode");
+        let is_fresh_init = !dc_dir.exists();
         let themes_dir = dc_dir.join("themes");
         let commands_dir = dc_dir.join("commands");
         let agents_dir = dc_dir.join("agents");
@@ -622,29 +623,35 @@ build/
             let _ = std::fs::write(&env_path, "");
         }
 
-        // Automatically append .darwincode/config.json and .darwincode/.env to the project's .gitignore if it exists
-        let gitignore_path = proj_root.join(".gitignore");
-        if gitignore_path.exists()
-            && let Ok(content) = std::fs::read_to_string(&gitignore_path)
-        {
-            let mut new_content = content.clone();
-            let mut modified = false;
+        // Only modify .gitignore on first initialization of .darwincode directory
+        // to avoid surprising modifications on every run.
+        if is_fresh_init {
+            let gitignore_path = proj_root.join(".gitignore");
+            if gitignore_path.exists()
+                && let Ok(content) = std::fs::read_to_string(&gitignore_path)
+            {
+                let mut new_content = content.clone();
+                let mut modified = false;
 
-            let rules_to_add = vec![".darwincode/config.json", ".darwincode/.env"];
+                let rules_to_add = vec![".darwincode/config.json", ".darwincode/.env"];
 
-            for rule in rules_to_add {
-                if !content.lines().any(|l| l.trim() == rule) {
-                    if !new_content.ends_with('\n') && !new_content.is_empty() {
+                for rule in rules_to_add {
+                    if !content.lines().any(|l| l.trim() == rule) {
+                        if !new_content.ends_with('\n') && !new_content.is_empty() {
+                            new_content.push('\n');
+                        }
+                        new_content.push_str(rule);
                         new_content.push('\n');
+                        modified = true;
                     }
-                    new_content.push_str(rule);
-                    new_content.push('\n');
-                    modified = true;
                 }
-            }
 
-            if modified {
-                let _ = std::fs::write(&gitignore_path, new_content);
+                if modified {
+                    let _ = std::fs::write(&gitignore_path, new_content);
+                    eprintln!(
+                        "[darwincode] Added .darwincode/config.json and .darwincode/.env to .gitignore"
+                    );
+                }
             }
         }
 
