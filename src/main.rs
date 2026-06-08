@@ -10,6 +10,20 @@ use crate::app::App;
 use crate::config::StoredConfig;
 
 fn main() -> Result<()> {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::event::DisableFocusChange,
+            crossterm::event::DisableBracketedPaste,
+            crossterm::event::DisableMouseCapture,
+            crossterm::cursor::Show
+        );
+        default_hook(info);
+    }));
+
     // Fail fast if the environment doesn't give us a writable
     // config directory. Without one we'd have to fall back to
     // writing the API key in cleartext, which is the M3 finding in
