@@ -2,7 +2,6 @@ use parking_lot::Mutex;
 use serde_json::Value;
 use std::fmt::Write;
 use std::sync::mpsc::Sender;
-use std::thread;
 use std::time::Duration;
 
 use crate::api::GeminiClient;
@@ -394,7 +393,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
     match action {
         FunctionAction::Execute { name, args, config } => {
             let sender = sender.clone();
-            thread::spawn(move || {
+            crate::tui::async_runtime::spawn(async move {
                 if let Some(ref agent_id) = config.active_agent {
                     let custom_agents = crate::app::load_custom_agents();
                     if let Some(agent_config) = custom_agents.get(agent_id)
@@ -455,7 +454,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                     if config.respect_ignore_rules && should_ignore(p, &rules) {
                                         results.insert(p_str.to_owned(), serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", p_str) }));
                                     } else {
-                                        match std::fs::read_to_string(p_str) {
+                                        match tokio::fs::read_to_string(p_str).await {
                                             Ok(content) => {
                                                 results.insert(
                                                     p_str.to_owned(),
@@ -502,10 +501,10 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                             } else if config.respect_ignore_rules && should_ignore(p, &rules) {
                                 serde_json::json!({ "error": format!("Access denied: `{}` is ignored by .gitignore", target_path) })
                             } else if p.is_dir() {
-                                match std::fs::read_dir(p) {
-                                    Ok(entries) => {
+                                match tokio::fs::read_dir(p).await {
+                                    Ok(mut entries) => {
                                         let mut files = Vec::new();
-                                        for entry in entries.filter_map(Result::ok) {
+                                        while let Ok(Some(entry)) = entries.next_entry().await {
                                             let entry_path = entry.path();
                                             if !config.respect_ignore_rules
                                                 || !should_ignore(&entry_path, &rules)
@@ -518,7 +517,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                     Err(e) => serde_json::json!({ "error": e.to_string() }),
                                 }
                             } else if p.is_file() {
-                                match std::fs::read_to_string(p) {
+                                match tokio::fs::read_to_string(p).await {
                                     Ok(content) => serde_json::json!({ "content": content }),
                                     Err(e) => serde_json::json!({ "error": e.to_string() }),
                                 }
@@ -729,7 +728,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
 
                                 for (edit_path, _, _) in &parsed_edits {
                                     if !original_contents.contains_key(edit_path) {
-                                        match std::fs::read_to_string(edit_path) {
+                                        match tokio::fs::read_to_string(edit_path).await {
                                             Ok(content) => {
                                                 original_contents
                                                     .insert(edit_path.clone(), content);
@@ -789,7 +788,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                         let mut write_error = None;
 
                                         for (edit_path, new_content) in &working_contents {
-                                            match std::fs::write(edit_path, new_content) {
+                                            match tokio::fs::write(edit_path, new_content).await {
                                                 Ok(_) => {
                                                     written_files.push(edit_path.clone());
                                                 }
@@ -807,7 +806,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                             for edit_path in written_files {
                                                 let orig =
                                                     original_contents.get(&edit_path).unwrap();
-                                                let _ = std::fs::write(&edit_path, orig);
+                                                let _ = tokio::fs::write(&edit_path, orig).await;
                                             }
                                             serde_json::json!({ "error": format!("Write failed, transaction rolled back. Error: {}", err) })
                                         } else {
@@ -865,7 +864,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                 } else if start_line > end_line {
                                     serde_json::json!({ "error": "start_line cannot be greater than end_line" })
                                 } else {
-                                    match std::fs::read_to_string(path) {
+                                    match tokio::fs::read_to_string(path).await {
                                         Ok(content) => {
                                             let lines: Vec<&str> = content.lines().collect();
                                             if start_line > lines.len() {
@@ -906,7 +905,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                                     new_content_str.push('\n');
                                                 }
 
-                                                match std::fs::write(path, new_content_str) {
+                                                match tokio::fs::write(path, new_content_str).await {
                                                     Ok(_) => {
                                                         serde_json::json!({ "success": true, "diff": diff })
                                                     }
@@ -958,7 +957,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                     .get("new_string")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
-                                match std::fs::read_to_string(path) {
+                                match tokio::fs::read_to_string(path).await {
                                     Ok(content) => {
                                         if content.contains(old_string) {
                                             let mut diff = String::new();
@@ -981,7 +980,7 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
 
                                             let new_content =
                                                 content.replacen(old_string, new_string, 1);
-                                            match std::fs::write(path, new_content) {
+                                            match tokio::fs::write(path, new_content).await {
                                                 Ok(_) => {
                                                     serde_json::json!({ "success": true, "diff": diff })
                                                 }
@@ -1039,15 +1038,15 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                             } else {
                                 let content =
                                     args.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                                let write_res = (|| -> Result<(), std::io::Error> {
+                                let write_res = async {
                                     if let Some(parent) = std::path::Path::new(path).parent()
                                         && !parent.as_os_str().is_empty()
                                     {
-                                        std::fs::create_dir_all(parent)?;
+                                        tokio::fs::create_dir_all(parent).await?;
                                     }
-                                    std::fs::write(path, content)?;
-                                    Ok(())
-                                })();
+                                    tokio::fs::write(path, content).await?;
+                                    Ok::<(), std::io::Error>(())
+                                }.await;
                                 match write_res {
                                     Ok(_) => serde_json::json!({ "success": true }),
                                     Err(e) => {
@@ -1078,93 +1077,88 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                 Err(e) => serde_json::json!({ "error": e.to_string() }),
                             }
                         } else {
-                            let run_result = (|| -> Result<serde_json::Value, std::io::Error> {
-                                let mut command = std::process::Command::new("bash");
-                                command
-                                    .arg("-c")
-                                    .arg(cmd)
-                                    .stdin(std::process::Stdio::piped())
-                                    .stdout(std::process::Stdio::piped())
-                                    .stderr(std::process::Stdio::piped());
-
-                                #[cfg(unix)]
-                                {
-                                    use std::os::unix::process::CommandExt;
-                                    unsafe {
-                                        command.pre_exec(|| {
-                                            libc::setpgid(0, 0);
-                                            Ok(())
-                                        });
-                                    }
-                                }
-
-                                let mut child = command.spawn()?;
-
-                                let pid = child.id();
-
-                                let mut child_stdin = child.stdin.take();
-                                if let Some(ref mut stdin) = child_stdin.as_mut()
-                                    && let Some(inp) = input
-                                {
-                                    use std::io::Write;
-                                    let _ = stdin.write_all(inp.as_bytes());
-                                    let _ = stdin.flush();
-                                }
-                                if !background {
-                                    *crate::tui::RUNNING_PROCESS_STDIN.lock() = child_stdin.take();
-                                }
-
-                                let stdout = child.stdout.take().unwrap();
-                                let stderr = child.stderr.take().unwrap();
-
-                                let stdout_accumulator =
-                                    std::sync::Arc::new(Mutex::new(String::new()));
-                                let stderr_accumulator =
-                                    std::sync::Arc::new(Mutex::new(String::new()));
-
-                                let sender_stdout = sender.clone();
-                                let stdout_acc_clone = stdout_accumulator.clone();
-                                let stdout_handle = std::thread::spawn(move || {
-                                    use std::io::Read;
-                                    let mut buffer = [0; 1024];
-                                    let mut reader = stdout;
-                                    while let Ok(n) = reader.read(&mut buffer) {
-                                        if n == 0 {
-                                            break;
-                                        }
-                                        let chunk =
-                                            String::from_utf8_lossy(&buffer[..n]).into_owned();
-                                        {
-                                            let mut guard = stdout_acc_clone.lock();
-                                            guard.push_str(&chunk);
-                                        }
-                                        let _ = sender_stdout
-                                            .send(WorkerEvent::BashStdout(Some(pid), chunk));
-                                    }
-                                });
-
-                                let sender_stderr = sender.clone();
-                                let stderr_acc_clone = stderr_accumulator.clone();
-                                let stderr_handle = std::thread::spawn(move || {
-                                    use std::io::Read;
-                                    let mut buffer = [0; 1024];
-                                    let mut reader = stderr;
-                                    while let Ok(n) = reader.read(&mut buffer) {
-                                        if n == 0 {
-                                            break;
-                                        }
-                                        let chunk =
-                                            String::from_utf8_lossy(&buffer[..n]).into_owned();
-                                        {
-                                            let mut guard = stderr_acc_clone.lock();
-                                            guard.push_str(&chunk);
-                                        }
-                                        let _ = sender_stderr
-                                            .send(WorkerEvent::BashStderr(Some(pid), chunk));
-                                    }
-                                });
-
+                            let run_result = async {
                                 if background {
+                                    let mut command = std::process::Command::new("bash");
+                                    command
+                                        .arg("-c")
+                                        .arg(cmd)
+                                        .stdin(std::process::Stdio::piped())
+                                        .stdout(std::process::Stdio::piped())
+                                        .stderr(std::process::Stdio::piped());
+
+                                    #[cfg(unix)]
+                                    {
+                                        use std::os::unix::process::CommandExt;
+                                        unsafe {
+                                            command.pre_exec(|| {
+                                                libc::setpgid(0, 0);
+                                                Ok(())
+                                            });
+                                        }
+                                    }
+
+                                    let mut child = command.spawn()?;
+                                    let pid = child.id();
+                                    let mut child_stdin = child.stdin.take();
+                                    if let Some(ref mut stdin) = child_stdin.as_mut()
+                                        && let Some(inp) = input
+                                    {
+                                        use std::io::Write;
+                                        let _ = stdin.write_all(inp.as_bytes());
+                                        let _ = stdin.flush();
+                                    }
+
+                                    let stdout = child.stdout.take().unwrap();
+                                    let stderr = child.stderr.take().unwrap();
+
+                                    let stdout_accumulator =
+                                        std::sync::Arc::new(Mutex::new(String::new()));
+                                    let stderr_accumulator =
+                                        std::sync::Arc::new(Mutex::new(String::new()));
+
+                                    let sender_stdout = sender.clone();
+                                    let stdout_acc_clone = stdout_accumulator.clone();
+                                    let stdout_handle = std::thread::spawn(move || {
+                                        use std::io::Read;
+                                        let mut buffer = [0; 1024];
+                                        let mut reader = stdout;
+                                        while let Ok(n) = reader.read(&mut buffer) {
+                                            if n == 0 {
+                                                break;
+                                            }
+                                            let chunk =
+                                                String::from_utf8_lossy(&buffer[..n]).into_owned();
+                                            {
+                                                let mut guard = stdout_acc_clone.lock();
+                                                guard.push_str(&chunk);
+                                            }
+                                            let _ = sender_stdout
+                                                .send(WorkerEvent::BashStdout(Some(pid), chunk));
+                                        }
+                                    });
+
+                                    let sender_stderr = sender.clone();
+                                    let stderr_acc_clone = stderr_accumulator.clone();
+                                    let stderr_handle = std::thread::spawn(move || {
+                                        use std::io::Read;
+                                        let mut buffer = [0; 1024];
+                                        let mut reader = stderr;
+                                        while let Ok(n) = reader.read(&mut buffer) {
+                                            if n == 0 {
+                                                break;
+                                            }
+                                            let chunk =
+                                                String::from_utf8_lossy(&buffer[..n]).into_owned();
+                                            {
+                                                let mut guard = stderr_acc_clone.lock();
+                                                guard.push_str(&chunk);
+                                            }
+                                            let _ = sender_stderr
+                                                .send(WorkerEvent::BashStderr(Some(pid), chunk));
+                                        }
+                                    });
+
                                     crate::tui::register_background_process(
                                         pid,
                                         cmd.to_owned(),
@@ -1177,24 +1171,105 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                         let _ = stdout_handle.join();
                                         let _ = stderr_handle.join();
                                     });
-                                    Ok(serde_json::json!({
+                                    Ok::<serde_json::Value, std::io::Error>(serde_json::json!({
                                         "status": "running",
                                         "pid": pid
                                     }))
                                 } else {
+                                    let mut command = tokio::process::Command::new("bash");
+                                    command
+                                        .arg("-c")
+                                        .arg(cmd)
+                                        .stdin(std::process::Stdio::piped())
+                                        .stdout(std::process::Stdio::piped())
+                                        .stderr(std::process::Stdio::piped());
+
+                                    #[cfg(unix)]
+                                    {
+                                        unsafe {
+                                            command.pre_exec(|| {
+                                                libc::setpgid(0, 0);
+                                                Ok(())
+                                            });
+                                        }
+                                    }
+
+                                    let mut child = command.spawn()?;
+                                    let pid = child.id().unwrap();
+
+                                    let mut child_stdin = child.stdin.take();
+                                    if let Some(ref mut stdin) = child_stdin.as_mut()
+                                        && let Some(inp) = input
+                                    {
+                                        use tokio::io::AsyncWriteExt;
+                                        let _ = stdin.write_all(inp.as_bytes()).await;
+                                        let _ = stdin.flush().await;
+                                    }
+                                    *crate::tui::RUNNING_PROCESS_STDIN.lock() = child_stdin.take();
+
+                                    let stdout = child.stdout.take().unwrap();
+                                    let stderr = child.stderr.take().unwrap();
+
+                                    let stdout_accumulator =
+                                        std::sync::Arc::new(Mutex::new(String::new()));
+                                    let stderr_accumulator =
+                                        std::sync::Arc::new(Mutex::new(String::new()));
+
+                                    let sender_stdout = sender.clone();
+                                    let stdout_acc_clone = stdout_accumulator.clone();
+                                    let stdout_task = crate::tui::async_runtime::spawn(async move {
+                                        use tokio::io::AsyncReadExt;
+                                        let mut buffer = [0; 1024];
+                                        let mut reader = stdout;
+                                        while let Ok(n) = reader.read(&mut buffer).await {
+                                            if n == 0 {
+                                                break;
+                                            }
+                                            let chunk =
+                                                String::from_utf8_lossy(&buffer[..n]).into_owned();
+                                            {
+                                                let mut guard = stdout_acc_clone.lock();
+                                                guard.push_str(&chunk);
+                                            }
+                                            let _ = sender_stdout
+                                                .send(WorkerEvent::BashStdout(Some(pid), chunk));
+                                        }
+                                    });
+
+                                    let sender_stderr = sender.clone();
+                                    let stderr_acc_clone = stderr_accumulator.clone();
+                                    let stderr_task = crate::tui::async_runtime::spawn(async move {
+                                        use tokio::io::AsyncReadExt;
+                                        let mut buffer = [0; 1024];
+                                        let mut reader = stderr;
+                                        while let Ok(n) = reader.read(&mut buffer).await {
+                                            if n == 0 {
+                                                break;
+                                            }
+                                            let chunk =
+                                                String::from_utf8_lossy(&buffer[..n]).into_owned();
+                                            {
+                                                let mut guard = stderr_acc_clone.lock();
+                                                guard.push_str(&chunk);
+                                            }
+                                            let _ = sender_stderr
+                                                .send(WorkerEvent::BashStderr(Some(pid), chunk));
+                                        }
+                                    });
+
                                     {
                                         let mut guard = crate::tui::RUNNING_PROCESS_PID.lock();
                                         *guard = Some(pid);
                                     }
-                                    let status = child.wait()?;
+                                    let status = child.wait().await?;
                                     {
                                         let mut guard = crate::tui::RUNNING_PROCESS_PID.lock();
                                         *guard = None;
                                     }
                                     *crate::tui::RUNNING_PROCESS_STDIN.lock() = None;
 
-                                    let _ = stdout_handle.join();
-                                    let _ = stderr_handle.join();
+                                    let _ = stdout_task.await;
+                                    let _ = stderr_task.await;
 
                                     let stdout_content = stdout_accumulator.lock().clone();
                                     let stderr_content = stderr_accumulator.lock().clone();
@@ -1207,14 +1282,14 @@ pub(crate) fn handle_function_action(action: FunctionAction, sender: &Sender<Wor
                                         );
                                     }
 
-                                    Ok(serde_json::json!({
+                                    Ok::<serde_json::Value, std::io::Error>(serde_json::json!({
                                         "status": status_code,
                                         "stdout": stdout_content,
                                         "stderr": stderr_content,
                                         "error": err_val,
                                     }))
                                 }
-                            })();
+                            }.await;
 
                             match run_result {
                                 Ok(val) => val,
@@ -1498,7 +1573,7 @@ pub(crate) fn spawn_generation_worker(
     dev_mode: String,
     sender: Sender<WorkerEvent>,
 ) {
-    thread::spawn(move || {
+    crate::tui::async_runtime::spawn(async move {
         let sender_clone = sender.clone();
         let cancel_clone = cancel_token.clone();
 
@@ -1522,7 +1597,7 @@ pub(crate) fn spawn_generation_worker(
                     let _ = sender_c.send(WorkerEvent::StreamChunk(generation_id, chunk));
                     Ok(())
                 },
-            );
+            ).await;
             match result {
                 Ok(_) => {
                     let _ = sender.send(WorkerEvent::StreamDone(generation_id));
@@ -1539,7 +1614,7 @@ pub(crate) fn spawn_generation_worker(
                     retries += 1;
                     if retries < 3 {
                         let _ = sender.send(WorkerEvent::ResetStream(generation_id));
-                        thread::sleep(Duration::from_millis(500));
+                        tokio::time::sleep(Duration::from_millis(500)).await;
                     } else {
                         let _ =
                             sender.send(WorkerEvent::StreamError(generation_id, error.to_string()));
@@ -1552,9 +1627,10 @@ pub(crate) fn spawn_generation_worker(
 }
 
 pub(crate) fn spawn_models_worker(config: StoredConfig, sender: Sender<WorkerEvent>) {
-    thread::spawn(move || {
+    crate::tui::async_runtime::spawn(async move {
         let result = GeminiClient::new(config)
             .list_models()
+            .await
             .map_err(|error| error.to_string());
         let _ = sender.send(WorkerEvent::Models(result));
     });
