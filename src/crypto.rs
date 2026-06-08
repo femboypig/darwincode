@@ -9,12 +9,12 @@ fn to_hex(bytes: &[u8]) -> String {
 }
 
 fn from_hex(s: &str) -> Option<Vec<u8>> {
-    if !s.len().is_multiple_of(2) {
+    if !s.is_ascii() || s.len() % 2 != 0 {
         return None;
     }
     let mut res = Vec::with_capacity(s.len() / 2);
     let chars: Vec<char> = s.chars().collect();
-    for i in (0..s.len()).step_by(2) {
+    for i in (0..chars.len()).step_by(2) {
         let high = chars[i].to_digit(16)?;
         let low = chars[i + 1].to_digit(16)?;
         res.push((high * 16 + low) as u8);
@@ -194,5 +194,11 @@ mod tests {
         let too_short = vec![0u8; 11];
         let decrypt_result = decrypt_data(&too_short, &key);
         assert!(decrypt_result.is_err());
+    }
+
+    #[test]
+    fn test_from_hex_non_ascii() {
+        assert!(from_hex("👍👍").is_none());
+        assert!(from_hex("4a4b4c").is_some());
     }
 }
