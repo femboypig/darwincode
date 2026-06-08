@@ -781,6 +781,14 @@ pub fn custom_themes() -> &'static HashMap<String, ThemeConfig> {
             ("solarized", include_str!("themes/solarized.json")),
             ("catppuccin", include_str!("themes/catppuccin.json")),
             ("onedark", include_str!("themes/onedark.json")),
+            ("botanical", include_str!("themes/botanical.json")),
+            ("latte", include_str!("themes/latte.json")),
+            ("midnight", include_str!("themes/midnight.json")),
+            ("monochrome", include_str!("themes/monochrome.json")),
+            ("ocean", include_str!("themes/ocean.json")),
+            ("paper", include_str!("themes/paper.json")),
+            ("phosphor", include_str!("themes/phosphor.json")),
+            ("synthwave", include_str!("themes/synthwave.json")),
         ];
 
         for (name, content) in builtins {
@@ -853,6 +861,17 @@ mod tests {
             ("everforest", include_str!("themes/everforest.json")),
             ("github", include_str!("themes/github.json")),
             ("dracula", include_str!("themes/dracula.json")),
+            ("solarized", include_str!("themes/solarized.json")),
+            ("catppuccin", include_str!("themes/catppuccin.json")),
+            ("onedark", include_str!("themes/onedark.json")),
+            ("botanical", include_str!("themes/botanical.json")),
+            ("latte", include_str!("themes/latte.json")),
+            ("midnight", include_str!("themes/midnight.json")),
+            ("monochrome", include_str!("themes/monochrome.json")),
+            ("ocean", include_str!("themes/ocean.json")),
+            ("paper", include_str!("themes/paper.json")),
+            ("phosphor", include_str!("themes/phosphor.json")),
+            ("synthwave", include_str!("themes/synthwave.json")),
         ];
 
         for (name, content) in builtins {
@@ -876,6 +895,17 @@ mod tests {
             ("everforest", include_str!("themes/everforest.json")),
             ("github", include_str!("themes/github.json")),
             ("dracula", include_str!("themes/dracula.json")),
+            ("solarized", include_str!("themes/solarized.json")),
+            ("catppuccin", include_str!("themes/catppuccin.json")),
+            ("onedark", include_str!("themes/onedark.json")),
+            ("botanical", include_str!("themes/botanical.json")),
+            ("latte", include_str!("themes/latte.json")),
+            ("midnight", include_str!("themes/midnight.json")),
+            ("monochrome", include_str!("themes/monochrome.json")),
+            ("ocean", include_str!("themes/ocean.json")),
+            ("paper", include_str!("themes/paper.json")),
+            ("phosphor", include_str!("themes/phosphor.json")),
+            ("synthwave", include_str!("themes/synthwave.json")),
         ];
 
         for (name, content) in builtins {
