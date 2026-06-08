@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+pub mod actor;
 pub mod agent_picker;
 pub mod chat;
 pub mod command_handler;
@@ -13,6 +14,7 @@ pub mod setup;
 pub mod state;
 pub mod theme_picker;
 
+pub use actor::{AppActor, AppCommand};
 pub use agent_picker::AgentPickerState;
 pub use chat::{ChatCommand, ChatState, CommandSuggestion, MessageLine};
 pub use custom::{load_custom_agents, load_custom_commands, load_custom_commands_all};
