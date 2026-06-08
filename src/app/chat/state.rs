@@ -142,7 +142,8 @@ impl ChatState {
             self.messages.drain(0..to_remove);
 
             let current_scroll = self.scroll.get();
-            self.scroll.set(current_scroll.saturating_sub(to_remove as u16));
+            self.scroll
+                .set(current_scroll.saturating_sub(to_remove as u16));
         }
     }
 
