@@ -144,12 +144,20 @@ pub fn format_shell_output(
 mod tests {
     use super::*;
 
+    static TEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    fn get_temp_dir() -> std::path::PathBuf {
+        let id = TEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "darwin_tx_test_{}_{}",
+            id,
+            std::time::Instant::now().elapsed().as_nanos()
+        ))
+    }
+
     #[test]
     fn test_apply_transactional_edits_success() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "darwin_tx_test_{}",
-            std::time::Instant::now().elapsed().as_nanos()
-        ));
+        let temp_dir = get_temp_dir();
         fs::create_dir_all(&temp_dir).unwrap();
 
         let file1 = temp_dir.join("a.txt");
@@ -181,10 +189,7 @@ mod tests {
 
     #[test]
     fn test_apply_transactional_edits_validation_failure() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "darwin_tx_test_{}",
-            std::time::Instant::now().elapsed().as_nanos()
-        ));
+        let temp_dir = get_temp_dir();
         fs::create_dir_all(&temp_dir).unwrap();
 
         let file1 = temp_dir.join("a.txt");
@@ -205,10 +210,7 @@ mod tests {
 
     #[test]
     fn test_apply_transactional_edits_rollback_on_write_failure() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "darwin_tx_test_{}",
-            std::time::Instant::now().elapsed().as_nanos()
-        ));
+        let temp_dir = get_temp_dir();
         fs::create_dir_all(&temp_dir).unwrap();
 
         let file1 = temp_dir.join("a.txt");
