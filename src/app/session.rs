@@ -523,7 +523,9 @@ pub fn rebuild_messages_from_history(
                         .get("thought")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false)
-                        || part.get("thought_signature").is_some();
+                        || part.get("thought_signature").is_some()
+                        || part.get("reasoning_content").is_some()
+                        || part.get("reasoning").is_some();
 
                     if let Some(t) = part.get("text").and_then(|v| v.as_str())
                         && !t.is_empty()
