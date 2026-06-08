@@ -38,7 +38,7 @@ pub struct ChatState {
     pub scroll: std::cell::Cell<u16>,
     pub todo_scroll: std::cell::Cell<u16>,
     pub input_scroll: u16,
-    pub streaming_parts: Vec<Part>,
+    pub streaming_parts: Vec<(usize, Part)>,
     pub session_id: String,
     pub message_queue: Vec<String>,
     pub input_history: Vec<(String, usize)>,

@@ -197,8 +197,11 @@ impl App {
             self.clear_text_selection();
         }
 
+        // Get current generation_id for tagging
+        let current_gen_id = self.proc.generation_id;
+
         for part in parts {
-            self.chat.streaming_parts.push(part.clone());
+            self.chat.streaming_parts.push((current_gen_id, part.clone()));
 
             let is_thought = part
                 .get("thought")
@@ -317,7 +320,16 @@ impl App {
             self.chat.streaming_parts.clear();
             return None;
         }
-        let parts = std::mem::take(&mut self.chat.streaming_parts);
+        
+        let current_gen_id = self.proc.generation_id;
+        let parts: Vec<crate::api::Part> = self.chat.streaming_parts
+            .iter()
+            .filter(|(id, _)| *id == current_gen_id)
+            .map(|(_, part)| part.clone())
+            .collect();
+        
+        self.chat.streaming_parts.retain(|(id, _)| *id != current_gen_id);
+        
         if parts.is_empty() {
             self.proc.pending = None;
             self.status = "Ready".to_owned();
@@ -1084,10 +1096,13 @@ impl App {
         }
         self.proc.pending = None;
         self.status = "Generation stopped".to_owned();
+        
+        let current_gen_id = self.proc.generation_id;
+        self.chat.streaming_parts.retain(|(id, _)| *id != current_gen_id);
+        
         if self.chat.messages.last().is_some_and(|m| m.pending) {
             self.chat.messages.pop();
         }
-        self.chat.streaming_parts.clear();
         self.chat.message_queue.clear();
         self.chat.last_chunk_was_thought = false;
         self.save_session();
