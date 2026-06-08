@@ -22,18 +22,6 @@ pub enum GeminiResponse {
     Turn(Vec<Part>),
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct ListModelsResponse {
-    pub(crate) models: Vec<Model>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct Model {
-    pub(crate) name: String,
-    #[serde(rename = "supportedGenerationMethods", default)]
-    pub(crate) supported_generation_methods: Vec<String>,
-}
-
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct Tool {
     pub(crate) function_declarations: Vec<FunctionDeclaration>,
@@ -59,43 +47,5 @@ pub(crate) struct GenerateContentRequest {
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct Content {
     pub(crate) role: String,
-    pub(crate) parts: Vec<Part>,
-}
-
-impl Content {
-    pub(crate) fn from_message(message: &ChatMessage) -> Self {
-        Self {
-            role: message.role.clone(),
-            parts: message.parts.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct GeminiError {
-    pub(crate) message: String,
-    pub(crate) code: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct GenerateContentResponse {
-    pub(crate) candidates: Option<Vec<Candidate>>,
-    pub(crate) error: Option<GeminiError>,
-}
-
-impl GenerateContentResponse {
-    pub(crate) fn into_response(self) -> Option<GeminiResponse> {
-        let parts = self.candidates?.into_iter().next()?.content?.parts;
-        (!parts.is_empty()).then_some(GeminiResponse::Turn(parts))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct Candidate {
-    pub(crate) content: Option<ResponseContent>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct ResponseContent {
     pub(crate) parts: Vec<Part>,
 }
