@@ -29,24 +29,22 @@ pub fn canonical_tool_name(name: &str) -> &str {
 #[derive(Debug)]
 pub struct GeminiClient {
     config: StoredConfig,
-    agent: ureq::Agent,
+    client: reqwest::Client,
 }
 
 impl GeminiClient {
     pub fn new(config: StoredConfig) -> Self {
-        let agent = ureq::AgentBuilder::new()
-            .timeout_connect(std::time::Duration::from_secs(30))
-            .timeout_read(std::time::Duration::from_secs(900))
-            .build();
-        Self { config, agent }
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(900))
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("Failed to create reqwest client");
+        Self { config, client }
     }
 
     pub fn list_models(&self) -> Result<Vec<String>> {
-        if self.config.api_key.starts_with("sk-") {
-            openai::list_models_openai(&self.config, &self.agent)
-        } else {
-            gemini::list_models_gemini(&self.config, &self.agent)
-        }
+        let async_client = crate::api::client_async::AsyncGeminiClient::new(self.config.clone());
+        crate::tui::async_runtime::block_on(async_client.list_models())
     }
 
     pub fn generate_stream(
@@ -54,9 +52,9 @@ impl GeminiClient {
         history: &[ChatMessage],
         cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
         dev_mode_label: &str,
-        on_chunk: impl FnMut(GeminiResponse) -> Result<()>,
+        mut on_chunk: impl FnMut(GeminiResponse) -> Result<()>,
     ) -> Result<()> {
-        let mut active_model = self.config.model.trim_start_matches("models/").to_owned();
+        let mut _active_model = self.config.model.trim_start_matches("models/").to_owned();
         let mut agent_prompt_addition = None;
         let mut allowed_tools: Option<std::collections::HashSet<String>> = None;
 
@@ -64,7 +62,7 @@ impl GeminiClient {
             let custom_agents = crate::app::load_custom_agents();
             if let Some(agent_config) = custom_agents.get(agent_id) {
                 if let Some(ref model_override) = agent_config.model {
-                    active_model = model_override.trim_start_matches("models/").to_owned();
+                    _active_model = model_override.trim_start_matches("models/").to_owned();
                 }
                 agent_prompt_addition = Some(agent_config.system_prompt.clone());
                 allowed_tools = agent_config.allowed_tools.as_ref().map(|list| {
@@ -74,8 +72,6 @@ impl GeminiClient {
                 });
             }
         }
-
-        let model = &active_model;
 
         let mut declarations = Vec::new();
 
@@ -416,29 +412,37 @@ impl GeminiClient {
             })],
         });
 
-        if self.config.api_key.starts_with("sk-") {
-            openai::generate_stream_openai(
-                &self.config,
-                &self.agent,
-                model,
-                history,
-                &declarations,
-                &system_instruction,
-                cancel_token,
-                on_chunk,
-            )
-        } else {
-            gemini::generate_stream_gemini(
-                &self.config,
-                &self.agent,
-                model,
-                history,
-                &declarations,
-                &system_instruction,
-                cancel_token,
-                on_chunk,
-            )
-        }
+        let async_client = crate::api::client_async::AsyncGeminiClient::new(self.config.clone());
+
+        let async_cancel = tokio_util::sync::CancellationToken::new();
+        let cancel_clone = async_cancel.clone();
+        let sync_cancel = cancel_token.clone();
+
+        std::thread::spawn(move || {
+            while !sync_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            cancel_clone.cancel();
+        });
+
+        crate::tui::async_runtime::block_on(async move {
+            let mut stream = async_client
+                .generate_stream(
+                    history,
+                    async_cancel,
+                    dev_mode_label,
+                    declarations,
+                    system_instruction,
+                )
+                .await?;
+
+            use futures::StreamExt;
+            while let Some(chunk_result) = stream.next().await {
+                let chunk = chunk_result?;
+                on_chunk(chunk)?;
+            }
+            Ok::<(), anyhow::Error>(())
+        })
     }
 }
 
