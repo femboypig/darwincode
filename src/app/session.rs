@@ -854,8 +854,8 @@ mod tests {
                 }),
                 serde_json::json!({
                     "text": "final result"
-                })
-            ]
+                }),
+            ],
         });
 
         // 2. Assistant message with reasoning field
@@ -868,8 +868,8 @@ mod tests {
                 }),
                 serde_json::json!({
                     "text": "second final result"
-                })
-            ]
+                }),
+            ],
         });
 
         // Rebuild with show_thoughts = true

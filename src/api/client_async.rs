@@ -224,40 +224,51 @@ impl AsyncGeminiClient {
         let base_url = &self.config.base_url;
 
         // 1. OpenRouter
-        if base_url.contains("openrouter.ai") {
-            if let Some(obj) = request.as_object_mut() {
-                obj.insert("include_reasoning".to_owned(), serde_json::json!(true));
-                obj.insert("reasoning".to_owned(), serde_json::json!({
+        if base_url.contains("openrouter.ai")
+            && let Some(obj) = request.as_object_mut()
+        {
+            obj.insert("include_reasoning".to_owned(), serde_json::json!(true));
+            obj.insert(
+                "reasoning".to_owned(),
+                serde_json::json!({
                     "exclude": false
-                }));
-            }
+                }),
+            );
         }
 
         // 2. OpenAI o1 / o3-mini models
-        if model_lower.starts_with("o1") || model_lower.starts_with("o3-") {
-            if let Some(obj) = request.as_object_mut() {
-                obj.insert("reasoning_effort".to_owned(), serde_json::json!("medium"));
-            }
+        if (model_lower.starts_with("o1") || model_lower.starts_with("o3-"))
+            && let Some(obj) = request.as_object_mut()
+        {
+            obj.insert("reasoning_effort".to_owned(), serde_json::json!("medium"));
         }
 
         // 3. DeepSeek R1 models (or compatible)
-        if model_lower.contains("r1") || model_lower.contains("reasoner") || model_lower.contains("deepseek-v4") {
-            if let Some(obj) = request.as_object_mut() {
-                obj.insert("thinking".to_owned(), serde_json::json!({
+        if (model_lower.contains("r1")
+            || model_lower.contains("reasoner")
+            || model_lower.contains("deepseek-v4"))
+            && let Some(obj) = request.as_object_mut()
+        {
+            obj.insert(
+                "thinking".to_owned(),
+                serde_json::json!({
                     "type": "enabled"
-                }));
-                obj.insert("reasoning_effort".to_owned(), serde_json::json!("high"));
-            }
+                }),
+            );
+            obj.insert("reasoning_effort".to_owned(), serde_json::json!("high"));
         }
 
         // 4. Claude 3.7 Sonnet (Anthropic compatibility or custom proxies)
-        if model_lower.contains("claude-3-7") || model_lower.contains("claude-3.7") {
-            if let Some(obj) = request.as_object_mut() {
-                obj.insert("thinking".to_owned(), serde_json::json!({
+        if (model_lower.contains("claude-3-7") || model_lower.contains("claude-3.7"))
+            && let Some(obj) = request.as_object_mut()
+        {
+            obj.insert(
+                "thinking".to_owned(),
+                serde_json::json!({
                     "type": "enabled",
                     "budget_tokens": 2048
-                }));
-            }
+                }),
+            );
         }
     }
 
@@ -386,7 +397,8 @@ impl AsyncGeminiClient {
 
                     for part in &msg.parts {
                         let text = part.get("text").and_then(|v| v.as_str());
-                        let reasoning = part.get("reasoning_content")
+                        let reasoning = part
+                            .get("reasoning_content")
                             .or_else(|| part.get("reasoning"))
                             .and_then(|v| v.as_str());
 
