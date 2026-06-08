@@ -113,15 +113,22 @@ impl ChatState {
         }
 
         let estimate_tokens = |msg: &ChatMessage| -> usize {
-            let mut chars = 0;
+            let mut total = 0;
             for part in &msg.parts {
                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                    chars += text.len();
+                    // Better heuristic: ASCII chars ~4 per token, non-ASCII (CJK etc) ~1-2 per token
+                    for c in text.chars() {
+                        if c.is_ascii() {
+                            total += 1; // will divide by 4 below
+                        } else {
+                            total += 4; // counts as ~1 token (since we divide by 4)
+                        }
+                    }
                 } else if let Ok(serialized) = serde_json::to_string(part) {
-                    chars += serialized.len();
+                    total += serialized.len();
                 }
             }
-            chars / 4
+            total / 4
         };
 
         let mut total_tokens: usize = self.history.iter().map(estimate_tokens).sum();
@@ -144,6 +151,9 @@ impl ChatState {
             let current_scroll = self.scroll.get();
             self.scroll
                 .set(current_scroll.saturating_sub(to_remove as u16));
+
+            // Invalidate cached line ranges since indices shifted
+            *self.message_line_ranges.borrow_mut() = Vec::new();
         }
     }
 

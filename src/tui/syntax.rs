@@ -547,15 +547,33 @@ pub fn wrap_lines(lines: Vec<Line<'static>>, max_width: usize) -> Vec<Line<'stat
 }
 
 pub fn wrap_text_to_lines(text: &str, width: usize) -> Vec<String> {
+    use unicode_width::UnicodeWidthChar;
     let mut lines = Vec::new();
     for line in text.split('\n') {
         if line.is_empty() {
             lines.push(String::new());
         } else {
-            let chars: Vec<char> = line.chars().collect();
-            for chunk in chars.chunks(width) {
-                lines.push(chunk.iter().collect());
+            let mut current = String::new();
+            let mut current_w = 0;
+            for c in line.chars() {
+                let char_w = if c == '\t' {
+                    4
+                } else {
+                    c.width().unwrap_or(0)
+                };
+                if current_w + char_w > width && current_w > 0 {
+                    lines.push(current);
+                    current = String::new();
+                    current_w = 0;
+                }
+                if c == '\t' {
+                    current.push_str("    ");
+                } else {
+                    current.push(c);
+                }
+                current_w += char_w;
             }
+            lines.push(current);
         }
     }
     lines
@@ -593,6 +611,12 @@ mod tests {
         let text = "hello\nworld";
         let wrapped = wrap_text_to_lines(text, 3);
         assert_eq!(wrapped, vec!["hel", "lo", "wor", "ld"]);
+
+        // Test CJK (each char is width 2)
+        let cjk = "\u{4F60}\u{597D}"; // 你好 = 2 chars, 4 visual width
+        let wrapped_cjk = wrap_text_to_lines(cjk, 3);
+        // Each CJK char is width 2, so only 1 fits in width 3
+        assert_eq!(wrapped_cjk, vec!["\u{4F60}", "\u{597D}"]);
     }
 
     #[test]
