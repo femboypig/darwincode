@@ -302,14 +302,14 @@ pub(crate) fn run_persistent_bash(
     let start_stdout_len = entry.stdout_accumulator.lock().len();
     let start_stderr_len = entry.stderr_accumulator.lock().len();
 
-    let nonce = format!(
-        "CMD_DONE_{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    );
-    let sentinel = format!("___SENTINEL_{}___", nonce);
+    // Use a cryptographically random nonce for the sentinel to prevent
+    // a malicious command from guessing/outputting it to fool the parser.
+    let nonce = {
+        let mut bytes = [0u8; 16];
+        rand::fill(&mut bytes);
+        bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+    };
+    let sentinel = format!("__DCEND_{}__", nonce);
 
     {
         let mut stdin_guard = entry.stdin.lock();
@@ -322,7 +322,7 @@ pub(crate) fn run_persistent_bash(
     }
 
     let mut check_count = 0;
-    let max_checks = 100;
+    let max_checks = 600; // 600 * 50ms = 30 seconds
     let mut found = false;
     let mut has_exited = false;
     let mut exit_status = None;
