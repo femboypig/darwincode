@@ -209,7 +209,9 @@ impl App {
                 .get("thought")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
-                || part.get("thought_signature").is_some();
+                || part.get("thought_signature").is_some()
+                || part.get("reasoning_content").is_some()
+                || part.get("reasoning").is_some();
 
             let text = match part.get("text").and_then(|v| v.as_str()) {
                 Some(t) if !t.is_empty() => t,
