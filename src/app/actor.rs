@@ -1,9 +1,9 @@
 use crate::app::{App, Screen, SubmitAction};
 use crate::tui::Tui;
 use crate::tui::WorkerEvent;
+use anyhow::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
 use tokio::sync::mpsc;
-use anyhow::Result;
 
 #[derive(Debug)]
 pub enum AppCommand {
@@ -24,13 +24,20 @@ pub struct AppActor {
 impl AppActor {
     pub fn new(app: App) -> (Self, mpsc::UnboundedSender<AppCommand>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Self { rx, tx: tx.clone(), app }, tx)
+        (
+            Self {
+                rx,
+                tx: tx.clone(),
+                app,
+            },
+            tx,
+        )
     }
 
     pub async fn run(&mut self, terminal: &mut Tui) -> Result<()> {
         let (worker_tx, worker_rx) = std::sync::mpsc::channel::<WorkerEvent>();
         let tx_clone = self.tx.clone();
-        
+
         // Forward WorkerEvent from blocking worker threads to our async channel
         tokio::task::spawn_blocking(move || {
             while let Ok(event) = worker_rx.recv() {
@@ -42,7 +49,7 @@ impl AppActor {
 
         while !self.app.should_quit {
             // Draw TUI
-            let _ = terminal.draw(|frame| crate::tui::render::render(frame, &mut self.app));
+            let _ = terminal.draw(|frame| crate::tui::render::render(frame, &self.app));
 
             // Wait for next command
             if let Some(cmd) = self.rx.recv().await {
@@ -56,7 +63,11 @@ impl AppActor {
         Ok(())
     }
 
-    fn handle_command(&mut self, cmd: AppCommand, worker_tx: &std::sync::mpsc::Sender<WorkerEvent>) -> Result<()> {
+    fn handle_command(
+        &mut self,
+        cmd: AppCommand,
+        worker_tx: &std::sync::mpsc::Sender<WorkerEvent>,
+    ) -> Result<()> {
         // Auto-detect prompt requests
         let ask_user_req = crate::tui::ASK_USER_CHANNEL
             .lock()
@@ -80,7 +91,11 @@ impl AppActor {
                 crate::tui::events::handle_key(&mut self.app, worker_tx, key)?;
             }
             AppCommand::MouseEvent(mouse_event) => {
-                crate::tui::events::mouse::handle_mouse_event(&mut self.app, worker_tx, mouse_event)?;
+                crate::tui::events::mouse::handle_mouse_event(
+                    &mut self.app,
+                    worker_tx,
+                    mouse_event,
+                )?;
             }
             AppCommand::Paste(text) => {
                 crate::tui::events::handle_paste(&mut self.app, text);
@@ -109,11 +124,25 @@ impl AppActor {
                     && let Some(rect) = self.app.chat.messages_area.get()
                 {
                     if click_y < rect.y {
-                        self.app.chat.scroll.set(self.app.chat.scroll.get().saturating_add(1));
-                        crate::tui::events::mouse::update_selection_on_scroll(&mut self.app, click_x, click_y);
+                        self.app
+                            .chat
+                            .scroll
+                            .set(self.app.chat.scroll.get().saturating_add(1));
+                        crate::tui::events::mouse::update_selection_on_scroll(
+                            &mut self.app,
+                            click_x,
+                            click_y,
+                        );
                     } else if click_y >= rect.y + rect.height {
-                        self.app.chat.scroll.set(self.app.chat.scroll.get().saturating_sub(1));
-                        crate::tui::events::mouse::update_selection_on_scroll(&mut self.app, click_x, click_y);
+                        self.app
+                            .chat
+                            .scroll
+                            .set(self.app.chat.scroll.get().saturating_sub(1));
+                        crate::tui::events::mouse::update_selection_on_scroll(
+                            &mut self.app,
+                            click_x,
+                            click_y,
+                        );
                     }
                 }
             }
@@ -121,7 +150,11 @@ impl AppActor {
         Ok(())
     }
 
-    fn execute_submit_action(&mut self, action: SubmitAction, worker_tx: &std::sync::mpsc::Sender<WorkerEvent>) {
+    fn execute_submit_action(
+        &mut self,
+        action: SubmitAction,
+        worker_tx: &std::sync::mpsc::Sender<WorkerEvent>,
+    ) {
         match action {
             SubmitAction::Generate(request) => {
                 crate::tui::tool_executor::spawn_generation_worker(
@@ -145,7 +178,11 @@ impl AppActor {
         }
     }
 
-    fn handle_worker_event(&mut self, event: WorkerEvent, worker_tx: &std::sync::mpsc::Sender<WorkerEvent>) {
+    fn handle_worker_event(
+        &mut self,
+        event: WorkerEvent,
+        worker_tx: &std::sync::mpsc::Sender<WorkerEvent>,
+    ) {
         match event {
             WorkerEvent::StreamChunk(id, chunk) => {
                 if id == self.app.proc.generation_id {
