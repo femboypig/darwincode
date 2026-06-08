@@ -321,7 +321,7 @@ mod tests {
         let sess_p = crate::tui::PersistentSession {
             pid: pid_p,
             child: std::sync::Arc::new(parking_lot::Mutex::new(child_p)),
-            stdin: stdin_p,
+            stdin: std::sync::Arc::new(parking_lot::Mutex::new(stdin_p)),
             stdout_accumulator: std::sync::Arc::new(parking_lot::Mutex::new(String::new())),
             stderr_accumulator: std::sync::Arc::new(parking_lot::Mutex::new(String::new())),
         };
