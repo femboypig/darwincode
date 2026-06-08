@@ -79,6 +79,39 @@ where
     }
 }
 
+pub async fn execute_with_retry_async<F, Fut>(
+    client: &reqwest::Client,
+    make_request: F,
+) -> Result<reqwest::Response, anyhow::Error>
+where
+    F: Fn(&reqwest::Client) -> Fut,
+    Fut: std::future::Future<Output = Result<reqwest::Response, reqwest::Error>>,
+{
+    let mut backoff = Duration::from_millis(500);
+    let max_backoff = Duration::from_secs(30);
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match make_request(client).await {
+            Ok(resp) => return Ok(resp),
+            Err(err) => {
+                let is_ret = if let Some(status) = err.status() {
+                    status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                        || status.is_server_error()
+                } else {
+                    err.is_request() || err.is_connect() || err.is_timeout()
+                };
+                if is_ret && attempt < 5 {
+                    tokio::time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(max_backoff);
+                } else {
+                    return Err(anyhow::anyhow!("API request failed: {}", err));
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
