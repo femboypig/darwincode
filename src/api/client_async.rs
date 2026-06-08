@@ -39,9 +39,12 @@ impl AsyncGeminiClient {
 
     async fn list_models_gemini(&self) -> Result<Vec<String>> {
         let url = format!("{}/models", self.config.base_url.trim_end_matches('/'));
+        let api_key = self.config.api_key.clone();
 
         let response = crate::api::client::common::execute_with_retry_async(&self.client, |c| {
-            c.get(&url).query(&[("key", &self.config.api_key)]).send()
+            c.get(&url)
+                .header("x-goog-api-key", &api_key)
+                .send()
         })
         .await?;
 
@@ -146,11 +149,11 @@ impl AsyncGeminiClient {
         cancel_token: tokio_util::sync::CancellationToken,
     ) -> Result<BoxStream> {
         let url = format!(
-            "{}/models/{}:streamGenerateContent?alt=sse&key={}",
+            "{}/models/{}:streamGenerateContent?alt=sse",
             self.config.base_url.trim_end_matches('/'),
             model,
-            self.config.api_key
         );
+        let gemini_api_key = self.config.api_key.clone();
 
         let mut contents = Vec::new();
         for msg in history {
@@ -175,7 +178,10 @@ impl AsyncGeminiClient {
         };
 
         let response = crate::api::client::common::execute_with_retry_async(&self.client, |c| {
-            c.post(&url).json(&request_body).send()
+            c.post(&url)
+                .header("x-goog-api-key", &gemini_api_key)
+                .json(&request_body)
+                .send()
         })
         .await?;
 
