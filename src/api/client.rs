@@ -40,15 +40,15 @@ impl GeminiClient {
         Self { config, client }
     }
 
-    pub fn list_models(&self) -> Result<Vec<String>> {
+    pub async fn list_models(&self) -> Result<Vec<String>> {
         let async_client = crate::api::client_async::AsyncGeminiClient::new_with_client(
             self.config.clone(),
             self.client.clone(),
         );
-        crate::tui::async_runtime::block_on(async_client.list_models())
+        async_client.list_models().await
     }
 
-    pub fn generate_stream(
+    pub async fn generate_stream(
         &self,
         history: &[ChatMessage],
         cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -429,24 +429,22 @@ impl GeminiClient {
             cancel_clone.cancel();
         });
 
-        crate::tui::async_runtime::block_on(async move {
-            let mut stream = async_client
-                .generate_stream(
-                    history,
-                    async_cancel,
-                    dev_mode_label,
-                    declarations,
-                    system_instruction,
-                )
-                .await?;
+        let mut stream = async_client
+            .generate_stream(
+                history,
+                async_cancel,
+                dev_mode_label,
+                declarations,
+                system_instruction,
+            )
+            .await?;
 
-            use futures::StreamExt;
-            while let Some(chunk_result) = stream.next().await {
-                let chunk = chunk_result?;
-                on_chunk(chunk)?;
-            }
-            Ok::<(), anyhow::Error>(())
-        })
+        use futures::StreamExt;
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result?;
+            on_chunk(chunk)?;
+        }
+        Ok(())
     }
 }
 
