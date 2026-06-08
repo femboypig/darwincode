@@ -204,10 +204,9 @@ impl AsyncGeminiClient {
                                         .and_then(|f| f["content"]["parts"].as_array())
                                         .map(|p| p.to_vec())
                                 })
+                                .filter(|p| !p.is_empty())
                             {
-                                if !parts_vec.is_empty() {
-                                    return Some(Ok(GeminiResponse::Turn(parts_vec)));
-                                }
+                                return Some(Ok(GeminiResponse::Turn(parts_vec)));
                             }
                         }
                         None
