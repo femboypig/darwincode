@@ -3,6 +3,8 @@ use crate::config::StoredConfig;
 use anyhow::Result;
 use futures::StreamExt;
 use std::pin::Pin;
+use tokio_util::codec::{FramedRead, LinesCodec};
+use tokio_util::io::StreamReader;
 
 type BoxStream = Pin<Box<dyn futures::Stream<Item = Result<GeminiResponse>> + Send>>;
 
@@ -184,33 +186,25 @@ impl AsyncGeminiClient {
         }
 
         let byte_stream = response.bytes_stream();
+        let io_error_stream = byte_stream.map(|r| r.map_err(std::io::Error::other));
+        let reader = StreamReader::new(io_error_stream);
+        let line_stream = FramedRead::new(reader, LinesCodec::new());
 
         let stream = Box::pin(
-            byte_stream
-                .map(move |chunk_result| match chunk_result {
-                    Ok(chunk) => {
-                        let text = String::from_utf8_lossy(&chunk);
-
-                        for line in text.lines() {
-                            if let Some(parts_vec) = line
-                                .strip_prefix("data: ")
-                                .and_then(|data| {
-                                    serde_json::from_str::<serde_json::Value>(data).ok()
-                                })
-                                .and_then(|parsed| {
-                                    parsed["candidates"]
-                                        .as_array()
-                                        .and_then(|c| c.first())
-                                        .and_then(|f| f["content"]["parts"].as_array())
-                                        .map(|p| p.to_vec())
-                                })
-                                .filter(|p| !p.is_empty())
-                            {
-                                return Some(Ok(GeminiResponse::Turn(parts_vec)));
-                            }
-                        }
-                        None
-                    }
+            line_stream
+                .map(move |line_result| match line_result {
+                    Ok(line) => line
+                        .strip_prefix("data: ")
+                        .and_then(|data| serde_json::from_str::<serde_json::Value>(data).ok())
+                        .and_then(|parsed| {
+                            parsed["candidates"]
+                                .as_array()
+                                .and_then(|c| c.first())
+                                .and_then(|f| f["content"]["parts"].as_array())
+                                .map(|p| p.to_vec())
+                        })
+                        .filter(|p| !p.is_empty())
+                        .map(|parts_vec| Ok(GeminiResponse::Turn(parts_vec))),
                     Err(e) => Some(Err(anyhow::anyhow!("Stream error: {}", e))),
                 })
                 .filter_map(|x| async move { x })
@@ -500,6 +494,9 @@ impl AsyncGeminiClient {
         }
 
         let byte_stream = response.bytes_stream();
+        let io_error_stream = byte_stream.map(|r| r.map_err(std::io::Error::other));
+        let reader = StreamReader::new(io_error_stream);
+        let line_stream = FramedRead::new(reader, LinesCodec::new());
 
         #[derive(Default, Clone)]
         struct ToolCallAccumulator {
@@ -512,115 +509,20 @@ impl AsyncGeminiClient {
         let mut finished = false;
 
         let stream = Box::pin(
-            byte_stream
-                .map(move |chunk_result| {
+            line_stream
+                .map(move |line_result| {
                     if finished {
                         return None;
                     }
-                    match chunk_result {
-                        Ok(chunk) => {
-                            let text = String::from_utf8_lossy(&chunk);
-                            let mut responses = Vec::new();
-
-                            for line in text.lines() {
-                                let line = line.trim();
-                                if line.is_empty() {
-                                    continue;
-                                }
-                                if line == "data: [DONE]" {
-                                    finished = true;
-                                    break;
-                                }
-                                if let Some(stripped) = line.strip_prefix("data: ") {
-                                    let json_str = stripped.trim();
-                                    if json_str == "[DONE]" {
-                                        finished = true;
-                                        break;
-                                    }
-                                    if let Ok(chunk_val) =
-                                        serde_json::from_str::<serde_json::Value>(json_str)
-                                    {
-                                        if let Some(err) = chunk_val.get("error") {
-                                            let msg = err
-                                                .get("message")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("unknown error");
-                                            return Some(Err(anyhow::anyhow!(
-                                                "API Error: {}",
-                                                msg
-                                            )));
-                                        }
-
-                                        if let Some(choices) =
-                                            chunk_val.get("choices").and_then(|v| v.as_array())
-                                            && let Some(choice) = choices.first()
-                                            && let Some(delta) = choice.get("delta")
-                                        {
-                                            if let Some(content) =
-                                                delta.get("content").and_then(|v| v.as_str())
-                                                && !content.is_empty()
-                                            {
-                                                responses.push(serde_json::json!({
-                                                    "text": content
-                                                }));
-                                            }
-                                            let reasoning = delta
-                                                .get("reasoning_content")
-                                                .or_else(|| delta.get("reasoning"))
-                                                .and_then(|v| v.as_str());
-                                            if let Some(reasoning) = reasoning
-                                                && !reasoning.is_empty()
-                                            {
-                                                responses.push(serde_json::json!({
-                                                    "text": reasoning,
-                                                    "thought": true,
-                                                    "reasoning_content": reasoning
-                                                }));
-                                            }
-
-                                            if let Some(tool_calls) =
-                                                delta.get("tool_calls").and_then(|v| v.as_array())
-                                            {
-                                                for tc in tool_calls {
-                                                    let idx = tc
-                                                        .get("index")
-                                                        .and_then(|v| v.as_u64())
-                                                        .unwrap_or(0)
-                                                        as usize;
-                                                    if idx >= accumulated_tools.len() {
-                                                        accumulated_tools.resize(
-                                                            idx + 1,
-                                                            ToolCallAccumulator::default(),
-                                                        );
-                                                    }
-                                                    let acc = &mut accumulated_tools[idx];
-                                                    if let Some(id) =
-                                                        tc.get("id").and_then(|v| v.as_str())
-                                                    {
-                                                        acc.id = Some(id.to_owned());
-                                                    }
-                                                    if let Some(func) = tc.get("function") {
-                                                        if let Some(name) = func
-                                                            .get("name")
-                                                            .and_then(|v| v.as_str())
-                                                        {
-                                                            acc.name = Some(name.to_owned());
-                                                        }
-                                                        if let Some(args) = func
-                                                            .get("arguments")
-                                                            .and_then(|v| v.as_str())
-                                                        {
-                                                            acc.arguments.push_str(args);
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                    match line_result {
+                        Ok(line) => {
+                            let line = line.trim();
+                            if line.is_empty() {
+                                return None;
                             }
-
-                            if finished {
+                            if line == "data: [DONE]" {
+                                finished = true;
+                                let mut responses = Vec::new();
                                 for acc in accumulated_tools.drain(..) {
                                     if let Some(name) = acc.name {
                                         let args: serde_json::Value =
@@ -634,13 +536,116 @@ impl AsyncGeminiClient {
                                         }));
                                     }
                                 }
+                                if !responses.is_empty() {
+                                    return Some(Ok(GeminiResponse::Turn(responses)));
+                                }
+                                return None;
                             }
+                            if let Some(stripped) = line.strip_prefix("data: ") {
+                                let json_str = stripped.trim();
+                                if json_str == "[DONE]" {
+                                    finished = true;
+                                    let mut responses = Vec::new();
+                                    for acc in accumulated_tools.drain(..) {
+                                        if let Some(name) = acc.name {
+                                            let args: serde_json::Value =
+                                                serde_json::from_str(&acc.arguments)
+                                                    .unwrap_or_else(|_| serde_json::json!({}));
+                                            responses.push(serde_json::json!({
+                                                "functionCall": {
+                                                    "name": name,
+                                                    "args": args
+                                                }
+                                            }));
+                                        }
+                                    }
+                                    if !responses.is_empty() {
+                                        return Some(Ok(GeminiResponse::Turn(responses)));
+                                    }
+                                    return None;
+                                }
+                                if let Ok(chunk_val) =
+                                    serde_json::from_str::<serde_json::Value>(json_str)
+                                {
+                                    if let Some(err) = chunk_val.get("error") {
+                                        let msg = err
+                                            .get("message")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown error");
+                                        return Some(Err(anyhow::anyhow!("API Error: {}", msg)));
+                                    }
 
-                            if !responses.is_empty() {
-                                Some(Ok(GeminiResponse::Turn(responses)))
-                            } else {
-                                None
+                                    let mut responses = Vec::new();
+                                    if let Some(choices) =
+                                        chunk_val.get("choices").and_then(|v| v.as_array())
+                                        && let Some(choice) = choices.first()
+                                        && let Some(delta) = choice.get("delta")
+                                    {
+                                        if let Some(content) =
+                                            delta.get("content").and_then(|v| v.as_str())
+                                            && !content.is_empty()
+                                        {
+                                            responses.push(serde_json::json!({
+                                                "text": content
+                                            }));
+                                        }
+                                        let reasoning = delta
+                                            .get("reasoning_content")
+                                            .or_else(|| delta.get("reasoning"))
+                                            .and_then(|v| v.as_str());
+                                        if let Some(reasoning) = reasoning
+                                            && !reasoning.is_empty()
+                                        {
+                                            responses.push(serde_json::json!({
+                                                "text": reasoning,
+                                                "thought": true,
+                                                "reasoning_content": reasoning
+                                            }));
+                                        }
+
+                                        if let Some(tool_calls) =
+                                            delta.get("tool_calls").and_then(|v| v.as_array())
+                                        {
+                                            for tc in tool_calls {
+                                                let idx = tc
+                                                    .get("index")
+                                                    .and_then(|v| v.as_u64())
+                                                    .unwrap_or(0)
+                                                    as usize;
+                                                if idx >= accumulated_tools.len() {
+                                                    accumulated_tools.resize(
+                                                        idx + 1,
+                                                        ToolCallAccumulator::default(),
+                                                    );
+                                                }
+                                                let acc = &mut accumulated_tools[idx];
+                                                if let Some(id) =
+                                                    tc.get("id").and_then(|v| v.as_str())
+                                                {
+                                                    acc.id = Some(id.to_owned());
+                                                }
+                                                if let Some(func) = tc.get("function") {
+                                                    if let Some(name) =
+                                                        func.get("name").and_then(|v| v.as_str())
+                                                    {
+                                                        acc.name = Some(name.to_owned());
+                                                    }
+                                                    if let Some(args) = func
+                                                        .get("arguments")
+                                                        .and_then(|v| v.as_str())
+                                                    {
+                                                        acc.arguments.push_str(args);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if !responses.is_empty() {
+                                        return Some(Ok(GeminiResponse::Turn(responses)));
+                                    }
+                                }
                             }
+                            None
                         }
                         Err(e) => Some(Err(anyhow::anyhow!("Stream error: {}", e))),
                     }
