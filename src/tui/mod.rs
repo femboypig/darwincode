@@ -53,6 +53,7 @@ pub(crate) static PERSISTENT_SESSIONS: OnceLock<Mutex<HashMap<String, Persistent
     OnceLock::new();
 pub(crate) static ACTIVE_PERSISTENT_SESSION_ID: Mutex<Option<String>> = Mutex::new(None);
 
+#[derive(Debug)]
 pub(crate) enum WorkerEvent {
     StreamChunk(usize, crate::api::GeminiResponse),
     StreamDone(usize),
