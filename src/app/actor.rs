@@ -46,6 +46,10 @@ impl AppActor {
 
             // Wait for next command
             if let Some(cmd) = self.rx.recv().await {
+                if matches!(cmd, AppCommand::Resize) {
+                    let _ = terminal.autoresize();
+                    let _ = terminal.clear();
+                }
                 self.handle_command(cmd, &worker_tx)?;
             }
         }
