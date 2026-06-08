@@ -18,6 +18,7 @@ impl ChatMessage {
 
 pub type Part = serde_json::Value;
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum GeminiResponse {
     Turn(Vec<Part>),
 }
