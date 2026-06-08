@@ -62,7 +62,7 @@ impl AsyncGeminiClient {
                     .iter()
                     .any(|m| m.as_str().map(|s| s == "generateContent").unwrap_or(false));
                 if supports_streaming {
-                    Some(name.to_owned())
+                    Some(name.trim_start_matches("models/").to_owned())
                 } else {
                     None
                 }
