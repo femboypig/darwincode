@@ -1111,6 +1111,14 @@ impl App {
     pub fn rollback_transactions(&mut self) {
         if !self.proc.last_file_backups.is_empty() {
             for backup in &self.proc.last_file_backups {
+                let path = std::path::Path::new(&backup.path);
+                
+                if let Ok(metadata) = std::fs::symlink_metadata(path) {
+                    if metadata.is_symlink() {
+                        continue;
+                    }
+                }
+                
                 match &backup.original_content {
                     Some(content) => {
                         let _ = std::fs::write(&backup.path, content);
@@ -1206,7 +1214,20 @@ impl App {
             };
 
             let original_content = if resolved_path.exists() {
-                std::fs::read_to_string(&resolved_path).ok()
+                match std::fs::symlink_metadata(&resolved_path) {
+                    Ok(metadata) if metadata.is_symlink() => {
+                        self.status = format!(
+                            "Warning: Skipping backup of symlink: {}",
+                            resolved_path.display()
+                        );
+                        None
+                    }
+                    Ok(metadata) if metadata.is_file() => {
+                        std::fs::read_to_string(&resolved_path).ok()
+                    }
+                    Ok(_) => None,
+                    Err(_) => None,
+                }
             } else {
                 None
             };
