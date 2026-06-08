@@ -188,7 +188,6 @@ pub(crate) fn handle_chat_key(
         if !written {
             let mut guard = crate::tui::RUNNING_PROCESS_STDIN.lock();
             if let Some(ref mut stdin) = guard.as_mut() {
-                use std::io::Write;
                 let data = match key.code {
                     KeyCode::Char(c) => Some(c.to_string()),
                     KeyCode::Enter => Some("\n".to_owned()),
@@ -196,8 +195,12 @@ pub(crate) fn handle_chat_key(
                     _ => None,
                 };
                 if let Some(s) = data {
-                    let _ = stdin.write_all(s.as_bytes());
-                    let _ = stdin.flush();
+                    let mut stdin_write = stdin;
+                    let _ = crate::tui::async_runtime::block_on(async {
+                        use tokio::io::AsyncWriteExt;
+                        let _ = stdin_write.write_all(s.as_bytes()).await;
+                        let _ = stdin_write.flush().await;
+                    });
                     written = true;
                     {
                         let pid_guard = crate::tui::RUNNING_PROCESS_PID.lock();
