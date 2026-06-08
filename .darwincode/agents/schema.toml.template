@@ -1,0 +1,24 @@
+# Custom agent configuration schema.
+# Copy and rename this file (removing .template) to activate it (e.g., reviewer.toml).
+#
+# allowed_tools: list of tool names the agent is allowed to invoke.
+# Tool names are case-insensitive and the runtime accepts a handful of
+# common aliases (read_file → read, grep_search → grep, list_dir → glob,
+# bash → sh, web_search → websearch, ...). The canonical names that the
+# model actually sees are:
+#
+#   read    grep   glob   edit   write   sh   websearch
+#   ask     todo   patch  ps     kill    logs
+#
+# Unlisted tools return an error from the model.
+
+name = "Code Reviewer"
+model = "claude-3-5-sonnet" # (Optional) Default model for this agent
+
+# List of allowed tools to limit access and enforce security boundaries
+allowed_tools = ["read", "grep", "glob"]
+
+system_prompt = """
+You are a strict code reviewer. Your only task is to analyze project files and find bugs/defects.
+You are forbidden from writing files or executing arbitrary bash commands.
+"""

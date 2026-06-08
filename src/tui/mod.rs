@@ -346,15 +346,15 @@ pub(crate) fn run_persistent_bash(
         let mut child_guard = entry.child.lock();
         let _ = child_guard.kill();
         drop(child_guard);
-        
+
         let registry = PERSISTENT_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
         {
             let mut map = registry.lock();
             map.remove(session_id);
         }
-        
+
         *ACTIVE_PERSISTENT_SESSION_ID.lock() = None;
-        
+
         return Ok(serde_json::json!({
             "status": -1,
             "stdout": "",

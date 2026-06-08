@@ -201,7 +201,9 @@ impl App {
         let current_gen_id = self.proc.generation_id;
 
         for part in parts {
-            self.chat.streaming_parts.push((current_gen_id, part.clone()));
+            self.chat
+                .streaming_parts
+                .push((current_gen_id, part.clone()));
 
             let is_thought = part
                 .get("thought")
@@ -320,16 +322,20 @@ impl App {
             self.chat.streaming_parts.clear();
             return None;
         }
-        
+
         let current_gen_id = self.proc.generation_id;
-        let parts: Vec<crate::api::Part> = self.chat.streaming_parts
+        let parts: Vec<crate::api::Part> = self
+            .chat
+            .streaming_parts
             .iter()
             .filter(|(id, _)| *id == current_gen_id)
             .map(|(_, part)| part.clone())
             .collect();
-        
-        self.chat.streaming_parts.retain(|(id, _)| *id != current_gen_id);
-        
+
+        self.chat
+            .streaming_parts
+            .retain(|(id, _)| *id != current_gen_id);
+
         if parts.is_empty() {
             self.proc.pending = None;
             self.status = "Ready".to_owned();
@@ -1096,10 +1102,12 @@ impl App {
         }
         self.proc.pending = None;
         self.status = "Generation stopped".to_owned();
-        
+
         let current_gen_id = self.proc.generation_id;
-        self.chat.streaming_parts.retain(|(id, _)| *id != current_gen_id);
-        
+        self.chat
+            .streaming_parts
+            .retain(|(id, _)| *id != current_gen_id);
+
         if self.chat.messages.last().is_some_and(|m| m.pending) {
             self.chat.messages.pop();
         }
@@ -1112,13 +1120,13 @@ impl App {
         if !self.proc.last_file_backups.is_empty() {
             for backup in &self.proc.last_file_backups {
                 let path = std::path::Path::new(&backup.path);
-                
-                if let Ok(metadata) = std::fs::symlink_metadata(path) {
-                    if metadata.is_symlink() {
-                        continue;
-                    }
+
+                if let Ok(metadata) = std::fs::symlink_metadata(path)
+                    && metadata.is_symlink()
+                {
+                    continue;
                 }
-                
+
                 match &backup.original_content {
                     Some(content) => {
                         let _ = std::fs::write(&backup.path, content);
